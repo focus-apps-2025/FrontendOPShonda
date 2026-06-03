@@ -10,7 +10,7 @@ const API_BASE_URL = (() => {
 
   const baseUrl = isLocal
     ? "http://127.0.0.1:5000/api"
-    : "https://3wheelertvsbackend.focusengineeringapp.com/api";
+    : "https://backendops.focusengineeringapp.com/api";
 
   console.log(
     `🔗 API Base URL: ${baseUrl} (Environment: ${isLocal ? "Local" : "Production"
