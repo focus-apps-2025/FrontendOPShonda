@@ -1,44 +1,28 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
+
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import SectionContent from "./preview/SectionContent";
 import ThankYouMessage from "./ThankYouMessage";
 import {
-  MapPin,
-  RefreshCw,
-  CheckCircle2,
-  ChevronUp,
-  ChevronDown,
-  Loader2,
-  Sun,
-  Moon,
-  AlertTriangle,
-  Database,
-  Sparkles,
-  Zap,
-  Clipboard,
-  Users,
-  Send,
-  X,
+  MapPin, CheckCircle2, ChevronUp, Loader2,
+  Sun, Moon, Database, Users, Send, Printer,
 } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 import { useNotification } from "../context/NotificationContext";
 import { useQuestionLogic } from "../hooks/useQuestionLogic";
 import { useAuth } from "../context/AuthContext";
-import type { Question, Response, Section, FollowUpQuestion } from "../types";
+import type { Question, Response } from "../types";
 import {
-  getLevel2Options,
-  getLevel3Options,
-  getLevel4Options,
-  getLevel5Options,
-  getLevel6Options,
+  getLevel2Options, getLevel3Options, getLevel4Options,
+  getLevel5Options, getLevel6Options,
 } from "../config/npsHierarchy";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
 interface Form {
-  id: string;
-  title: string;
-  description: string;
-  sections: any[];
+  id: string; title: string; description: string; sections: any[];
   viewType?: "section-wise" | "question-wise";
   followUpQuestions?: any[];
   chassisNumbers?: Array<{ chassisNumber: string; partDescription: string }> | string[];
@@ -50,25 +34,578 @@ interface PreviewFormProps {
   onSubmit?: (response: Response) => Promise<void> | void;
   branchingRules?: any[];
   viewType?: "section-wise" | "question-wise";
-  onQuestionChange?: (
-    questionId: string,
-    questionText: string,
-    questionType: string,
-    sectionId: string,
-    sectionTitle: string,
-    answer?: any,
-  ) => void;
-  onSectionComplete?: (
-    sectionId: string,
-    sectionTitle: string,
-    timeSpentSeconds: number,
-    questionCount: number
-  ) => void;
+  onQuestionChange?: (qId: string, qText: string, qType: string, sId: string, sTitle: string, answer?: any) => void;
+  onSectionComplete?: (sId: string, sTitle: string, timeSpent: number, qCount: number) => void;
   formSessionId?: string | null;
   chassisNumbers?: Array<{ chassisNumber: string; partDescription: string }> | string[];
   chassisTenantAssignments?: Record<string, string[]>;
+  opsSectionMapping?: {
+    headerSectionId: string;
+    generalInstructionsSectionId: string;
+    pastProblemsSectionId: string;
+    processStepsSectionId: string;
+    associateSignSectionId: string;
+    illustrationsSectionId: string;
+  };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// OPS Template — matches screenshots pixel-for-pixel
+// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// OPS Template — matches screenshots pixel-for-pixel
+// ─────────────────────────────────────────────────────────────────────────────
+interface OPSTemplateProps {
+  form: Form | null;
+  answers: Record<string, any>;
+  opsSectionMapping?: PreviewFormProps["opsSectionMapping"];
+  onPrint: () => void;
+}
+
+function OPSTemplate({ form, answers, opsSectionMapping, onPrint }: OPSTemplateProps) {
+  const opsRef = useRef<HTMLDivElement>(null);
+
+  const getQuestionsFromSection = useCallback((sectionId: string | undefined) => {
+    if (!form || !sectionId) return [];
+    const section = form.sections?.find((s: any) => s.id === sectionId || s._id === sectionId);
+    if (!section) return [];
+    return (section.questions || []).filter((q: any) => !q.showWhen?.questionId);
+  }, [form]);
+
+  const headerQuestions = opsSectionMapping ? getQuestionsFromSection(opsSectionMapping.headerSectionId) : [];
+  const instructionQuestions = opsSectionMapping ? getQuestionsFromSection(opsSectionMapping.headerSectionId) : [];
+  const processQuestions = opsSectionMapping ? getQuestionsFromSection(opsSectionMapping.processStepsSectionId) : [];
+  const pastProblemsQuestions = opsSectionMapping ? getQuestionsFromSection(opsSectionMapping.pastProblemsSectionId) : [];
+  const associateQuestions = opsSectionMapping ? getQuestionsFromSection(opsSectionMapping.associateSignSectionId) : [];
+  const illustrationQuestions = opsSectionMapping ? getQuestionsFromSection(opsSectionMapping.illustrationsSectionId) : [];
+
+  const getAnswerByIndex = (questions: any[], index: number): string => {
+    const question = questions[index];
+    if (!question) return "";
+    const questionId = question.id || question._id;
+    if (!questionId) return "";
+    const value = answers[questionId];
+    if (value === undefined || value === null) return "";
+    if (typeof value === "object") return JSON.stringify(value);
+    return String(value);
+  };
+
+  const getAnswerOrFallback = (questions: any[], index: number, fallback: string): string => {
+    const answer = getAnswerByIndex(questions, index);
+    return answer || fallback;
+  };
+
+  const getQuestionText = (questions: any[], index: number, defaultText: string): string => {
+    const question = questions[index];
+    if (question?.text) return question.text;
+    if (question?.label) return question.label;
+    return defaultText;
+  };
+
+  const dept = getAnswerOrFallback(headerQuestions, 0, "—");
+  const lineZone = getAnswerOrFallback(headerQuestions, 1, "—");
+  const model = getAnswerOrFallback(headerQuestions, 2, "—");
+  const station = getAnswerOrFallback(headerQuestions, 3, "—");
+
+  const formatNo = getAnswerOrFallback(headerQuestions, 4, "—");
+  const controlNo = getAnswerOrFallback(headerQuestions, 5, "—");
+
+
+
+  const fifo = "1. Bin/trolley must be changed only after complete usage of all material in it.\n2. Empty bin/trolley should be replaced with new one.\n3. Don't top up partially filled bin.\n4. Follow FIFO on line during Process.\n5. Do not use next bin / Trolley material until running not consumed.";
+  const nonLub = "Do not use any lubrication if not specified in OPS / Process Sheet.";
+  const envTxt = "1. Do waste segregation.\n2. Switch off idle lights & machines.\n3. Ensure 3R Principal in daily activities.\n4. If there was any leakage, communicate to Sub Leader.";
+  const safeTxt = "1. Follow POS sheet in case of any Chemical.\n2. Follow MSDS/SDS in case of any emergency regarding chemical.\n3. Follow your PPE's.";
+
+  const pastProb = getAnswerByIndex(pastProblemsQuestions, 0);
+
+  // Find questions by field name
+  // Find questions by field name - UPDATED to handle underscore patterns
+  const findQuestionByField = (fieldName: string) => {
+    // Try multiple patterns to match the field
+    const patterns = [
+      fieldName,                           // reactionPlan
+      fieldName.toLowerCase(),             // reactionplan
+      fieldName.replace(/([A-Z])/g, '_$1').toLowerCase(), // reaction_plan
+      fieldName.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, ''), // reaction_plan (without leading underscore)
+      `_${fieldName.toLowerCase()}`,       // _reactionplan
+      `${fieldName.toLowerCase()}`,        // reactionplan
+      `step1_${fieldName.toLowerCase()}`,  // step1_reactionplan
+      `q_step1_${fieldName.toLowerCase().replace(/_/g, '_')}`, // q_step1_reaction_plan
+    ];
+
+    // Also try with the specific pattern for your IDs
+    // Your IDs are like: q_step1_reaction_plan, q_step1_part_name_qty
+    const specificPattern = `q_step1_${fieldName.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '')}`;
+    patterns.push(specificPattern);
+
+    const found = processQuestions.find(q => {
+      const qId = (q.id || q._id || "").toLowerCase();
+      return patterns.some(pattern => qId.includes(pattern.toLowerCase()));
+    });
+
+    if (found) {
+      console.log(`Found question for field "${fieldName}":`, found.id);
+    } else {
+      console.log(`No question found for field "${fieldName}" - tried patterns:`, patterns);
+    }
+
+    return found;
+  };
+
+  const getAnswerByField = (fieldName: string): string => {
+    const question = findQuestionByField(fieldName);
+    if (!question) return "";
+    const qId = question.id || question._id;
+    const answer = answers[qId];
+    if (answer === undefined || answer === null || answer === "") return "";
+    if (Array.isArray(answer)) return answer.join(", ");
+    if (typeof answer === "object") return JSON.stringify(answer);
+    return String(answer);
+  };
+
+  const columnFields = [
+    { field: 'importance', defaultLabel: 'Item Importance', width: '7%' },
+    { field: 'activity', defaultLabel: 'What / Activity', width: '10%' },
+    { field: 'method', defaultLabel: 'Method (How)', width: '8%' },
+    { field: 'frequency', defaultLabel: 'Frequency / When', width: '6%' },
+    { field: 'standard', defaultLabel: 'Standard (Spec./Criteria)', width: '10%' },
+    { field: 'responsibility', defaultLabel: 'Responsibility', width: '6%' },
+    { field: 'equipment', defaultLabel: 'Equipment / Measuring Eq.', width: '7%' },
+    { field: 'abnormalities', defaultLabel: 'Possible Abnormalities', width: '8%' },
+    { field: 'reactionPlan', defaultLabel: 'Reaction Plan', width: '6%' },
+    { field: 'partNameQty', defaultLabel: 'Part Name & QTY', width: '6%' },
+    { field: 'ppe', defaultLabel: 'PPEs required', width: '8%' },
+    { field: 'remarks', defaultLabel: 'Remarks', width: '6%' },
+  ];
+
+  const getColumnLabel = (field: string, defaultLabel: string): string => {
+    const question = findQuestionByField(field);
+    if (question?.text) return question.text;
+    if (question?.label) return question.label;
+    return defaultLabel;
+  };
+
+  const rowAnswers = columnFields.map(col => getAnswerByField(col.field));
+
+  const imgQ = illustrationQuestions.find((q: any) => q.id?.includes("image") || q.type === "file") || illustrationQuestions[0];
+  const imgVal = imgQ ? answers[imgQ.id || imgQ._id] : null;
+  const hasImg = imgVal && typeof imgVal === "string" && imgVal.startsWith("http");
+
+  const live = (v: string) => (v && v !== "—") ? "#15803d" : "#999";
+  const BORDER = "1px solid #999";
+  const BORDER2 = "2px solid #000";
+
+  const C: React.CSSProperties = { border: BORDER, padding: "2px 1.5px", fontSize: "7pt", verticalAlign: "top", wordBreak: "break-word", lineHeight: "3" };
+  const H: React.CSSProperties = { ...C, background: "#d9d9d9", fontWeight: 700, textAlign: "center", verticalAlign: "middle", fontSize: "6.5pt" };
+  const L: React.CSSProperties = { ...C, background: "#e8e8e8", fontWeight: 700, fontSize: "6.5pt", verticalAlign: "middle" };
+  const V: React.CSSProperties = { ...C, background: "#fff", verticalAlign: "middle" };
+  const T: React.CSSProperties = { width: "100%", borderCollapse: "collapse" as const, tableLayout: "fixed" as const, fontSize: "7pt" };
+
+  const LOGO = "/assets/Companylogo.png";
+  const STOP = "/assets/Safetyposter.png";
+  const NO_MOB = "/assets/dontusemobile.png";
+  const NO_RUN = "/assets/Dontrun.png";
+  const PPE_UNI = "/assets/PPEGuide.png";
+  const PPE_STA = "/assets/PPEGUIDE2.png";
+  const FIVE_S = "/assets/5S_Guidelines.png";
+  const QR = "/assets/Qrcode.png";
+  const SHIFT = "/assets/Shift_timing.png";
+
+  const procInstructions = [
+    "1. Do Exercise at Shift Start.",
+    "2. Do Not Use Fallen Electrical/Functional Parts.",
+    "3. Ensure Model / Variant Change.",
+    "4. Report in case of part / hardware fallen inside vehicle.",
+    "5. TQ Wrench Arrow Mark should be in correct direction.",
+    "6. Put Fallen Hardware in Red Bin for Zone In-Charge judgement.",
+    "7. Take approval from SH / HOD before changing process sequence.",
+    "8. Zone In-Charge is overall responsible to ensure work is as per OPS.",
+    "9. Contaminant parts should be covered properly.",
+  ];
+
+  const troubleRows = [
+    "Equipment Trouble / Machine Break Down",
+    "A Trouble You Are Responsible For",
+    "Empty Marshal Carrier",
+    "Stock Out / Material Shortage",
+    "A Trouble From Different Section",
+  ];
+
+  const PROC_ROWS = 5;
+  const ACOLS = 22;
+
+  const LinedBox = () => (
+    <table style={{ width: "100%", height: "100%", borderCollapse: "collapse" }}>
+      {Array.from({ length: 8 }).map((_, i) => (
+        <tr key={i}>
+          <td style={{ borderBottom: i < 13 ? "0.5px solid #ccc" : "none", height: 10 }}>&nbsp;</td>
+        </tr>
+      ))}
+    </table>
+  );
+
+  return (
+    <div
+      ref={opsRef}
+      id="ops-template-root"
+      style={{ fontFamily: "Arial, sans-serif", fontSize: "7pt", color: "#000", background: "#fff", padding: "2px" }}
+    >
+      {/* Retention Bar */}
+      <table style={{ ...T, border: BORDER2 }}>
+        <tbody>
+          <tr>
+            <td style={{ padding: "1px 6px", textAlign: "right", fontWeight: 700, fontSize: "6.5pt", border: BORDER2 }}>
+              Retention Period : 20 years after Model is discontinued
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* Top Header Table - COMPACT VERSION */}
+      <table style={{ ...T, border: BORDER2, borderTop: "none", }}>
+        <colgroup>
+          <col style={{ width: "5.5%" }} />
+          <col style={{ width: "3.5%" }} />
+          <col style={{ width: "5%" }} />
+          <col style={{ width: "3.5%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "7%" }} />
+          <col style={{ width: "4%" }} />
+          <col style={{ width: "11%" }} />
+          <col style={{ width: "9%" }} />
+          <col style={{ width: "6%" }} />
+          <col style={{ width: "6%" }} />
+          <col style={{ width: "6%" }} />
+          <col style={{ width: "4%" }} />
+          <col style={{ width: "4%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "9%" }} />
+        </colgroup>
+        <tbody>
+          <tr style={{ height: 7 }}> {/* Reduced from 14 */}
+            <td rowSpan={8} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 1, background: "#1d4ed8" }}> {/* Reduced padding */}
+              <img src={LOGO} alt="Logo" style={{ width: "100%", maxHeight: 60, objectFit: "contain" }} /> {/* Reduced from 80 */}
+            </td>
+            <td style={{ ...L, marginBottom: 0, lineHeight: "1.5" }}>{getQuestionText(headerQuestions, 0, "Dept. / Section")} :</td>
+            <td style={{ ...V, fontWeight: 700, color: live(dept), marginBottom: 0, lineHeight: "1.5" }}>{dept || "—"}</td>
+            <td style={L}>{getQuestionText(headerQuestions, 1, "Line / Zones")} :</td>
+            <td style={{ ...V, fontWeight: 700, color: live(lineZone) }}>{lineZone || "—"}</td>
+            <td colSpan={4} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 2 }}> {/* Reduced padding */}
+              <div style={{ fontSize: "11pt", fontWeight: 700, letterSpacing: 1 }}>Operation Standard</div> {/* Reduced from 14pt */}
+            </td>
+            {/* Prepared, Checked, Approved — plain empty cells (no ruled lines) */}
+            {[0, 1, 2].map(i => (
+              <td key={i} rowSpan={7} style={{ border: BORDER2, verticalAlign: "top", padding: 0 }} />
+            ))}
+            {/* No., DD/MM/YY, Issuance/Revision details — keep ruled lines */}
+            {[3, 4, 5].map(i => (
+              <td key={i} rowSpan={7} style={{ border: BORDER2, verticalAlign: "top", padding: 0 }}>
+                <LinedBox />
+              </td>
+            ))}
+            <td rowSpan={8} style={{ border: BORDER2, verticalAlign: "top", padding: "2px 3px", fontSize: "5.5pt" }}>
+              {/* Format No. - Use actual question text from form */}
+              <div style={{ fontWeight: 700, color: "#c00" }}>
+                {getQuestionText(headerQuestions, 4, "Format No.")} :
+              </div>
+              <div style={{ fontWeight: 700, fontSize: "7pt", marginBottom: 2, color: live(formatNo) }}>{formatNo || "—"}</div>
+
+              <div style={{ borderTop: "0.5px solid #999", margin: "2px 0" }} />
+
+              {/* Control No. - Use actual question text from form */}
+              <div style={{ fontWeight: 700, color: "#c00" }}>
+                {getQuestionText(headerQuestions, 5, "Control No.")} :
+              </div>
+              <div style={{ fontWeight: 700, fontSize: "7pt", marginBottom: 2, color: live(controlNo) }}>{controlNo || "—"}</div>
+
+              <div style={{ borderTop: "0.5px solid #999", margin: "2px 0" }} />
+
+              {/* QR Code - This might be a static label or from form */}
+              <div style={{ fontWeight: 700, marginBottom: 1 }}>
+                {getQuestionText(instructionQuestions, 6, "QR Code")} :
+              </div>
+              <img src={QR} alt="QR" style={{ width: 30, height: 20, objectFit: "contain" }} />
+            </td>
+          </tr>
+
+          <tr style={{ height: 7 }}> {/* Reduced from 13 */}
+            <td style={L}>{getQuestionText(headerQuestions, 2, "Model")} :</td>
+            <td style={{ ...V, fontWeight: 700, color: live(model) }}>{model || "—"}</td>
+            <td style={L}>{getQuestionText(headerQuestions, 3, "Process / Station")} :</td>
+            <td style={{ ...V, fontWeight: 700, color: live(station) }}>{station || "—"}</td>
+            <td colSpan={4} style={{ ...H, border: BORDER2, fontSize: "5.5pt" }}> {/* Reduced from 6.5pt */}
+              Your Work When Trouble Stopped The Production Line
+            </td>
+          </tr>
+
+          <tr style={{ height: 7 }}> {/* Reduced from 13 */}
+            <td rowSpan={6} colSpan={2} style={{ border: BORDER2, verticalAlign: "top", fontSize: "5pt", padding: "2px 3px" }}> {/* Reduced padding */}
+              <div style={{ fontWeight: 700, marginBottom: 1 }}>REJECTION HANDLING :-</div>
+              <div style={{ marginBottom: 2 }}>Clearly Identify Rejected / NG parts.</div>
+              <div>Keep them properly with proper identification at defined Location.</div>
+            </td>
+            <td rowSpan={6} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", fontWeight: 700, fontSize: "5pt", padding: 1 }}> {/* Reduced padding */}
+              Measuring<br />Instruments<br />or Gauges
+            </td>
+            <td rowSpan={6} style={{ border: BORDER2, verticalAlign: "top", fontSize: "5pt", padding: 0 }}>
+              {[
+                "Always use Calibrated Measuring Instruments / Gauges.",
+                "Ensure Zero setting before use.",
+                "Do Not Use Unidentified Measuring Tool / Gauges.",
+                "In case of any abnormality, inform Line leader and Quality Engineer.",
+              ].map((txt, i, arr) => (
+                <div key={i} style={{ padding: "1px 1px", borderBottom: i < arr.length - 1 ? "0.5px solid #ccc" : "none" }}>{txt}</div> // Reduced padding
+              ))}
+            </td>
+            <td rowSpan={6} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 2 }}> {/* Reduced padding */}
+              <img src={STOP} alt="Stop Call Wait" style={{ maxWidth: "100%", height: 100, objectFit: "contain" }} /> {/* Reduced from 180 */}
+            </td>
+            <td style={{ ...H, }}>S. No.</td>
+            <td style={H}>Trouble</td>
+            <td style={H}>Your task</td>
+          </tr>
+
+          <tr style={{ height: 7 }}> {/* Reduced from 12 */}
+            <td style={{ ...C, textAlign: "center" }}>1</td>
+            <td style={{ ...C, fontSize: "5.5pt" }}>{troubleRows[0]}</td> {/* Reduced from 6pt */}
+            <td rowSpan={5} style={{ fontSize: "5.5pt", textAlign: "center", verticalAlign: "middle", lineHeight: "2" }}> {/* Reduced from 5.5pt */}
+              Stop The Line<br />Inform the Zone Leader<br />Write on card if mentioned in OPS
+            </td>
+          </tr>
+          <tr style={{ height: 7 }}>
+            <td style={{ ...C, textAlign: "center" }}>2</td>
+            <td style={{ ...C, fontSize: "5.5pt" }}>{troubleRows[1]}</td>
+          </tr>
+          <tr style={{ height: 7 }}>
+            <td style={{ ...C, textAlign: "center" }}>3</td>
+            <td style={{ ...C, fontSize: "5.5pt" }}>{troubleRows[2]}</td>
+          </tr>
+          <tr style={{ height: 7 }}>
+            <td style={{ ...C, textAlign: "center" }}>4</td>
+            <td style={{ ...C, fontSize: "5.5pt" }}>{troubleRows[3]}</td>
+          </tr>
+          <tr style={{ height: 7 }}>
+            <td style={{ ...C, textAlign: "center" }}>5</td>
+            <td style={{ ...C, fontSize: "5.5pt" }}>{troubleRows[4]}</td>
+            <td style={{ ...H, border: BORDER2, fontSize: "5pt" }}>Prepared</td>
+            <td style={{ ...H, fontSize: "5pt" }}>Checked</td>
+            <td style={{ ...H, fontSize: "5pt" }}>Approved</td>
+            <td style={{ ...H, fontSize: "5pt" }}>No.</td>
+            <td style={{ ...H, fontSize: "5pt" }}>DD/MM/YY</td>
+            <td style={{ ...H, border: BORDER2, fontSize: "5pt" }}>Issuance / Revision details</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* General Instructions Banner - COMPACT */}
+      <table style={{ ...T, border: BORDER2, borderTop: "none", }}>
+        <tbody>
+          <tr>
+            <td style={{ padding: "1px 6px", fontWeight: 700, fontSize: "8pt", textAlign: "center", background: "#d9d9d9" }}> {/* Reduced padding and font */}
+              General Instructions
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* General Instructions Body - COMPACT */}
+      <table style={{ ...T, border: BORDER2, borderTop: "none", }}>
+        <colgroup>
+          <col style={{ width: "10%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "9%" }} />
+          <col style={{ width: "10%" }} />
+          <col style={{ width: "15%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "13%" }} />
+          <col style={{ width: "12%" }} />
+        </colgroup>
+        <tbody>
+          <tr>
+            <td style={H}>FIFO System</td>
+            <td style={H}>Non Lubrication Rule</td>
+            <td style={{ ...H, fontSize: "5pt" }}>Always wear PPEs / Proper uniform</td> {/* Reduced from 5.5pt */}
+            <td style={{ ...H, fontSize: "5pt" }}>Wear PPEs as per<br />station requirements</td>
+            <td style={H}>Shift Timings</td>
+            <td style={H}>Environmental Issues</td>
+            <td style={H}>Safety Issues</td>
+            <td style={H}>5S Guidelines</td>
+            <td style={H}>Process Instructions</td>
+          </tr>
+          <tr>
+            <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}> {/* Reduced font */}
+              <div style={{ fontWeight: 700, marginBottom: 1 }}>FIFO System</div> {/* Reduced margin */}
+              {fifo.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "2.5" }}>{l}</div>)} {/* Reduced margin */}
+            </td>
+            <td style={{ ...C, verticalAlign: "top", padding: 0 }}>
+              <div style={{ padding: "2px 3px", borderBottom: "0.5px solid #ccc", fontSize: "5pt" }}>{nonLub}</div> {/* Reduced padding */}
+              <div style={{ display: "flex", borderBottom: "0.5px solid #ccc" }}>
+                <div style={{ flex: 1, borderRight: "0.5px solid #ccc", padding: "1px 2px", textAlign: "center", fontWeight: 700, fontSize: "4.5pt", background: "#d9d9d9" }}>No mobile on shopfloor</div>
+                <div style={{ flex: 1, padding: "1px 2px", textAlign: "center", fontWeight: 700, fontSize: "4.5pt", background: "#d9d9d9" }}>Do not run on shopfloor</div>
+              </div>
+              <div style={{ display: "flex" }}>
+                <div style={{ flex: 1, borderRight: "0.5px solid #ccc", padding: 2, textAlign: "center" }}> {/* Reduced padding */}
+                  <img src={NO_MOB} alt="No Mobile" style={{ width: 50, height: 70, objectFit: "contain" }} /> {/* Reduced from 72x72 */}
+                </div>
+                <div style={{ flex: 1, padding: 2, textAlign: "center" }}>
+                  <img src={NO_RUN} alt="No Run" style={{ width: 50, height: 70, objectFit: "contain" }} />
+                </div>
+              </div>
+            </td>
+            <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 2 }}> {/* Reduced padding */}
+              <img src={PPE_UNI} alt="Full PPE Uniform" style={{ width: "100%", height: 140, objectFit: "contain" }} /> {/* Reduced from 190 */}
+            </td>
+            <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 2 }}>
+              <img src={PPE_STA} alt="Station PPE" style={{ width: "100%", maxHeight: 140, objectFit: "contain" }} /> {/* Reduced from 190 */}
+            </td>
+            <td style={{ ...C, textAlign: "center", verticalAlign: "top", padding: 2, marginTop: 1 }}> {/* Reduced padding */}
+              <img src={SHIFT} alt="Shift Timings" style={{ width: "100%", height: 190, objectFit: "contain" }} /> {/* Reduced from 190 */}
+            </td>
+            <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
+              <div style={{ fontWeight: 700, color: "#166534", marginBottom: 2 }}>Environmental Issues</div> {/* Reduced margin */}
+              {envTxt.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 1 }}>{l}</div>)} {/* Reduced margin */}
+            </td>
+            <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
+              <div style={{ fontWeight: 700, color: "#991b1b", marginBottom: 2 }}>Safety Issues</div>
+              {safeTxt.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "2.5" }}>{l}</div>)}
+            </td>
+            <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 2 }}>
+              <img src={FIVE_S} alt="5S Guidelines" style={{ width: "100%", maxHeight: 100, objectFit: "fill" }} /> {/* Reduced from 140 */}
+            </td>
+            <td style={{ ...C, verticalAlign: "top", fontSize: "5.5pt" }}>
+              {procInstructions.map((l, i) => (
+                <div key={i} style={{
+                  marginBottom: "0px",
+                  lineHeight: "2"  // THIS is the fix for wrapped line spacing
+                }}>
+                  {l}
+                </div>
+              ))} {/* Reduced margin */}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* Process Steps Table */}
+      <table style={{ ...T, border: BORDER2, borderTop: "none" }}>
+        <colgroup>
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "2.5%" }} />
+          {columnFields.map((col) => <col key={col.field} style={{ width: col.width }} />)}
+        </colgroup>
+        <thead>
+          <tr>
+            <th style={{ ...H, background: "#ffff00", color: "#000" }}>
+              {getQuestionText(illustrationQuestions, 0, "Illustrations &\nProcess Details")}
+            </th>
+            <th style={H}>SN</th>
+            {columnFields.map((col) => (
+              <th key={col.field} style={{ ...H, whiteSpace: "pre-line" }}>
+                {getColumnLabel(col.field, col.defaultLabel)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: PROC_ROWS }).map((_, rowIdx) => (
+            <tr key={rowIdx}>
+              <td style={{ ...C, background: "#ffff00", textAlign: "center", verticalAlign: "middle", padding: 2, minHeight: 50, height: 50 }}>
+                {hasImg && rowIdx === 0
+                  ? <img src={imgVal} alt="Illustration" style={{ maxWidth: "90%", maxHeight: 55, objectFit: "contain" }} />
+                  : <span style={{ fontSize: "5.5pt", color: "#aaa" }}>&nbsp;</span>
+                }
+              </td>
+              <td style={{ ...C, textAlign: "center", fontWeight: 700, fontSize: "9pt", verticalAlign: "middle" }}>{rowIdx + 1}</td>
+              {columnFields.map((col, colIdx) => {
+                const cellVal = rowIdx === 0 ? rowAnswers[colIdx] : "";
+                return (
+                  <td key={col.field} style={{ ...C, color: cellVal ? "#000" : "transparent", height: 50, minHeight: 50 }}>
+                    {cellVal || "\u00A0"}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* Abnormality + Past Problems */}
+      <table style={{ ...T, border: BORDER2, borderTop: "none" }}>
+        <colgroup>
+          <col style={{ width: "14%" }} />
+          <col style={{ width: "86%" }} />
+        </colgroup>
+        <tbody>
+          <tr>
+            <td rowSpan={2} style={{ ...C, border: BORDER2, verticalAlign: "top", fontSize: "5.5pt", padding: "4px 5px" }}>
+              <div style={{ fontWeight: 700, marginBottom: 1 }}>{getQuestionText(pastProblemsQuestions, 0, "Abnormality Handling Route")} :</div>
+            </td>
+            <td style={{ ...H, textAlign: "center", fontSize: "7pt", height: 26 }}>
+              {getQuestionText(pastProblemsQuestions, 1, "Past Problem Details")}
+            </td>
+          </tr>
+          <tr>
+            <td style={{ ...C, minHeight: 55, height: 55, verticalAlign: "top", fontSize: "7pt", color: pastProb ? "#000" : "#bbb" }}>
+              {pastProb || "—"}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+
+      {/* Associate Name & Sign */}
+      <table style={{ ...T, border: BORDER2, borderTop: "none" }}>
+        <colgroup>
+          <col style={{ width: "5%" }} />
+          {Array.from({ length: ACOLS }).map((_, i) => (
+            <col key={i} style={{ width: `${(95 / ACOLS).toFixed(2)}%` }} />
+          ))}
+        </colgroup>
+        <tbody>
+          <tr>
+            <td style={{ ...L, textAlign: "center", fontSize: "5.5pt", border: BORDER2, verticalAlign: "middle" }}>
+              {associateQuestions[2]?.text || associateQuestions[2]?.label || "Associate Name &\nEmp. Code"}
+            </td>
+            {Array.from({ length: ACOLS }).map((_, i) => (
+              <td key={i} style={{ border: BORDER, height: 22, textAlign: "center", fontSize: "7pt" }}>
+
+              </td>
+            ))}
+          </tr>
+          <tr>
+            <td style={{ ...L, textAlign: "center", fontSize: "5.5pt", border: BORDER2, verticalAlign: "middle" }}>
+              {associateQuestions[3]?.text || associateQuestions[3]?.label || "Sign &\nDate"}
+            </td>
+            {Array.from({ length: ACOLS }).map((_, i) => (
+              <td key={i} style={{ border: BORDER, height: 26, textAlign: "center", fontSize: "7pt" }}>
+              </td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
+
+      {/* Page Number */}
+      <table style={{ ...T, border: BORDER2, borderTop: "none" }}>
+        <colgroup>
+          <col style={{ width: "82%" }} />
+          <col style={{ width: "18%" }} />
+        </colgroup>
+        <tbody>
+          <tr>
+            <td style={{ ...C }}>&nbsp;</td>
+            <td style={{ ...C, fontWeight: 700, fontSize: "8pt", textAlign: "center" }}>Page Number : XX / XX</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main PreviewForm Component
+// ─────────────────────────────────────────────────────────────────────────────
 export default function PreviewForm({
   questions: propQuestions,
   onSubmit: propOnSubmit,
@@ -79,27 +616,18 @@ export default function PreviewForm({
   formSessionId,
   chassisNumbers: propChassisNumbers,
   chassisTenantAssignments: propChassisTenantAssignments,
+  opsSectionMapping,
 }: PreviewFormProps) {
   const { id: formId } = useParams<{ id: string }>();
   const { tenant, user } = useAuth();
-
-  // Debug log to check auth state
-  useEffect(() => {
-    console.log("[PREVIEW FORM] Auth state changed - user:", user);
-    console.log("[PREVIEW FORM] Auth state changed - tenant:", tenant?.slug);
-  }, [user, tenant]);
   const tenantSlug = tenant?.slug;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const inviteId = searchParams.get("inviteId");
   const [form, setForm] = useState<Form | null>(null);
   const isMounted = useRef(true);
-
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const opsContainerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { return () => { isMounted.current = false; }; }, []);
 
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [branchingRules, setBranchingRules] = useState<any[]>([]);
@@ -107,168 +635,87 @@ export default function PreviewForm({
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [location, setLocation] = useState<{
-    latitude: number;
-    longitude: number;
-    accuracy: number;
-  } | null>(null);
+  const [location, setLocation] = useState<{ latitude: number; longitude: number; accuracy: number } | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [locationConfirmed, setLocationConfirmed] = useState(true);
+  const [locationConfirmed] = useState(true);
+  const [locationDisplayName, setLocationDisplayName] = useState<string | null>(null);
   const [reverseGeocoding, setReverseGeocoding] = useState(false);
-  const [locationDisplayName, setLocationDisplayName] = useState<string | null>(
-    null,
-  );
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
   const [navigationHistory, setNavigationHistory] = useState<number[]>([0]);
-  const [validationErrors, setValidationErrors] = useState<Set<string>>(
-    new Set(),
-  );
-  const [branchingAlert, setBranchingAlert] = useState<string | null>(null);
-  const [parentSectionIndex, setParentSectionIndex] = useState<number | null>(
-    null,
-  );
-  const [isTransitioning, setIsTransitioning] = useState(false);
-  const [previousQuestionId, setPreviousQuestionId] = useState<string | null>(
-    null,
-  );
+  const [validationErrors, setValidationErrors] = useState<Set<string>>(new Set());
+  const [parentSectionIndex, setParentSectionIndex] = useState<number | null>(null);
   const [sectionStartTime, setSectionStartTime] = useState<Date>(new Date());
-  const [sectionQuestionCount, setSectionQuestionCount] = useState(0);
-  const [visitedSectionIndices, setVisitedSectionIndices] = useState<
-    Set<number>
-  >(new Set([0]));
-  const [sectionNavigationHistory, setSectionNavigationHistory] = useState<
-    number[]
-  >([0]);
-
-  const allFormQuestions = useMemo(() => {
-    const getAllQuestions = (questions: any[]): any[] => {
-      let all: any[] = [];
-      (questions || []).forEach((q) => {
-        all.push(q);
-        if (q.followUpQuestions && q.followUpQuestions.length > 0) {
-          all = all.concat(getAllQuestions(q.followUpQuestions));
-        }
-      });
-      return all;
-    };
-
-    const allQs: any[] = [];
-    form?.sections?.forEach((s: any) => {
-      allQs.push(...getAllQuestions(s.questions));
-      if (s.subsections) {
-        s.subsections.forEach((ss: any) => {
-          allQs.push(...getAllQuestions(ss.questions));
-        });
-      }
-    });
-
-    if (form?.followUpQuestions) {
-      allQs.push(...getAllQuestions(form.followUpQuestions));
-    }
-    return allQs;
-  }, [form]);
-
+  const [sectionNavigationHistory, setSectionNavigationHistory] = useState<number[]>([0]);
+  const [visitedSectionIndices, setVisitedSectionIndices] = useState<Set<number>>(new Set([0]));
   const [sectionSubmitting, setSectionSubmitting] = useState(false);
-  const [suggestedAnswers, setSuggestedAnswers] = useState<Record<
-    string,
-    any
-  > | null>(null);
-  const [fetchingSuggestionsForId, setFetchingSuggestionsForId] = useState<
-    string | null
-  >(null);
-  const [lastSuggestionSource, setLastSuggestionSource] = useState<
-    string | null
-  >(null);
-  const [previousUniqueAnswers, setPreviousUniqueAnswers] = useState<any[]>([]);
-  const [selectedRank, setSelectedRank] = useState<number | null>(null);
-  const [triggeringQuestionId, setTriggeringQuestionId] = useState<string | null>(null);
-  const [globalRankAnswers, setGlobalRankAnswers] = useState<Record<string, any> | null>(null);
-  const [globalRank, setGlobalRank] = useState<number | null>(null);
-  const [previousAnswers, setPreviousAnswers] = useState<string[]>([]);
-  const [showMobileAssistant, setShowMobileAssistant] = useState(false);
   const { darkMode, toggleDarkMode } = useTheme();
   const { showSuccess, showConfirm, showError: showNotifyError } = useNotification();
   const { getOrderedVisibleQuestions } = useQuestionLogic();
 
-  // Normalize chassis numbers for display
   const chassisNumbers = useMemo(() => {
-    const rawChassis = propChassisNumbers || form?.chassisNumbers || [];
-    return rawChassis.map((cn: any) =>
-      typeof cn === 'string' ? { chassisNumber: cn, partDescription: '' } : cn
-    );
+    const raw = propChassisNumbers || form?.chassisNumbers || [];
+    return raw.map((cn: any) => typeof cn === "string" ? { chassisNumber: cn, partDescription: "" } : cn);
   }, [propChassisNumbers, form?.chassisNumbers]);
 
-  const chassisTenantAssignments = useMemo(() => {
-    return propChassisTenantAssignments || form?.chassisTenantAssignments || {};
-  }, [propChassisTenantAssignments, form?.chassisTenantAssignments]);
+  const chassisTenantAssignments = useMemo(() =>
+    propChassisTenantAssignments || form?.chassisTenantAssignments || {}
+    , [propChassisTenantAssignments, form?.chassisTenantAssignments]);
 
+  const allFormQuestions = useMemo(() => {
+    const flatten = (qs: any[]): any[] => {
+      let all: any[] = [];
+      (qs || []).forEach((q) => { all.push(q); if (q.followUpQuestions?.length) all = all.concat(flatten(q.followUpQuestions)); });
+      return all;
+    };
+    const allQs: any[] = [];
+    form?.sections?.forEach((s: any) => {
+      allQs.push(...flatten(s.questions));
+      s.subsections?.forEach((ss: any) => { allQs.push(...flatten(ss.questions)); });
+    });
+    if (form?.followUpQuestions) allQs.push(...flatten(form.followUpQuestions));
+    return allQs;
+  }, [form]);
+
+  // ── Print OPS template as A3 landscape PDF ──
+  const handlePrintOPS = useCallback(() => {
+    const el = opsContainerRef.current;
+    if (!el) return;
+    const pw = window.open("", "_blank");
+    if (!pw) return;
+    pw.document.write(`<!DOCTYPE html><html><head>
+      <style>
+        @page { size: A3 landscape; margin: 3mm; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: Arial, sans-serif; font-size: 7pt; background: #fff; color: #000; }
+        .no-print { display: none !important; }
+        img { max-width: 100%; }
+      </style>
+    </head><body>${el.innerHTML}</body></html>`);
+    pw.document.close(); pw.focus();
+    setTimeout(() => { pw.print(); pw.close(); }, 500);
+  }, []);
+
+  // ── Answer validation ──
   const isValidFileInput = (value: any): boolean => {
     if (!value) return false;
     if (typeof value === "string") {
-      try {
-        const parsed = JSON.parse(value);
-        if (parsed && parsed.url && parsed.location) {
-          return !!parsed.url;
-        }
-      } catch {}
+      try { const p = JSON.parse(value); if (p?.url && p?.location) return !!p.url; } catch { }
       return value.trim().length > 0;
     }
     return false;
   };
 
   const isAnswerProvided = (q: any, answer: any) => {
-    if (q.type === "file") {
-      return isValidFileInput(answer);
-    }
-    if (q.type === "productNPSTGWBuckets") {
-      if (!answer || typeof answer !== "object" || !answer.level1) return false;
-      const l2Opts = getLevel2Options(answer.level1);
-      if (l2Opts.length > 0 && !answer.level2) return false;
-      if (answer.level2) {
-        const l3Opts = getLevel3Options(answer.level1, answer.level2);
-        if (l3Opts.length > 0 && !answer.level3) return false;
-      }
-      if (answer.level3) {
-        const l4Opts = getLevel4Options(answer.level1, answer.level2, answer.level3);
-        if (l4Opts.length > 0 && !answer.level4) return false;
-      }
-      if (answer.level4) {
-        const l5Opts = getLevel5Options(answer.level1, answer.level2, answer.level3, answer.level4);
-        if (l5Opts.length > 0 && !answer.level5) return false;
-      }
-      if (answer.level5) {
-        const l6Opts = getLevel6Options(answer.level1, answer.level2, answer.level3, answer.level4, answer.level5);
-        if (l6Opts.length > 0 && !answer.level6) return false;
-      }
-      return true;
-    }
-    if (q.type === "chassis-with-zone" || q.type === "chassis-without-zone") {
-      if (!answer || typeof answer !== "object") return false;
-      const { chassisNumber, status, zone, defectCategory, defects } = answer;
-      if (!chassisNumber?.trim() || !status) return false;
-      if (status === 'Rejected' || status === 'Rework') {
-        if (q.type === "chassis-with-zone") {
-          if (!zone || (Array.isArray(zone) && zone.length === 0)) return false;
-        }
-        const hasCategory = Array.isArray(defectCategory) ? defectCategory.length > 0 : !!defectCategory;
-        if (!hasCategory || !Array.isArray(defects) || defects.length === 0) return false;
-      }
-      return true;
-    }
-    if (q.type === "checkbox") {
-      return Array.isArray(answer) && answer.length > 0;
-    }
+    if (q.type === "file") return isValidFileInput(answer);
+    if (q.type === "checkbox") return Array.isArray(answer) && answer.length > 0;
     if (q.type === "radio-grid" || q.type === "checkbox-grid" || q.type === "grid") {
       if (!answer || typeof answer !== "object") return false;
       const rows = q.gridOptions?.rows || q.rows || [];
-      if (rows.length === 0) return true;
+      if (!rows.length) return true;
       return rows.every((row: any) => {
         const rowId = typeof row === "string" ? row : row.id || row;
-        const rowAnswer = answer[rowId];
-        if (q.type === "checkbox-grid") {
-          return Array.isArray(rowAnswer) && rowAnswer.length > 0;
-        }
-        return rowAnswer !== undefined && rowAnswer !== null && String(rowAnswer).trim() !== "";
+        const ra = answer[rowId];
+        return q.type === "checkbox-grid" ? (Array.isArray(ra) && ra.length > 0) : (ra !== undefined && ra !== null && String(ra).trim() !== "");
       });
     }
     return answer !== undefined && answer !== null && String(answer).trim() !== "";
@@ -277,2107 +724,707 @@ export default function PreviewForm({
   const validateSections = (sectionsToValidate: any[]) => {
     let isValid = true;
     const newErrors = new Set<string>();
-
     sectionsToValidate.forEach((section) => {
       if (!section) return;
-      const allQuestions = [...section.questions];
-      const subSections = form?.sections.filter(
-          (s) => s.isSubsection && s.parentSectionId === section.id,
-        ) || [];
-
-      subSections.forEach((ss) => {
-        allQuestions.push(...ss.questions);
-      });
-
-      const visibleQuestions = getOrderedVisibleQuestions(allQuestions, answers);
-
-      visibleQuestions.forEach((q) => {
+      const allQs = [...section.questions];
+      const subs = form?.sections.filter((s) => s.isSubsection && s.parentSectionId === section.id) || [];
+      subs.forEach((ss) => { allQs.push(...ss.questions); });
+      const visible = getOrderedVisibleQuestions(allQs, answers);
+      visible.forEach((q) => {
         if (!q.required) return;
         const qId = q.id || (q as any)._id;
         if (!qId) return;
-        const answer = answers[qId];
-        const provided = isAnswerProvided(q, answer);
-        if (!provided) {
-          isValid = false;
-          newErrors.add(qId);
-        }
+        if (!isAnswerProvided(q, answers[qId])) { isValid = false; newErrors.add(qId); }
       });
     });
-
     setValidationErrors(newErrors);
-
     if (!isValid) {
       showNotifyError("Please fill in all required questions");
-      setTimeout(() => {
-        const firstError = document.querySelector('[data-error="true"]');
-        if (firstError) {
-          firstError.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-      }, 100);
+      setTimeout(() => { document.querySelector('[data-error="true"]')?.scrollIntoView({ behavior: "smooth", block: "center" }); }, 100);
     }
-
     return isValid;
   };
 
-  const clearSavedData = () => {
-    console.log("[PreviewForm] clearSavedData called (no-op in preview)");
-  };
+  // ── Flatten sections helper ──
+  const flattenSections = (sections: any[]) =>
+    sections.map((section: any) => {
+      const allQs: any[] = [];
+      const flatten = (qs: any[], parentId?: string) => {
+        (qs || []).forEach((q: any) => {
+          const { followUpQuestions, ...main } = q;
+          if (parentId && !main.showWhen) main.showWhen = { questionId: parentId, value: main.showWhen?.value || "" };
+          allQs.push(main);
+          if (followUpQuestions?.length) flatten(followUpQuestions, q.id);
+        });
+      };
+      flatten(section.questions || []);
+      return { ...section, id: section.id || section._id, nextSectionId: section.nextSectionId || section._nextSectionId, questions: allQs };
+    });
+  useEffect(() => {
+    if (form && form.sections) {
+      console.log("=== FORM STRUCTURE DEBUG ===");
+      console.log("Form Title:", form.title);
+      console.log("Number of sections:", form.sections.length);
+      form.sections.forEach((section, idx) => {
+        console.log(`Section ${idx + 1}:`, {
+          id: section.id || section._id,
+          title: section.title,
+          isSubsection: section.isSubsection,
+          parentSectionId: section.parentSectionId,
+          questionCount: section.questions?.length || 0
+        });
+        if (section.questions) {
+          section.questions.forEach((q, qIdx) => {
+            console.log(`  Question ${qIdx + 1}:`, {
+              id: q.id || q._id,
+              text: q.text || q.label,
+              type: q.type
+            });
+          });
+        }
+      });
+      console.log("opsSectionMapping received:", opsSectionMapping);
+    }
+  }, [form, opsSectionMapping]);
+  const effectiveOpsMapping = useMemo(() => {
+    if (!form?.sections) return undefined;
 
-  // Fetch form data
+    console.log("=== Creating mapping for sections ===");
+    console.log("Available sections:", form.sections.map(s => ({
+      id: s.id,
+      title: s.title,
+      questionCount: s.questions?.length
+    })));
+
+    const mapping = {
+      // Header section - contains Dept, Line, Model, Station
+      headerSectionId: "sec_basic_doc_control",
+
+      // General Instructions section - ALSO use sec_basic_doc_control since it has Format No, Control No
+      // Or create a separate section for instructions
+      generalInstructionsSectionId: "sec_basic_doc_control",  // ← CHANGE THIS
+
+      // Past Problems - from sec_abnormality
+      pastProblemsSectionId: "sec_abnormality",
+
+      // Process Steps - from sec_process_steps
+      processStepsSectionId: "sec_process_steps",
+
+      // Associate Sign - you might need to add this to your form or use a fallback
+      associateSignSectionId: form.sections.find(s => s.title?.includes("Associate"))?.id || "sec_abnormality",
+
+      // Illustrations - from sec_illustrations
+      illustrationsSectionId: "sec_illustrations",
+    };
+
+    console.log("Final mapping:", mapping);
+
+    // Log what questions are found in each section
+    const headerQs = form.sections.find(s => s.id === mapping.headerSectionId)?.questions || [];
+    const instructionQs = form.sections.find(s => s.id === mapping.generalInstructionsSectionId)?.questions || [];
+    console.log("Header questions:", headerQs.map(q => ({ id: q.id, text: q.text })));
+    console.log("Instruction questions:", instructionQs.map(q => ({ id: q.id, text: q.text })));
+
+    return mapping;
+  }, [form]);
+
+  // If no mapping could be created, show all questions in a simple debug view
+  const showDebugView = !effectiveOpsMapping ||
+    (!effectiveOpsMapping.headerSectionId &&
+      !effectiveOpsMapping.generalInstructionsSectionId &&
+      !effectiveOpsMapping.processStepsSectionId);
+
+
+  // ── Fetch form ──
   useEffect(() => {
     const fetchForm = async () => {
-      if (propQuestions && propQuestions.length > 0) {
-        const mockForm: Form = {
-          id: formId || "preview",
-          title: "Preview Form",
-          description: "This is a preview of your form",
-          sections: [],
-          viewType: viewType,
-          chassisNumbers: propChassisNumbers,
-          chassisTenantAssignments: propChassisTenantAssignments,
-        };
-
+      if (propQuestions?.length) {
         const firstQ = propQuestions[0];
-        if (firstQ.sections && firstQ.sections.length > 0) {
-          mockForm.title = firstQ.title;
-          mockForm.description = firstQ.description;
-          mockForm.sections = firstQ.sections;
+        const mockForm: Form = {
+          id: formId || "preview", title: "Preview Form", description: "",
+          sections: [], viewType, chassisNumbers: propChassisNumbers, chassisTenantAssignments: propChassisTenantAssignments,
+        };
+        if ((firstQ as any).sections?.length) {
+          mockForm.title = (firstQ as any).title;
+          mockForm.description = (firstQ as any).description;
+          mockForm.sections = (firstQ as any).sections;
         } else {
-          mockForm.sections = [
-            {
-              id: "default",
-              title: firstQ.title,
-              description: firstQ.description,
-              questions: propQuestions,
-            },
-          ];
+          mockForm.sections = [{ id: "default", title: (firstQ as any).title, description: (firstQ as any).description, questions: propQuestions }];
         }
-
-        mockForm.sections = mockForm.sections.map((section: any) => {
-          const allQuestions: any[] = [];
-          const flattenQuestions = (questions: any[], parentId?: string) => {
-            (questions || []).forEach((question: any) => {
-              const { followUpQuestions, ...mainQuestion } = question;
-              if (parentId && !mainQuestion.showWhen) {
-                mainQuestion.showWhen = {
-                  questionId: parentId,
-                  value: mainQuestion.showWhen?.value || "",
-                };
-              }
-              allQuestions.push(mainQuestion);
-              if (followUpQuestions && followUpQuestions.length > 0) {
-                flattenQuestions(followUpQuestions, question.id);
-              }
-            });
-          };
-          flattenQuestions(section.questions || []);
-          return {
-            ...section,
-            id: section.id || section._id,
-            questions: allQuestions,
-          };
-        });
-
-        setForm(mockForm);
-        setBranchingRules(propBranchingRules);
-        setLoading(false);
+        mockForm.sections = flattenSections(mockForm.sections);
+        setForm(mockForm); setBranchingRules(propBranchingRules); setLoading(false);
         return;
       }
-
       if (!formId) return;
-
       try {
         const response = await apiClient.getPublicForm(formId, tenantSlug, inviteId);
         const fetchedForm = response.form;
-
-        if (fetchedForm && (!fetchedForm.sections || fetchedForm.sections.length === 0)) {
-          fetchedForm.sections = [
-            {
-              id: "default",
-              title: fetchedForm.title,
-              description: fetchedForm.description,
-              questions: fetchedForm.followUpQuestions || [],
-            },
-          ];
+        if (fetchedForm && (!fetchedForm.sections?.length)) {
+          fetchedForm.sections = [{ id: "default", title: fetchedForm.title, description: fetchedForm.description, questions: fetchedForm.followUpQuestions || [] }];
         }
-
-        if (fetchedForm && fetchedForm.sections) {
-          fetchedForm.sections = fetchedForm.sections.map((section: any) => {
-            const allQuestions: any[] = [];
-            const flattenQuestions = (questions: any[], parentId?: string) => {
-              (questions || []).forEach((question: any) => {
-                const { followUpQuestions, ...mainQuestion } = question;
-                if (parentId && !mainQuestion.showWhen) {
-                  mainQuestion.showWhen = {
-                    questionId: parentId,
-                    value: mainQuestion.showWhen?.value || "",
-                  };
-                }
-                allQuestions.push(mainQuestion);
-                if (followUpQuestions && followUpQuestions.length > 0) {
-                  flattenQuestions(followUpQuestions, question.id);
-                }
-              });
-            };
-            flattenQuestions(section.questions || []);
-            return {
-              ...section,
-              id: section.id || section._id,
-              nextSectionId: section.nextSectionId || (section as any)._nextSectionId,
-              questions: allQuestions,
-            };
-          });
-        }
-
+        if (fetchedForm?.sections) fetchedForm.sections = flattenSections(fetchedForm.sections);
         setForm(fetchedForm);
-
         try {
-          const rulesResponse = await apiClient.getSectionBranchingPublic(formId, tenantSlug);
-          if (rulesResponse && rulesResponse.sectionBranching) {
-            setBranchingRules(rulesResponse.sectionBranching);
-          }
-        } catch (rulesErr) {
-          console.warn("[PreviewForm] Failed to fetch branching rules:", rulesErr);
-        }
+          const r = await apiClient.getSectionBranchingPublic(formId, tenantSlug);
+          if (r?.sectionBranching) setBranchingRules(r.sectionBranching);
+        } catch { }
       } catch (err: any) {
         if (err.response?.message === "ALREADY_SUBMITTED") {
-          showConfirm(
-            "You have already responded to this form using this link. Are you sure you want to re-submit? Your previous response will be kept, but a new one will be created.",
-            async () => {
-              try {
-                const response = await apiClient.getPublicForm(formId!, tenantSlug);
-                setForm(response.form);
-                const rulesResponse = await apiClient.getSectionBranchingPublic(formId!, tenantSlug);
-                if (rulesResponse && rulesResponse.sectionBranching) {
-                  setBranchingRules(rulesResponse.sectionBranching);
-                }
-              } catch (retryErr: any) {
-                setError("Failed to load form after confirmation");
-              }
-            },
-            "Already Responded",
-            "Yes, Continue",
-            "Go Home",
-            () => navigate("/forms/analytics"),
-          );
+          showConfirm("You have already responded. Continue?", async () => {
+            try {
+              const r = await apiClient.getPublicForm(formId!, tenantSlug);
+              setForm(r.form);
+            } catch { setError("Failed to load form"); }
+          }, "Already Responded", "Yes, Continue", "Go Home", () => navigate("/forms/analytics"));
           return;
         }
-        setError("Failed to load form");
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
+        setError("Failed to load form"); console.error(err);
+      } finally { setLoading(false); }
     };
-
     fetchForm();
-  }, [formId, tenantSlug, propQuestions, propBranchingRules, viewType, propChassisNumbers, propChassisTenantAssignments]);
+  }, [formId, tenantSlug, propQuestions, propBranchingRules, viewType]);
 
-  // Location tracking
+  // ── Location ──
   useEffect(() => {
-    const getLocation = () => {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            setLocation({
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-              accuracy: position.coords.accuracy,
-            });
-            setLocationError(null);
-          },
-          (err) => {
-            console.warn("Location access denied or unavailable:", err.message);
-            setLocationError(
-              "Location access denied. Please enable location permissions in your browser settings and refresh the page.",
-            );
-          },
-          {
-            enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 300000,
-          },
-        );
-      } else {
-        setLocationError("Geolocation is not supported by this browser.");
-      }
+    const go = () => {
+      if (!navigator.geolocation) { setLocationError("Geolocation not supported."); return; }
+      navigator.geolocation.getCurrentPosition(
+        (p) => setLocation({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy: p.coords.accuracy }),
+        () => setLocationError("Location access denied."),
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 },
+      );
     };
-
     if ("permissions" in navigator) {
-      navigator.permissions
-        .query({ name: "geolocation" })
-        .then(function (permissionStatus) {
-          if (permissionStatus.state === "denied") {
-            setLocationError(
-              "Location access denied. Please enable location permissions in your browser settings and refresh the page.",
-            );
-            return;
-          }
-          getLocation();
-        })
-        .catch(() => {
-          getLocation();
-        });
-    } else {
-      getLocation();
-    }
+      navigator.permissions.query({ name: "geolocation" }).then((s) => { if (s.state === "denied") { setLocationError("Location denied."); return; } go(); }).catch(go);
+    } else { go(); }
   }, []);
 
-  // Reverse geocode location
   useEffect(() => {
-    const reverseGeocode = async () => {
-      if (!location || locationDisplayName || reverseGeocoding) return;
-      setReverseGeocoding(true);
-      try {
-        const response = await fetch(
-          `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${location.latitude}&longitude=${location.longitude}&localityLanguage=en`,
-        );
-        if (response.ok) {
-          const data = await response.json();
-          const parts = [
-            data.locality,
-            data.city,
-            data.principalSubdivision,
-            data.countryName,
-          ].filter(Boolean);
-          if (parts.length > 0) {
-            setLocationDisplayName(parts.join(", "));
-          }
-        }
-      } catch (error) {
-        console.warn("Reverse geocoding failed:", error);
-      } finally {
-        setReverseGeocoding(false);
-      }
-    };
-    reverseGeocode();
-  }, [location, locationDisplayName, reverseGeocoding]);
+    if (!location || locationDisplayName || reverseGeocoding) return;
+    setReverseGeocoding(true);
+    fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${location.latitude}&longitude=${location.longitude}&localityLanguage=en`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) { const parts = [data.locality, data.city, data.principalSubdivision, data.countryName].filter(Boolean); if (parts.length) setLocationDisplayName(parts.join(", ")); } })
+      .catch(() => { })
+      .finally(() => setReverseGeocoding(false));
+  }, [location]);
 
-  const handleConfirmLocation = () => {
-    setLocationConfirmed(true);
-  };
-
-  const handleRefreshLocation = () => {
-    setLocation(null);
-    setLocationError(null);
-    setLocationDisplayName(null);
-    const getLocation = () => {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            setLocation({
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-              accuracy: position.coords.accuracy,
-            });
-            setLocationError(null);
-          },
-          (err) => {
-            console.warn("Location access denied or unavailable:", err.message);
-            setLocationError(
-              "Location access denied. Please enable location permissions in your browser settings and refresh the page.",
-            );
-          },
-          {
-            enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 300000,
-          },
-        );
-      } else {
-        setLocationError("Geolocation is not supported by this browser.");
-      }
-    };
-    if ("permissions" in navigator) {
-      navigator.permissions
-        .query({ name: "geolocation" })
-        .then(function (permissionStatus) {
-          if (permissionStatus.state === "denied") {
-            setLocationError(
-              "Location access denied. Please enable location permissions in your browser settings and refresh the page.",
-            );
-            return;
-          }
-          getLocation();
-        })
-        .catch(() => {
-          getLocation();
-        });
-    } else {
-      getLocation();
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form || !formId) return;
-
-    const mainSections = getMainSections();
-    const historyIndices = Array.from(new Set(navigationHistory));
-    const sectionsToValidate = mainSections.filter((_, idx) => historyIndices.includes(idx));
-
-    if (!validateSections(sectionsToValidate)) return;
-
-    showConfirm(
-      "Are you sure you want to submit your response? You won't be able to change it later.",
-      async () => {
-        await performSubmission();
-      },
-      "Confirm Submission",
-      "Submit Now",
-      "Review Form",
-    );
-  };
-
-  const performSubmission = async () => {
-     if (formSessionId && chassisNumbers.length > 0) {
-    if (!answers['chassis_number']) {
-      showNotifyError("Please select a Chassis Number before submitting");
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
-    }
-  }
-    setSubmitting(true);
-    try {
-      console.log("[PREVIEW FORM] User object full:", JSON.stringify(user));
-      console.log("[PREVIEW FORM] User is null?", user === null);
-      console.log("[PREVIEW FORM] User is undefined?", user === undefined);
-      console.log("[PREVIEW FORM] User firstName:", user?.firstName);
-      console.log("[PREVIEW FORM] User lastName:", user?.lastName);
-      console.log("[PREVIEW FORM] User email:", user?.email);
-      console.log("[PREVIEW FORM] User username:", user?.username);
-
-      // Build user info - fallback to tenant info if user is not available
-      let submittedByValue: string | undefined = undefined;
-      if (user) {
-        submittedByValue =
-          user.firstName && user.lastName
-            ? `${user.firstName} ${user.lastName}`
-            : user.username || user.email || undefined;
-      }
-      console.log("[PREVIEW FORM] submittedByValue:", submittedByValue);
-
-      const submissionData: any = {
-        answers: answers,
-        inviteId: inviteId || null,
-        submittedBy: submittedByValue,
-        submitterContact: user
-          ? {
-              email: user.email || "",
-              phone: user.phone || "",
-            }
-          : {},
-      };
-
-      console.log(
-        "[PREVIEW FORM] Submission data submittedBy:",
-        submissionData.submittedBy,
-      );
-      console.log(
-        "[PREVIEW FORM] Submission data submitterContact:",
-        submissionData.submitterContact,
-      );
-
-      if (location) {
-        submissionData.location = {
-          latitude: location.latitude,
-          longitude: location.longitude,
-          accuracy: location.accuracy,
-          source: "browser",
-          capturedAt: new Date().toISOString(),
-        };
-      }
-
-      // Also add timing data if available
-      if (formSessionId) {
-        submissionData.sessionId = formSessionId;
-        submissionData.startedAt = sectionStartTime;
-        submissionData.completedAt = new Date();
-      }
-
-      if (propOnSubmit) {
-        await propOnSubmit({
-          id: "preview-response",
-          formId: formId || "preview",
-          answers: answers,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        } as any);
-        showSuccess("Preview submission successful!");
-        setSubmitted(true);
-        return;
-      }
-
-      if (!formId) return;
-
-      const response = await apiClient.submitResponse(formId, tenantSlug, submissionData);
-      clearSavedData();
-
-      // Check for follow-up form redirection
-      let followUpFormId: string | null = null;
-      if (form && form.sections) {
-        for (const section of form.sections) {
-          if (!section.questions) continue;
-          for (const question of section.questions) {
-            const answer = answers[question.id];
-            if (answer && question.followUpConfig) {
-              if (Array.isArray(answer)) {
-                for (const val of answer) {
-                  if (question.followUpConfig[val]?.linkedFormId) {
-                    followUpFormId = question.followUpConfig[val].linkedFormId;
-                    break;
-                  }
-                }
-              } else if (question.followUpConfig[answer]?.linkedFormId) {
-                followUpFormId = question.followUpConfig[answer].linkedFormId;
-              }
-            }
-            if (followUpFormId) break;
-          }
-          if (followUpFormId) break;
-        }
-      }
-
-      if (followUpFormId) {
-        showConfirm(
-          `Form submitted successfully! You will now be redirected to a follow-up form.`,
-          () => navigate(`/${tenantSlug}/forms/${followUpFormId}`),
-          "Success",
-          "Continue",
-          "Go Home",
-          () => navigate(`/${tenantSlug}`),
-        );
-        return;
-      }
-
-      // Check for child forms
-      try {
-        const childFormsData = await apiClient.getChildForms(formId);
-        if (childFormsData.childForms && childFormsData.childForms.length > 0) {
-          const nextChildForm = childFormsData.childForms.find(
-            (cf: any) => cf.isActive && cf.isVisible,
-          );
-          if (nextChildForm) {
-            showConfirm(
-              `Form submitted successfully! You will now be redirected to the next form: "${nextChildForm.title}"`,
-              () => navigate(`/${tenantSlug}/forms/${nextChildForm.id}`),
-              "Success",
-              "Continue",
-              "Go Home",
-              () => navigate(`/${tenantSlug}`),
-            );
-            return;
-          }
-        }
-      } catch (childFormErr) {
-        console.warn("Could not fetch child forms:", childFormErr);
-      }
-
-      showSuccess("Form submitted successfully!");
-      setSubmitted(true);
-    } catch (err) {
-      showNotifyError("Failed to submit form");
-      console.error(err);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleResponseChange = (questionId: string, value: any) => {
-    // Track question change for analytics
-    if (!answers[questionId] && value && onQuestionChange && getMainSections()[currentSectionIndex]) {
-      const currentSection = getMainSections()[currentSectionIndex];
-      const question = currentSection.questions?.find((q: any) => q.id === questionId);
-      if (question) {
-        onQuestionChange(
-          questionId,
-          question.text || "Unknown Question",
-          question.type || "unknown",
-          currentSection.id,
-          currentSection.title || "Untitled Section",
-          value
-        );
-      }
-    }
-
-    setAnswers((prev) => ({ ...prev, [questionId]: value }));
-
-    // Suggestion logic
-    const normalizedQId = questionId.endsWith("_tracking") ? questionId.replace("_tracking", "") : questionId;
-    const normalizeKey = (s: string) => String(s || "").toLowerCase().replace(/_tracking$/, "").replace(/^_/, "").trim();
-    const normalizedTarget = normalizeKey(normalizedQId);
-
-    const question = allFormQuestions.find((q) => {
-      const qId = (q.id || (q as any)._id) as string;
-      if (!qId) return false;
-      return qId === normalizedQId || qId.toLowerCase() === normalizedQId.toLowerCase() || normalizeKey(qId) === normalizedTarget;
-    });
-
-    // Only fetch suggestions if trackResponseQuestion OR trackResponseRank is enabled
-    const isTrackQuestionEnabled = question && (
-      question.trackResponseQuestion === true || 
-      String(question.trackResponseQuestion) === "true"
-    );
-    const isTrackRankEnabled = question && (
-      question.trackResponseRank === true ||
-      String(question.trackResponseRank) === "true"
-    );
-    const isAnyTrackingEnabled = isTrackQuestionEnabled || isTrackRankEnabled;
-
-    if (fetchingSuggestionsForId !== questionId) {
-      setPreviousUniqueAnswers([]);
-    }
-
-    const getExistingSuggestion = (qId: string) => {
-      if (!suggestedAnswers) return null;
-      const normalize = (s: string) => String(s || "").toLowerCase().replace(/_tracking$/, "").replace(/^_/, "").trim();
-      const target = normalize(qId);
-      if (Array.isArray(suggestedAnswers)) {
-        if (suggestedAnswers.length === 0) return null;
-        const firstRecord = suggestedAnswers[0].answers;
-        const matchKey = Object.keys(firstRecord).find(k => normalize(k) === target);
-        return matchKey ? firstRecord[matchKey] : null;
-      }
-      if (suggestedAnswers[qId] !== undefined) return suggestedAnswers[qId];
-      const matchKey = Object.keys(suggestedAnswers).find(k => normalize(k) === target);
-      return matchKey ? suggestedAnswers[matchKey] : null;
-    };
-
-    const searchValue = (typeof value === 'object' && value?.chassisNumber) ? value.chassisNumber : value;
-    const currentMatchingSuggestion = getExistingSuggestion(questionId);
-    const isAlreadySuggested = currentMatchingSuggestion !== null &&
-      String(currentMatchingSuggestion).trim().toLowerCase() === String(searchValue).trim().toLowerCase();
-
-    const isMeaningful = (typeof value === "string" && value.trim().length >= 1) ||
-      typeof value === "number" ||
-      ((question?.type === "chassis-with-zone" || question?.type === "chassis-without-zone") && value?.chassisNumber?.trim().length >= 1);
-
-    // Only fetch suggestions if any tracking is enabled (trackResponseQuestion OR trackResponseRank)
-    if (isMeaningful && formId && !isAlreadySuggested && isAnyTrackingEnabled) {
-      const timeoutId = (window as any)._suggestionTimeout;
-      if (timeoutId) clearTimeout(timeoutId);
-      (window as any)._suggestionTimeout = setTimeout(() => {
-        const currentFetchSource = `${normalizedQId}:${searchValue}`;
-        if (fetchingSuggestionsForId !== currentFetchSource) {
-          fetchSuggestions(normalizedQId, value);
-        }
-      }, 800);
-    }
-  };
-
-  const fetchSuggestions = async (questionId: string, value: any) => {
-    if (!formId) return;
-
-    const searchValue = (typeof value === 'object' && value?.chassisNumber) ? value.chassisNumber : value;
-
-    const getExistingSuggestion = (qId: string) => {
-      if (!suggestedAnswers) return null;
-      const normalize = (s: string) => String(s || "").toLowerCase().replace(/_tracking$/, "").replace(/^_/, "").trim();
-      const target = normalize(qId);
-      if (Array.isArray(suggestedAnswers)) {
-        if (suggestedAnswers.length === 0) return null;
-        const firstRecord = suggestedAnswers[0].answers;
-        const matchKey = Object.keys(firstRecord).find(k => normalize(k) === target);
-        return matchKey ? firstRecord[matchKey] : null;
-      }
-      if (suggestedAnswers[qId] !== undefined) return suggestedAnswers[qId];
-      const matchKey = Object.keys(suggestedAnswers).find(k => normalize(k) === target);
-      return matchKey ? suggestedAnswers[matchKey] : null;
-    };
-
-    const currentMatchingSuggestion = getExistingSuggestion(questionId);
-    const searchSource = `${questionId}:${searchValue}`;
-    if (lastSuggestionSource === searchSource ||
-      (currentMatchingSuggestion !== null &&
-        String(currentMatchingSuggestion).trim().toLowerCase() === String(searchValue).trim().toLowerCase())) {
-      return;
-    }
-
-    try {
-      setFetchingSuggestionsForId(searchSource);
-      setTriggeringQuestionId(questionId);
-
-      apiClient.getQuestionPreviousAnswers(formId, questionId, tenantSlug)
-        .then(res => {
-          if (res && res.answers) {
-            setPreviousUniqueAnswers(res.answers);
-          }
-        })
-        .catch(err => console.warn("[PreviewForm] Failed to fetch previous answers:", err));
-
-      const result = await apiClient.getSuggestedAnswers(formId, questionId, searchValue, tenantSlug);
-      setLastSuggestionSource(`${questionId}:${searchValue}`);
-
-      if (result && result.suggestedAnswers) {
-        const rawSuggestions = Array.isArray(result.suggestedAnswers) ? result.suggestedAnswers : [];
-        
-        // Exact match filter: only show if the triggering question's value matches exactly
-        const normalize = (v: any) => String(v || "").trim().toLowerCase();
-        const searchValNormalized = normalize(searchValue);
-        
-        const suggestions = rawSuggestions.filter(s => {
-          const val = s.answers?.[questionId];
-          if (typeof val === 'object' && val?.chassisNumber) {
-            return normalize(val.chassisNumber) === searchValNormalized;
-          }
-          return normalize(val) === searchValNormalized;
-        });
-
-        const totalAnswersCount = suggestions.length;
-        const hasSubstantialData = totalAnswersCount > 0;
-
-        setSuggestedAnswers(suggestions);
-        if (hasSubstantialData && suggestions[0]) {
-          setSelectedRank(1);
-          setGlobalRankAnswers(suggestions[0].answers || null);
-          setGlobalRank(suggestions[0].rank || 1);
-          showSuccess(`${totalAnswersCount} previous records found!`);
-        } else {
-          setSuggestedAnswers({ _no_match: true });
-          setGlobalRankAnswers(null);
-          setGlobalRank(null);
-        }
-      } else {
-        setSuggestedAnswers({ _no_match: true });
-        setGlobalRankAnswers(null);
-        setGlobalRank(null);
-      }
-    } catch (err) {
-      console.error("[PreviewForm] Failed to fetch suggestions:", err);
-    } finally {
-      const fetchSource = `${questionId}:${searchValue}`;
-      setFetchingSuggestionsForId((prev) => prev === fetchSource ? null : prev);
-    }
-  };
-
-  const applySuggestions = (specificAnswers?: Record<string, any>, targetQuestionId?: string, rank?: number) => {
-    const suggestionsToApply = specificAnswers || (Array.isArray(suggestedAnswers) ? suggestedAnswers[0]?.answers : suggestedAnswers);
-    if (!suggestionsToApply || suggestionsToApply._no_match) return;
-
-    if (rank !== undefined) setSelectedRank(rank);
-
-    const effectiveTargetId = targetQuestionId ||
-      (fetchingSuggestionsForId?.split(':')[0]) ||
-      (lastSuggestionSource?.split(':')[0]);
-
-    setAnswers((prev) => {
-      const newAnswers = { ...prev };
-      const normalize = (s: string) => String(s || "").toLowerCase().replace(/_tracking$/, "").replace(/^_/, "").trim();
-
-      Object.keys(suggestionsToApply).forEach((key) => {
-        if (key.startsWith("_") && !key.includes("tracking")) return;
-        const val = suggestionsToApply[key];
-        if (val === null || val === undefined || String(val).trim() === "") return;
-
-        const normalizedKey = normalize(key);
-        const question = allFormQuestions.find((q) => {
-          const qId = (q.id || (q as any)._id) as string;
-          if (!qId) return false;
-          return qId === key || qId.toLowerCase() === key.toLowerCase() || normalize(qId) === normalizedKey;
-        });
-
-        if (question) {
-          const qId = question.id || (question as any)._id;
-
-          // If targetQuestionId is provided, we only apply to THAT specific question
-          // If it is NULL, we apply EVERYTHING in the record (Apply All feature)
-          if (targetQuestionId) {
-            const normalizedTarget = normalize(targetQuestionId);
-            if (normalize(qId) !== normalizedTarget) {
-              return;
-            }
-          }
-
-          if (key.endsWith("_tracking")) {
-            newAnswers[`${qId}_tracking`] = val;
-          } else {
-            newAnswers[qId] = val;
-          }
-        }
-      });
-      return newAnswers;
-    });
-  };
-
-  const activeTrackQuestion = useMemo(() => {
-    const qId = triggeringQuestionId || (lastSuggestionSource?.split(':')[0]);
-    if (!qId) return null;
-    
-    const question = allFormQuestions.find(q => (q.id || (q as any)._id) === qId);
-    if (!question || !(question.trackResponseQuestion === true || String(question.trackResponseQuestion) === "true")) {
-      return null;
-    }
-    return question;
-  }, [triggeringQuestionId, lastSuggestionSource, allFormQuestions]);
-
-  const handleLoadSampleData = () => {
-    if (!form) return;
-
-    const sampleResponses: Record<string, any> = { ...answers };
-
-    allFormQuestions.forEach((question: any) => {
-      const qId = question.id || question._id;
-      if (!qId) return;
-      if (sampleResponses[qId] !== undefined && sampleResponses[qId] !== "") return;
-
-      
-
-      switch (question.type) {
-        case "text":
-        case "paragraph":
-        case "email":
-        case "tel":
-        case "url":
-          sampleResponses[qId] = `Sample ${question.text || qId}`;
-          break;
-        case "number":
-          sampleResponses[qId] = 42;
-          break;
-        case "radio":
-        case "select":
-        case "dropdown":
-        case "yesNoNA":
-        case "radio-image":
-        case "search-select":
-          if (question.options && question.options.length > 0) {
-            sampleResponses[qId] = question.options[0].label || question.options[0];
-          } else if (question.type === "yesNoNA") {
-            sampleResponses[qId] = "Yes";
-          }
-          break;
-        case "checkbox":
-        case "multiple_choice":
-          if (question.options && question.options.length > 0) {
-            sampleResponses[qId] = [question.options[0].label || question.options[0]];
-          }
-          break;
-        case "rating":
-        case "rating-number":
-        case "satisfaction-rating":
-          sampleResponses[qId] = 5;
-          break;
-        case "scale":
-          sampleResponses[qId] = 5;
-          break;
-        case "slider":
-        case "slider-feedback":
-          sampleResponses[qId] = 50;
-          break;
-        case "date":
-          sampleResponses[qId] = new Date().toISOString().split("T")[0];
-          break;
-        case "time":
-          sampleResponses[qId] = "12:00";
-          break;
-        case "datetime":
-          sampleResponses[qId] = new Date().toISOString().slice(0, 16);
-          break;
-        case "emoji-reaction":
-        case "emoji-reaction-feedback":
-          sampleResponses[qId] = "happy";
-          break;
-        case "emoji-star":
-        case "emoji-star-feedback":
-          sampleResponses[qId] = 4;
-          break;
-        case "grid":
-        case "radio-grid":
-        case "checkbox-grid":
-          if (question.rows && question.columns) {
-            const gridData: any = {};
-            question.rows.forEach((row: any) => {
-              const rId = row.id || row;
-              gridData[rId] = question.columns[0].id || question.columns[0];
-            });
-            sampleResponses[qId] = gridData;
-          }
-          break;
-          case "chassis-with-zone":
-case "chassis-without-zone":
-  const sampleStatus = "Accepted";
-  sampleResponses[qId] = {
-    chassisNumber: `CH-${Math.floor(Math.random() * 9000) + 1000}`,
-    status: sampleStatus,
-    zone: question.type === "chassis-with-zone" ? ["Zone A"] : undefined,
-    zonesData: question.type === "chassis-with-zone" ? {} : undefined,
-    categories: question.type === "chassis-without-zone" ? [] : undefined,
-    defectCategory: [],
-    defects: [],
-    remark: "Sample inspection remark",
-    evidenceUrl: "",
-  };
-  break;
-
-case "zone-in":
-  sampleResponses[qId] = {
-    chassisNumber: `CH-${Math.floor(Math.random() * 9000) + 1000}`,
-    status: "Accepted",
-    remark: "Sample remark for zone inspection",
-    evidenceUrl: "",
-    zones: ["Zone A", "Zone B"],
-  };
-  break;
-
-case "zone-out":
-  sampleResponses[qId] = {
-    chassisNumber: `CH-${Math.floor(Math.random() * 9000) + 1000}`,
-    status: "Rework",
-    remark: "Sample rework remark",
-    evidenceUrl: "",
-  };
-  break;
-      }
-    });
-
-    setAnswers(sampleResponses);
-    showSuccess("Sample data loaded successfully for all questions!");
-  };
-
-  // Section navigation functions
-  const getMainSections = () => {
+  // ── Section helpers ──
+  const getMainSections = useCallback(() => {
     if (!form) return [];
-    const baseSections = form.sections.filter((s) => !s.isSubsection);
-
-    const effectiveViewType = form?.viewType || (form as any)?.view_type || "section-wise";
-
-    if (effectiveViewType === "question-wise") {
-      const virtualSections: any[] = [];
-      baseSections.forEach((section, sIdx) => {
-        const visibleQuestions = getOrderedVisibleQuestions(section.questions, answers);
-        if (visibleQuestions.length === 0) {
-          virtualSections.push({
-            ...section,
-            questions: [],
-            isVirtual: true,
-            originalSectionId: section.id,
-            originalSectionIndex: sIdx,
-            totalOriginalSections: baseSections.length,
-            questionIndex: 0,
-            totalQuestionsInSection: 0,
-          });
+    const base = form.sections.filter((s) => !s.isSubsection);
+    const effView = form.viewType || (form as any).view_type || "section-wise";
+    if (effView === "question-wise") {
+      const vs: any[] = [];
+      base.forEach((section, sIdx) => {
+        const visible = getOrderedVisibleQuestions(section.questions, answers);
+        if (!visible.length) {
+          vs.push({ ...section, questions: [], isVirtual: true, originalSectionId: section.id, originalSectionIndex: sIdx, totalOriginalSections: base.length, questionIndex: 0, totalQuestionsInSection: 0 });
         } else {
-          visibleQuestions.forEach((q, qIdx) => {
-            virtualSections.push({
-              ...section,
-              id: `${section.id}_v${qIdx}`,
-              title: section.title,
-              description: qIdx === 0 ? section.description : "",
-              questions: [q],
-              isVirtual: true,
-              originalSectionId: section.id,
-              originalSectionIndex: sIdx,
-              totalOriginalSections: baseSections.length,
-              questionIndex: qIdx,
-              totalQuestionsInSection: visibleQuestions.length,
-            });
-          });
+          visible.forEach((q, qIdx) => vs.push({ ...section, id: `${section.id}_v${qIdx}`, description: qIdx === 0 ? section.description : "", questions: [q], isVirtual: true, originalSectionId: section.id, originalSectionIndex: sIdx, totalOriginalSections: base.length, questionIndex: qIdx, totalQuestionsInSection: visible.length }));
         }
       });
-      return virtualSections;
+      return vs;
     }
-
-    // Build section hierarchy for section-wise view
-    const sectionsMap = new Map<string, any>();
-    const rootSections: any[] = [];
-
-    baseSections.forEach((section) => {
-      sectionsMap.set(section.id, { ...section, subsections: [] });
+    const map = new Map<string, any>();
+    const roots: any[] = [];
+    base.forEach((s) => map.set(s.id, { ...s, subsections: [] }));
+    base.forEach((s) => {
+      const m = map.get(s.id);
+      const isSub = s.isSubsection === true || s.isSubsection === "true" || (s.parentSectionId && s.parentSectionId !== "");
+      if (isSub && s.parentSectionId) {
+        const parent = map.get(s.parentSectionId) || Array.from(map.values()).find((x) => x._id === s.parentSectionId);
+        if (parent) parent.subsections.push(m); else roots.push(m);
+      } else roots.push(m);
     });
-
-    baseSections.forEach((section) => {
-      const mappedSection = sectionsMap.get(section.id);
-      const parentId = section.parentSectionId;
-      const isSub = section.isSubsection === true || section.isSubsection === 'true' || (parentId && parentId !== '');
-
-      if (isSub && parentId) {
-        const parent = sectionsMap.get(parentId) || Array.from(sectionsMap.values()).find(s => s._id === parentId);
-        if (parent) {
-          parent.subsections.push(mappedSection);
-        } else {
-          rootSections.push(mappedSection);
-        }
-      } else {
-        rootSections.push(mappedSection);
-      }
-    });
-
-    return rootSections;
-  };
+    return roots;
+  }, [form, answers, getOrderedVisibleQuestions]);
 
   const getLinkedSectionIds = (): Set<string> => {
-    const linkedIds = new Set<string>();
-    if (!form) return linkedIds;
-
-    branchingRules.forEach((rule) => {
-      if (rule.targetSectionId && rule.targetSectionId.toLowerCase() !== "end") {
-        linkedIds.add(rule.targetSectionId);
-      }
+    const ids = new Set<string>();
+    if (!form) return ids;
+    branchingRules.forEach((r) => { if (r.targetSectionId?.toLowerCase() !== "end") ids.add(r.targetSectionId); });
+    form.sections.forEach((s) => {
+      if (s.nextSectionId?.toLowerCase() !== "end") ids.add(s.nextSectionId);
+      if (s.isSubsection || s.parentSectionId) ids.add(s.id || s._id);
     });
-
-    form.sections.forEach((section) => {
-      if (section.nextSectionId && section.nextSectionId.toLowerCase() !== "end") {
-        linkedIds.add(section.nextSectionId);
-      }
-      if (section.isSubsection || (section as any).parentSectionId) {
-        linkedIds.add(section.id || (section as any)._id);
-      }
-    });
-
-    return linkedIds;
+    return ids;
   };
 
-  const getNextSequentialIndex = (currentIndex: number): number => {
+  const getNextSequentialIndex = (ci: number): number => {
     if (!form) return -1;
-    const mainSections = getMainSections();
-    const linkedSectionIds = getLinkedSectionIds();
-    let nextIdx = currentIndex + 1;
-
-    while (nextIdx < mainSections.length) {
-      const sectionId = mainSections[nextIdx].id;
-      if (!linkedSectionIds.has(sectionId)) {
-        return nextIdx;
-      }
-      nextIdx++;
-    }
+    const ms = getMainSections();
+    const linked = getLinkedSectionIds();
+    let n = ci + 1;
+    while (n < ms.length) { if (!linked.has(ms[n].id)) return n; n++; }
     return -1;
   };
 
   const getNextSectionIndex = () => {
     if (!form) return currentSectionIndex + 1;
-
-    const mainSections = getMainSections();
-    const currentMainSection = mainSections[currentSectionIndex];
-    if (!currentMainSection) return currentSectionIndex + 1;
-
-    const effectiveViewType = form?.viewType || (form as any)?.view_type || "section-wise";
-
-    if (effectiveViewType === "question-wise" && currentMainSection.isVirtual) {
-      if (currentMainSection.questionIndex < currentMainSection.totalQuestionsInSection - 1) {
-        return currentSectionIndex + 1;
-      }
-    }
-
-    // Get all sections in the current group
-    const currentGroupSections = form.sections.filter(
-      (s) => s.id === currentMainSection.id || (s.isSubsection && s.parentSectionId === currentMainSection.id),
-    );
-    const currentGroupSectionIds = currentGroupSections.map((s) => s.id);
-
-    const findMatchingRule = (question: any, userAnswer: any) => {
-      if (userAnswer === undefined || userAnswer === null) return null;
-      const questionRules = branchingRules.filter((rule) => rule.questionId === question.id);
-      if (questionRules.length === 0) return null;
-
-      const matchingRules = questionRules.filter((rule) => currentGroupSectionIds.includes(rule.sectionId));
-
-      for (const rule of matchingRules) {
-        const ruleOptionLower = rule.optionLabel?.toLowerCase();
-        const userAnswerStr = Array.isArray(userAnswer) ? userAnswer.join(",") : String(userAnswer);
-        const userAnswerLower = userAnswerStr.toLowerCase();
-
-        if (rule.isOtherOption) {
-          const exactMatchExists = matchingRules.some((r) => !r.isOtherOption && r.optionLabel?.toLowerCase() === userAnswerLower);
-          if (!exactMatchExists && userAnswerLower) return rule;
-        } else if (Array.isArray(userAnswer)) {
-          if (userAnswer.some((val) => String(val).toLowerCase() === ruleOptionLower)) return rule;
-        } else if (userAnswerLower === ruleOptionLower) {
-          return rule;
-        }
+    const ms = getMainSections();
+    const cur = ms[currentSectionIndex];
+    if (!cur) return currentSectionIndex + 1;
+    const effView = form.viewType || (form as any).view_type || "section-wise";
+    if (effView === "question-wise" && cur.isVirtual && cur.questionIndex < cur.totalQuestionsInSection - 1) return currentSectionIndex + 1;
+    const groupSections = form.sections.filter((s) => s.id === cur.id || (s.isSubsection && s.parentSectionId === cur.id));
+    const groupIds = groupSections.map((s) => s.id);
+    const matchRule = (q: any, ans: any) => {
+      if (ans === undefined || ans === null) return null;
+      const qRules = branchingRules.filter((r) => r.questionId === q.id).filter((r) => groupIds.includes(r.sectionId));
+      for (const rule of qRules) {
+        const rl = rule.optionLabel?.toLowerCase();
+        const al = Array.isArray(ans) ? ans.join(",") : String(ans);
+        const all = al.toLowerCase();
+        if (rule.isOtherOption) { if (!qRules.some((r) => !r.isOtherOption && r.optionLabel?.toLowerCase() === all) && all) return rule; }
+        else if (Array.isArray(ans)) { if (ans.some((v) => String(v).toLowerCase() === rl)) return rule; }
+        else if (all === rl) return rule;
       }
       return null;
     };
-
-    // Check branching rules
-    for (const section of currentGroupSections) {
-      const visibleQuestions = getOrderedVisibleQuestions(section.questions, answers);
-      for (const question of visibleQuestions) {
-        const matchedRule = findMatchingRule(question, answers[question.id]);
-        if (matchedRule) {
-          if (matchedRule.targetSectionId?.toLowerCase() === "end") {
-            return mainSections.length;
-          }
-          const targetSection = form.sections.find((s) => s.id === matchedRule.targetSectionId && !s.isSubsection);
-          if (targetSection) {
-            const targetIndex = mainSections.findIndex((s) => s.id === targetSection.id);
-            if (targetIndex !== -1) {
-              return targetIndex;
-            }
-          }
+    for (const section of groupSections) {
+      for (const q of getOrderedVisibleQuestions(section.questions, answers)) {
+        const rule = matchRule(q, answers[q.id]);
+        if (rule) {
+          if (rule.targetSectionId?.toLowerCase() === "end") return ms.length;
+          const ti = ms.findIndex((s) => s.id === rule.targetSectionId);
+          if (ti !== -1) return ti;
         }
       }
     }
-
-    // Check section-level navigation
-    if (currentMainSection.nextSectionId) {
-      if (currentMainSection.nextSectionId.toLowerCase() === "end") {
-        return mainSections.length;
-      }
-      const targetSection = form.sections.find((s) => s.id === currentMainSection.nextSectionId && !s.isSubsection);
-      if (targetSection) {
-        const targetIndex = mainSections.findIndex((s) => s.id === targetSection.id);
-        if (targetIndex !== -1) {
-          return targetIndex;
-        }
-      }
+    if (cur.nextSectionId) {
+      if (cur.nextSectionId.toLowerCase() === "end") return ms.length;
+      const ti = ms.findIndex((s) => s.id === cur.nextSectionId);
+      if (ti !== -1) return ti;
     }
-
-    const nextSequential = getNextSequentialIndex(currentSectionIndex);
-    if (nextSequential !== -1) {
-      return nextSequential;
-    }
-
-    return mainSections.length;
+    const ns = getNextSequentialIndex(currentSectionIndex);
+    return ns !== -1 ? ns : ms.length;
   };
 
-  const checkSectionRequiredAnswers = (section: any): boolean => {
-    if (!section) return true;
+  // ── Submit ──
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form || !formId) return;
+    const ms = getMainSections();
+    const sectionsToValidate = ms.filter((_, idx) => Array.from(new Set(navigationHistory)).includes(idx));
+    if (!validateSections(sectionsToValidate)) return;
+    showConfirm("Are you sure you want to submit?", async () => { await performSubmission(); }, "Confirm Submission", "Submit Now", "Review Form");
+  };
 
-    const visibleQuestions = getOrderedVisibleQuestions(section.questions || [], answers);
-    const hasRequiredAnswers = visibleQuestions.every(
-      (q) => !q.required || answers[q.id || q._id]
-    );
-    if (!hasRequiredAnswers) return false;
-
-    if (section.subsections && section.subsections.length > 0) {
-      const allSubsectionsValid = section.subsections.every((sub: any) => checkSectionRequiredAnswers(sub));
-      if (!allSubsectionsValid) return false;
+  const performSubmission = async () => {
+    if (formSessionId && chassisNumbers.length > 0 && !answers["chassis_number"]) {
+      showNotifyError("Please select a Chassis Number"); window.scrollTo({ top: 0, behavior: "smooth" }); return;
     }
-
-    return true;
+    setSubmitting(true);
+    try {
+      let submittedBy: string | undefined;
+      if (user) submittedBy = user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.username || user.email;
+      const data: any = { answers, inviteId: inviteId || null, submittedBy, submitterContact: user ? { email: user.email || "", phone: user.phone || "" } : {} };
+      if (location) data.location = { latitude: location.latitude, longitude: location.longitude, accuracy: location.accuracy, source: "browser", capturedAt: new Date().toISOString() };
+      if (formSessionId) { data.sessionId = formSessionId; data.startedAt = sectionStartTime; data.completedAt = new Date(); }
+      if (propOnSubmit) { await propOnSubmit({ id: "preview-response", formId: formId || "preview", answers, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } as any); showSuccess("Preview submission successful!"); setSubmitted(true); return; }
+      if (!formId) return;
+      await apiClient.submitResponse(formId, tenantSlug, data);
+      showSuccess("Form submitted successfully!"); setSubmitted(true);
+    } catch { showNotifyError("Failed to submit form"); } finally { setSubmitting(false); }
   };
 
   const handleSectionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form || !formId) return;
-
-    const mainSections = getMainSections();
-    const currentMainSection = mainSections[currentSectionIndex];
-
-    // Track section completion for analytics
+    const ms = getMainSections();
+    const cur = ms[currentSectionIndex];
     if (onSectionComplete && formSessionId) {
-      const timeSpentSeconds = Math.floor((new Date().getTime() - sectionStartTime.getTime()) / 1000);
-      let questionCount = currentMainSection.questions?.length || 0;
-      if (currentMainSection.subsections) {
-        currentMainSection.subsections.forEach((sub: any) => {
-          questionCount += sub.questions?.length || 0;
-        });
-      }
-      onSectionComplete(
-        currentMainSection.id,
-        currentMainSection.title || "Untitled Section",
-        timeSpentSeconds,
-        questionCount
-      );
+      const secs = Math.floor((Date.now() - sectionStartTime.getTime()) / 1000);
+      let qc = cur.questions?.length || 0;
+      cur.subsections?.forEach((ss: any) => { qc += ss.questions?.length || 0; });
+      onSectionComplete(cur.id, cur.title || "Untitled Section", secs, qc);
     }
-
     setSectionStartTime(new Date());
-    if (currentSectionIndex === 0 && formSessionId && chassisNumbers.length > 0) {
-  if (!answers['chassis_number']) {
-    showNotifyError("Please select a Chassis Number to continue");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    return;
-  }
-}
-
-    if (!validateSections([currentMainSection])) return;
-
+    if (currentSectionIndex === 0 && formSessionId && chassisNumbers.length > 0 && !answers["chassis_number"]) {
+      showNotifyError("Please select a Chassis Number"); window.scrollTo({ top: 0, behavior: "smooth" }); return;
+    }
+    if (!validateSections([cur])) return;
     setSectionSubmitting(true);
     try {
-      const submissionData: any = {
-        answers: answers,
-        sectionIndex: currentSectionIndex,
-        isSectionSubmit: true,
-        inviteId: inviteId || null,
-        // ✅ ADD THESE LINES
-        submittedBy:
-          user?.firstName && user?.lastName
-            ? `${user.firstName} ${user.lastName}`
-            : user?.username || user?.email || undefined,
-        submitterContact: {
-          email: user?.email || "",
-          phone: user?.phone || "",
-        },
+      const data: any = {
+        answers, sectionIndex: currentSectionIndex, isSectionSubmit: true, inviteId: inviteId || null,
+        submittedBy: user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : user?.username || user?.email,
+        submitterContact: { email: user?.email || "", phone: user?.phone || "" },
       };
-
-      if (location) {
-        submissionData.location = {
-          latitude: location.latitude,
-          longitude: location.longitude,
-          accuracy: location.accuracy,
-          source: "browser",
-          capturedAt: new Date().toISOString(),
-        };
-      }
-
-      if (!propOnSubmit && formId && formId !== "preview") {
-        await apiClient.submitResponse(formId, tenantSlug, submissionData);
-      } else {
-        await new Promise((resolve) => setTimeout(resolve, 300));
-      }
-
-      const nextSectionIndex = getNextSectionIndex();
-
-      if (nextSectionIndex < mainSections.length) {
-        setNavigationHistory((prev) => [...prev, nextSectionIndex]);
-        setSectionNavigationHistory((prev) => [...prev, nextSectionIndex]);
-        setVisitedSectionIndices((prev) => new Set(prev).add(nextSectionIndex));
-        setCurrentSectionIndex(nextSectionIndex);
+      if (location) data.location = { latitude: location.latitude, longitude: location.longitude, accuracy: location.accuracy, source: "browser", capturedAt: new Date().toISOString() };
+      if (!propOnSubmit && formId && formId !== "preview") await apiClient.submitResponse(formId, tenantSlug, data);
+      else await new Promise((r) => setTimeout(r, 300));
+      const next = getNextSectionIndex();
+      if (next < ms.length) {
+        setNavigationHistory((p) => [...p, next]); setSectionNavigationHistory((p) => [...p, next]);
+        setVisitedSectionIndices((p) => new Set(p).add(next)); setCurrentSectionIndex(next);
         window.scrollTo({ top: 0, behavior: "smooth" });
-      } else {
-        handleSubmit(e);
-      }
-    } catch (err) {
-      showNotifyError("Failed to submit section");
-      console.error("[handleSectionSubmit] Error:", err);
-    } finally {
-      setSectionSubmitting(false);
+      } else handleSubmit(e);
+    } catch { showNotifyError("Failed to submit section"); } finally { setSectionSubmitting(false); }
+  };
+
+  // ── Answer change — this updates `answers` state which OPSTemplate reads directly ──
+  const handleResponseChange = useCallback((questionId: string, value: any) => {
+    if (!answers[questionId] && value && onQuestionChange && getMainSections()[currentSectionIndex]) {
+      const cur = getMainSections()[currentSectionIndex];
+      const q = cur.questions?.find((q: any) => q.id === questionId);
+      if (q) onQuestionChange(questionId, q.text || "Unknown", q.type || "unknown", cur.id, cur.title || "Untitled Section", value);
     }
+    // Direct state update — triggers re-render of OPSTemplate with new answers
+    setAnswers((prev) => ({ ...prev, [questionId]: value }));
+  }, [answers, currentSectionIndex, onQuestionChange, getMainSections]);
+
+  const handleLoadSampleData = () => {
+    if (!form) return;
+    const sample: Record<string, any> = { ...answers };
+    allFormQuestions.forEach((q: any) => {
+      const qId = q.id || q._id;
+      if (!qId || (sample[qId] !== undefined && sample[qId] !== "")) return;
+      switch (q.type) {
+        case "text": case "paragraph": case "email": case "tel": case "url": sample[qId] = `Sample ${q.text || qId}`; break;
+        case "number": sample[qId] = 42; break;
+        case "radio": case "select": case "dropdown": case "yesNoNA":
+          sample[qId] = q.options?.length ? (q.options[0].label || q.options[0]) : "Yes"; break;
+        case "checkbox": sample[qId] = q.options?.length ? [q.options[0].label || q.options[0]] : []; break;
+        case "rating": case "rating-number": case "satisfaction-rating": case "scale": sample[qId] = 5; break;
+        case "slider": case "slider-feedback": sample[qId] = 50; break;
+        case "date": sample[qId] = new Date().toISOString().split("T")[0]; break;
+        case "time": sample[qId] = "12:00"; break;
+        default: break;
+      }
+    });
+    setAnswers(sample);
+    showSuccess("Sample data loaded!");
   };
 
   const handlePrevSection = () => {
-    if (parentSectionIndex !== null) {
-      setCurrentSectionIndex(parentSectionIndex);
-      setParentSectionIndex(null);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
-    }
-
+    if (parentSectionIndex !== null) { setCurrentSectionIndex(parentSectionIndex); setParentSectionIndex(null); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
     if (sectionNavigationHistory.length > 1) {
-      const newHistory = [...sectionNavigationHistory];
-      newHistory.pop();
-      const prevSectionIndex = newHistory[newHistory.length - 1];
-      setSectionNavigationHistory(newHistory);
-      setNavigationHistory((prev) => {
-        const newNavHistory = [...prev];
-        newNavHistory.pop();
-        return newNavHistory;
-      });
-      setCurrentSectionIndex(prevSectionIndex);
+      const nh = [...sectionNavigationHistory]; nh.pop();
+      setSectionNavigationHistory(nh);
+      setNavigationHistory((p) => { const n = [...p]; n.pop(); return n; });
+      setCurrentSectionIndex(nh[nh.length - 1]);
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
-  };
-
-  const handleNextSection = () => {
-    const mainSections = getMainSections();
-    const nextSectionIndex = getNextSectionIndex();
-    if (form && nextSectionIndex < mainSections.length) {
-      setNavigationHistory((prev) => [...prev, nextSectionIndex]);
-      setSectionNavigationHistory((prev) => [...prev, nextSectionIndex]);
-      setVisitedSectionIndices((prev) => new Set(prev).add(nextSectionIndex));
-      setCurrentSectionIndex(nextSectionIndex);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
-  };
-
-  const renderAssistantContent = () => {
-    if (!suggestedAnswers || suggestedAnswers._no_match) return null;
-
-    if (fetchingSuggestionsForId) {
-      return (
-        <div className="space-y-6 py-12 px-5 text-center">
-          <div className="relative inline-flex">
-            <div className="w-12 h-12 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin" />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <RefreshCw className="h-4 w-4 text-emerald-500 animate-pulse" />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <p className={`text-[11px] font-black uppercase tracking-widest ${darkMode ? "text-emerald-400" : "text-emerald-600"}`}>
-              Searching...
-            </p>
-            <p className={`text-[9px] font-bold ${darkMode ? "text-slate-500" : "text-slate-400"}`}>
-              Checking records
-            </p>
-          </div>
-        </div>
-      );
-    }
-
-    if (!Array.isArray(suggestedAnswers) || suggestedAnswers.length === 0) {
-      return (
-        <div className="py-12 px-5 flex flex-col items-center justify-center text-center gap-4 opacity-30">
-          <Zap className="h-10 w-10" />
-          <div className="space-y-1">
-            <p className="text-[10px] font-black uppercase tracking-widest">
-              Assistant Ready
-            </p>
-            <p className="text-[9px] font-medium leading-tight">
-              Start typing to see<br />smart recommendations
-            </p>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="flex flex-col h-full overflow-hidden">
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-6">
-          <div className={`p-5 rounded-2xl ${darkMode ? "bg-emerald-500/10 border-emerald-500/20" : "bg-emerald-50 border-emerald-100"} border shadow-sm shadow-emerald-500/5 animate-in zoom-in-95 duration-500`}>
-            <div className="flex items-center gap-3 mb-3 text-emerald-500">
-              <Sparkles className="h-5 w-5" />
-              <span className="text-[10px] font-black uppercase tracking-widest">
-                Previous Entries
-              </span>
-            </div>
-            <p className={`text-[10px] font-bold leading-relaxed ${darkMode ? "text-emerald-400/80" : "text-emerald-600/80"}`}>
-              Found {suggestedAnswers.length} historical records for this chassis.
-            </p>
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex flex-col gap-1">
-              <span className={`text-[10px] font-black uppercase tracking-[0.1em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
-                Selected Rank:
-              </span>
-              <div className={`text-[14px] font-black ${darkMode ? "text-emerald-400" : "text-emerald-600"}`}>
-                #{selectedRank || 1} Record Applied
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <span className={`text-[9px] font-black uppercase tracking-widest ${darkMode ? "text-slate-500" : "text-slate-400"}`}>
-                Switch Record:
-              </span>
-              <div className="flex flex-wrap gap-2">
-                {suggestedAnswers.map((suggestion: any) => (
-                  <button
-                    key={suggestion.rank}
-                    type="button"
-                    onClick={() => setSelectedRank(suggestion.rank)}
-                    className={`w-10 h-10 rounded-xl border-2 flex items-center justify-center text-[12px] font-black transition-all hover:scale-105 active:scale-95 ${
-                      selectedRank === suggestion.rank
-                        ? "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/20"
-                        : darkMode
-                          ? "bg-slate-900 border-slate-800 text-slate-400 hover:border-emerald-500/50 hover:text-emerald-400"
-                          : "bg-white border-slate-100 text-slate-400 hover:border-emerald-500/50 hover:text-emerald-600 shadow-sm"
-                    }`}
-                  >
-                    {suggestion.rank}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
-              <span className={`text-[9px] font-black uppercase tracking-widest ${darkMode ? "text-slate-500" : "text-slate-400"}`}>
-                Record Content:
-              </span>
-              <div className="space-y-3">
-                {(() => {
-                  const activeRecord = suggestedAnswers.find((s) => s.rank === (selectedRank || 1));
-                  if (!activeRecord) return null;
-
-                  const entries = Object.entries(activeRecord.answers);
-                  const uniqueEntries = new Map();
-                  const normalizeKey = (s: string) => String(s || "").toLowerCase().replace(/_tracking$/, "").replace(/^_/, "").trim();
-                  const activeTargetId = triggeringQuestionId || (lastSuggestionSource?.split(':')[0]);
-                  const normalizedActiveTarget = activeTargetId ? normalizeKey(activeTargetId) : null;
-
-                  entries.forEach(([key, val]) => {
-                    if (key.startsWith("_") || !val || (typeof val === "string" && val.trim() === "")) return;
-                    const baseKey = key.replace("_tracking", "");
-                    if (normalizedActiveTarget && normalizeKey(baseKey) !== normalizedActiveTarget) return;
-                    const isTracking = key.endsWith("_tracking");
-                    if (!uniqueEntries.has(baseKey)) {
-                      uniqueEntries.set(baseKey, { main: null, tracking: null });
-                    }
-                    const entry = uniqueEntries.get(baseKey);
-                    if (isTracking) entry.tracking = val;
-                    else entry.main = val;
-                  });
-
-                  const items = Array.from(uniqueEntries.entries());
-                  if (items.length === 0) {
-                    return <p className={`text-[10px] italic ${darkMode ? "text-slate-600" : "text-slate-400"}`}>No historical record for this specific question.</p>;
-                  }
-
-                  return items.map(([baseKey, data]) => {
-                    const question = allFormQuestions.find((q) => (q.id || q._id) === baseKey);
-                    const qText = question?.text || baseKey;
-                    const formatVal = (v: any) => {
-                      if (!v) return null;
-                      if (typeof v === "object") {
-                        if (v.chassisNumber) {
-                          const parts = [];
-                          if (v.status) parts.push(`Status: ${v.status}`);
-                          if (v.zone?.length) parts.push(`Zones: ${v.zone.join(", ")}`);
-                          if (v.defectCategory) parts.push(`Category: ${v.defectCategory}`);
-                          if (v.defects?.length) parts.push(`Defects: ${v.defects.map((d: any) => (typeof d === "string" ? d : d.name)).join(", ")}`);
-                          return parts.length ? parts.join(" | ") : v.chassisNumber;
-                        }
-                        return JSON.stringify(v);
-                      }
-                      return String(v);
-                    };
-
-                    const mainDisplay = formatVal(data.main);
-                    const trackingDisplay = formatVal(data.tracking);
-
-                    if (!mainDisplay && !trackingDisplay) return null;
-
-                    return (
-                      <div key={baseKey} className={`p-4 rounded-xl border ${darkMode ? "bg-slate-800/50 border-slate-700" : "bg-slate-50 border-slate-100"} space-y-3`}>
-                        <div>
-                          <p className="text-[8px] font-black uppercase tracking-tight text-slate-400 mb-1">{qText}</p>
-                          {trackingDisplay && (
-                            <p className={`text-[10px] font-bold ${darkMode ? "text-blue-400" : "text-blue-600"} break-words mb-1`}>
-                              <span className="opacity-50 text-[8px] mr-1">TRACKING:</span> {trackingDisplay}
-                            </p>
-                          )}
-                          {mainDisplay && (
-                            <p className={`text-[10px] font-bold ${darkMode ? "text-emerald-400" : "text-emerald-600"} break-words`}>{mainDisplay}</p>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => applySuggestions(activeRecord.answers, baseKey, activeRecord.rank)}
-                          className="w-full py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black uppercase tracking-widest transition-all active:scale-[0.98] shadow-lg shadow-emerald-600/20"
-                        >
-                          Apply This Answer
-                        </button>
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSuggestedAnswers(null);
-              setLastSuggestionSource(null);
-              setSelectedRank(null);
-              setShowMobileAssistant(false);
-            }}
-            className={`w-full py-4 rounded-xl ${darkMode ? "text-slate-500 hover:text-slate-300 hover:bg-slate-800" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"} text-[10px] font-black uppercase tracking-[0.2em] transition-all`}
-          >
-            Dismiss
-          </button>
-        </div>
-      </div>
-    );
   };
 
   const isLastSection = (() => {
     if (!form) return true;
-    const mainSections = getMainSections();
-    const currentMainSection = mainSections[currentSectionIndex];
-    if (!currentMainSection) return true;
-
-    const allSectionsToCheck = form.sections.filter(
-      (s) => s.id === currentMainSection.id || (s.isSubsection && s.parentSectionId === currentMainSection.id),
-    );
-
-    for (const section of allSectionsToCheck) {
-      const visibleQuestions = getOrderedVisibleQuestions(section.questions, answers);
-      for (const q of visibleQuestions) {
-        const answer = answers[q.id];
-        if (answer !== undefined && answer !== null) {
-          const rule = (branchingRules || []).find(
-            (r: any) =>
-              r.sectionId === section.id &&
-              r.questionId === q.id &&
-              (Array.isArray(answer)
-                ? answer.some((v) => v?.toString().toLowerCase() === r.optionLabel?.toLowerCase())
-                : answer.toString().toLowerCase() === r.optionLabel?.toLowerCase()),
-          );
-          if (rule?.targetSectionId && rule.targetSectionId.toLowerCase() === "end") {
-            return true;
-          }
+    const ms = getMainSections();
+    const cur = ms[currentSectionIndex];
+    if (!cur) return true;
+    const check = form.sections.filter((s) => s.id === cur.id || (s.isSubsection && s.parentSectionId === cur.id));
+    for (const s of check) {
+      for (const q of getOrderedVisibleQuestions(s.questions, answers)) {
+        const a = answers[q.id];
+        if (a !== undefined && a !== null) {
+          const r = branchingRules.find((r) => r.sectionId === s.id && r.questionId === q.id && (Array.isArray(a) ? a.some((v) => v?.toString().toLowerCase() === r.optionLabel?.toLowerCase()) : a.toString().toLowerCase() === r.optionLabel?.toLowerCase()));
+          if (r?.targetSectionId?.toLowerCase() === "end") return true;
         }
       }
     }
-
-    if (currentMainSection.nextSectionId && currentMainSection.nextSectionId.toLowerCase() === "end") {
-      return true;
-    }
-
-    const nextSequential = getNextSequentialIndex(currentSectionIndex);
-    const hasBranchingToSection = allSectionsToCheck.some((section) =>
-      section.questions.some((q) =>
-        branchingRules.some(
-          (rule) =>
-            rule.sectionId === section.id &&
-            rule.questionId === q.id &&
-            rule.targetSectionId &&
-            rule.targetSectionId.toLowerCase() !== "end",
-        ),
-      ),
-    );
-    const hasDirectLink = currentMainSection.nextSectionId &&
-      currentMainSection.nextSectionId.toLowerCase() !== "end" &&
-      form.sections.some((s) => s.id === currentMainSection.nextSectionId);
-
-    return nextSequential === -1 && !hasBranchingToSection && !hasDirectLink;
+    if (cur.nextSectionId?.toLowerCase() === "end") return true;
+    const ns = getNextSequentialIndex(currentSectionIndex);
+    const hasB = check.some((s) => s.questions.some((q: any) => branchingRules.some((r) => r.sectionId === s.id && r.questionId === q.id && r.targetSectionId && r.targetSectionId.toLowerCase() !== "end")));
+    const hasD = cur.nextSectionId && cur.nextSectionId.toLowerCase() !== "end" && form.sections.some((s) => s.id === cur.nextSectionId);
+    return ns === -1 && !hasB && !hasD;
   })();
 
-  // Loading state
+  // ── Render ──
   if (loading) {
     return (
-      <div
-        className={`min-h-screen ${darkMode ? "bg-slate-950 text-slate-400" : "bg-slate-50 text-slate-500"} flex flex-col items-center justify-center gap-3 transition-colors duration-300`}
-      >
+      <div className={`min-h-screen flex flex-col items-center justify-center gap-3 ${darkMode ? "bg-slate-950 text-slate-400" : "bg-slate-50 text-slate-500"}`}>
         <div className="relative">
-          <div
-            className={`h-12 w-12 rounded-full border-4 ${darkMode ? "border-slate-800" : "border-slate-200"} border-t-blue-500 animate-spin`}
-          ></div>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Loader2 className="h-5 w-5 text-blue-500" />
-          </div>
+          <div className={`h-12 w-12 rounded-full border-4 ${darkMode ? "border-slate-800" : "border-slate-200"} border-t-blue-500 animate-spin`} />
+          <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="h-5 w-5 text-blue-500" /></div>
         </div>
         <p className="text-xs font-medium animate-pulse">Loading form...</p>
       </div>
     );
   }
 
-  // Submitted state
-  if (submitted) {
-    return (
-      <ThankYouMessage
-        redirectPath={propOnSubmit ? undefined : `/dashboard`}
-        customMessage={form?.description}
-      />
-    );
-  }
+  if (submitted) return <ThankYouMessage redirectPath={propOnSubmit ? undefined : `/dashboard`} customMessage={form?.description} />;
 
-  // Error state
   if (error || !form) {
     return (
-      <div
-        className={`min-h-screen ${darkMode ? "bg-slate-950" : "bg-slate-50"} flex items-center justify-center p-4 transition-colors duration-300`}
-      >
-        <div
-          className={`max-w-sm w-full ${darkMode ? "bg-red-500/10 border-red-500/20" : "bg-red-50 border-red-100"} border rounded-xl p-5 text-center`}
-        >
-          <div
-            className={`inline-flex items-center justify-center w-10 h-10 rounded-full ${darkMode ? "bg-red-500/20 text-red-500" : "bg-red-100 text-red-600"} mb-3`}
-          >
-            <MapPin className="h-5 w-5" />
-          </div>
-          <h3
-            className={`text-base font-semibold ${darkMode ? "text-white" : "text-slate-900"} mb-1.5`}
-          >
-            Error
-          </h3>
-          <p
-            className={`text-xs ${darkMode ? "text-red-400/80" : "text-red-500"} mb-5`}
-          >
-            {error || "Form not found"}
-          </p>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-5 py-2 bg-red-500 text-white text-sm rounded-lg font-medium hover:bg-red-600 transition-colors"
-          >
-            Try Again
-          </button>
+      <div className={`min-h-screen flex items-center justify-center p-4 ${darkMode ? "bg-slate-950" : "bg-slate-50"}`}>
+        <div className={`max-w-sm w-full border rounded-xl p-5 text-center ${darkMode ? "bg-red-500/10 border-red-500/20" : "bg-red-50 border-red-100"}`}>
+          <div className={`inline-flex items-center justify-center w-10 h-10 rounded-full mb-3 ${darkMode ? "bg-red-500/20 text-red-500" : "bg-red-100 text-red-600"}`}><MapPin className="h-5 w-5" /></div>
+          <h3 className={`text-base font-semibold mb-1.5 ${darkMode ? "text-white" : "text-slate-900"}`}>Error</h3>
+          <p className={`text-xs mb-5 ${darkMode ? "text-red-400/80" : "text-red-500"}`}>{error || "Form not found"}</p>
+          <button onClick={() => window.location.reload()} className="px-5 py-2 bg-red-500 text-white text-sm rounded-lg font-medium hover:bg-red-600">Try Again</button>
         </div>
       </div>
     );
   }
 
-  // Location confirmation state
-  if (!locationConfirmed) {
-    return (
-      <div
-        className={`min-h-screen ${darkMode ? "bg-slate-950 text-slate-200" : "bg-slate-50 text-slate-700"} selection:bg-blue-500/30 text-xs transition-colors duration-300`}
-      >
-        <div className="fixed inset-0 overflow-hidden pointer-events-none">
-          <div
-            className={`absolute top-0 left-1/4 w-[400px] h-[400px] ${darkMode ? "bg-blue-600/5" : "bg-blue-600/10"} rounded-full blur-[100px] -translate-y-1/2`}
-          />
-          <div
-            className={`absolute bottom-0 right-1/4 w-[400px] h-[400px] ${darkMode ? "bg-indigo-600/5" : "bg-indigo-600/10"} rounded-full blur-[100px] translate-y-1/2`}
-          />
-        </div>
-
-        <div className="relative mx-auto max-w-2xl px-6 py-12">
-          <div
-            className={`mb-6 rounded-xl border ${darkMode ? "border-slate-800 bg-slate-900/40" : "border-slate-200 bg-white shadow-sm"} overflow-hidden backdrop-blur-sm`}
-          >
-            <div
-              className={`border-b ${darkMode ? "border-slate-800 bg-slate-900/40" : "border-slate-100 bg-slate-50/50"} px-6 py-6`}
-            >
-              <h1
-                className={`text-2xl font-black tracking-tight ${darkMode ? "text-white" : "text-slate-900"}`}
-              >
-                {form.title}
-              </h1>
-              {form.description && (
-                <p
-                  className={`mt-2 text-sm ${darkMode ? "text-slate-400" : "text-slate-500"} leading-relaxed`}
-                >
-                  {form.description}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div
-            className={`rounded-xl border ${darkMode ? "border-slate-800 bg-slate-900/40" : "border-slate-200 bg-white shadow-sm"} overflow-hidden backdrop-blur-sm`}
-          >
-            <div
-              className={`border-b ${darkMode ? "border-slate-800 bg-slate-900/40" : "border-slate-100 bg-slate-50/50"} px-6 py-4 flex items-center justify-between`}
-            >
-              <h2
-                className={`text-base font-bold ${darkMode ? "text-white" : "text-slate-900"}`}
-              >
-                Location Verification
-              </h2>
-              <button
-                onClick={toggleDarkMode}
-                className={`p-2 rounded-full transition-all duration-300 ${
-                  darkMode
-                    ? "bg-slate-800/50 text-slate-400 hover:text-white hover:bg-slate-700/50"
-                    : "bg-slate-100 text-slate-500 hover:text-slate-900 hover:bg-slate-200"
-                }`}
-                title={darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
-              >
-                {darkMode ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-              </button>
-            </div>
-            <div className="p-6">
-              <p
-                className={`text-sm ${darkMode ? "text-slate-400" : "text-slate-500"} leading-relaxed`}
-              >
-                Completing this step helps the people understand where answers
-                are coming from. We will use the confirmed location details only
-                for operational insights.
-              </p>
-
-              {location ? (
-                <div
-                  className={`mt-6 rounded-xl border ${darkMode ? "border-emerald-500/10 bg-emerald-500/5" : "border-emerald-100/50 bg-emerald-50/30"} p-6`}
-                >
-                  <div className="flex items-center gap-3 mb-5">
-                    <div
-                      className={`flex h-8 w-8 items-center justify-center rounded-full ${darkMode ? "bg-emerald-500/20 text-emerald-400" : "bg-emerald-100 text-emerald-600"}`}
-                    >
-                      <MapPin className="h-4 w-4" />
-                    </div>
-                    <span
-                      className={`text-sm font-bold ${darkMode ? "text-emerald-400" : "text-emerald-900"}`}
-                    >
-                      Location captured successfully
-                    </span>
-                  </div>
-                  <div className="grid gap-5 text-xs sm:grid-cols-3">
-                    <div>
-                      <p className={`font-bold ${darkMode ? "text-slate-300" : "text-slate-900"}`}>
-                        Coordinates
-                      </p>
-                      <p className={`mt-1 font-mono ${darkMode ? "text-slate-500" : "text-slate-600"}`}>
-                        {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className={`font-bold ${darkMode ? "text-slate-300" : "text-slate-900"}`}>
-                        Approximate area
-                      </p>
-                      <p className={`mt-1 ${darkMode ? "text-slate-500" : "text-slate-600"} line-clamp-2`}>
-                        {locationDisplayName || "Loading..."}
-                      </p>
-                    </div>
-                    <div>
-                      <p className={`font-bold ${darkMode ? "text-slate-300" : "text-slate-900"}`}>
-                        Accuracy
-                      </p>
-                      <p className={`mt-1 ${darkMode ? "text-slate-500" : "text-slate-600"}`}>
-                        ±{Math.round(location.accuracy)}m
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                    <button
-                      onClick={handleRefreshLocation}
-                      className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all duration-200 ${
-                        darkMode
-                          ? "bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-                          : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
-                      }`}
-                    >
-                      <RefreshCw className="h-3 w-3" />
-                      Refresh
-                    </button>
-                    <button
-                      onClick={handleConfirmLocation}
-                      className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-6 py-2 text-xs font-bold text-white hover:bg-blue-700 transition-all duration-200 shadow-lg shadow-blue-500/10 active:scale-[0.98]"
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      Confirm & Continue
-                    </button>
-                  </div>
-                </div>
-              ) : locationError ? (
-                <div
-                  className={`mt-6 rounded-xl border ${darkMode ? "border-red-500/10 bg-red-500/5" : "border-red-100/50 bg-red-50/30"} p-6`}
-                >
-                  <p className={`text-xs font-bold ${darkMode ? "text-red-400" : "text-red-700"}`}>
-                    ⚠️ {locationError}
-                  </p>
-                  <button
-                    onClick={() => locationError.includes("refresh") ? window.location.reload() : handleRefreshLocation()}
-                    className={`mt-4 w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all duration-200 ${
-                      darkMode
-                        ? "bg-red-500/10 text-red-400 hover:bg-red-500/20"
-                        : "bg-red-50 text-red-700 hover:bg-red-100"
-                    }`}
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    {locationError.includes("refresh") ? "Refresh Page" : "Try Again"}
-                  </button>
-                </div>
-              ) : (
-                <div
-                  className={`mt-6 flex items-center gap-3 rounded-lg border ${darkMode ? "border-blue-500/20 bg-blue-500/5" : "border-blue-100 bg-blue-50/50"} px-6 py-4`}
-                >
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
-                  <span className={`text-xs font-bold ${darkMode ? "text-blue-400" : "text-blue-700"}`}>
-                    Capturing your location...
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Main form view
   const mainSections = getMainSections();
   const currentSection = mainSections[currentSectionIndex];
-  const effectiveViewType = form?.viewType || (form as any)?.view_type || "section-wise";
-
-  const subsections = form.sections.filter(
-    (s) => s.isSubsection && s.parentSectionId === currentSection?.id,
-  );
+  const effView = form.viewType || (form as any).view_type || "section-wise";
+  const subsections = form.sections.filter((s) => s.isSubsection && s.parentSectionId === currentSection?.id);
   const allSectionsToDisplay = currentSection ? [currentSection, ...subsections] : [];
 
-  let progressPercentage = 0;
-  let progressLabel = "";
-
-  if (effectiveViewType === "question-wise" && currentSection?.isVirtual) {
-    progressPercentage = ((currentSection.originalSectionIndex + 1) / currentSection.totalOriginalSections) * 100;
-    progressLabel = `${currentSection.originalSectionIndex + 1} / ${currentSection.totalOriginalSections}`;
-  } else {
-    progressPercentage = ((currentSectionIndex + 1) / mainSections.length) * 100;
-    progressLabel = `${currentSectionIndex + 1} / ${mainSections.length}`;
-  }
+  const progressPct = effView === "question-wise" && currentSection?.isVirtual
+    ? ((currentSection.originalSectionIndex + 1) / currentSection.totalOriginalSections) * 100
+    : ((currentSectionIndex + 1) / mainSections.length) * 100;
+  const progressLabel = effView === "question-wise" && currentSection?.isVirtual
+    ? `${currentSection.originalSectionIndex + 1} / ${currentSection.totalOriginalSections}`
+    : `${currentSectionIndex + 1} / ${mainSections.length}`;
 
   return (
-    <div
-      className={`min-h-screen ${darkMode ? "bg-slate-950 text-slate-200" : "bg-slate-50 text-slate-700"} selection:bg-blue-500/30 text-[11px] transition-colors duration-300`}
-    >
-      {/* Decorative Background Elements */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div
-          className={`absolute top-0 left-1/4 w-[400px] h-[400px] ${darkMode ? "bg-blue-600/5" : "bg-blue-600/10"} rounded-full blur-[100px] -translate-y-1/2`}
-        />
-        <div
-          className={`absolute bottom-0 right-1/4 w-[400px] h-[400px] ${darkMode ? "bg-indigo-600/5" : "bg-indigo-600/10"} rounded-full blur-[100px] translate-y-1/2`}
-        />
-      </div>
+    <div className={`h-screen flex flex-col ${darkMode ? "bg-slate-950 text-slate-200" : "bg-slate-50 text-slate-700"}`}>
 
-      {/* Header Section */}
-      <div
-        className={`sticky top-0 z-40 border-b ${darkMode ? "border-slate-800 bg-slate-950/80" : "border-slate-200 bg-white/80"} backdrop-blur-xl transition-colors duration-300`}
-      >
-        <div className="mx-auto max-w-[90%] px-4 py-3">
-          <div className="flex items-center justify-between gap-6">
-            <div className="flex flex-col flex-1 min-w-0">
-              <div className="flex items-center gap-3">
-                <h1
-                  className={`text-base font-black tracking-tight ${darkMode ? "text-white" : "text-slate-900"} truncate`}
-                >
-                  {form.title}
-                </h1>
-                <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[9px] font-black uppercase tracking-[0.2em] whitespace-nowrap animate-pulse">
-                  Preview Mode
-                </span>
-              </div>
-              {form.description && (
-                <p
-                  className={`text-[10px] font-medium leading-relaxed ${darkMode ? "text-slate-500" : "text-slate-400"}`}
-                >
-                  {form.description}
-                </p>
-              )}
-            </div>
-
-            {form.sections && (
-              <div className="flex items-center gap-4 flex-1 max-w-md">
-                <div
-                  className={`flex-1 h-1 overflow-hidden rounded-full ${darkMode ? "bg-slate-800" : "bg-slate-200"}`}
-                >
-                  <div
-                    className="h-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)] transition-all duration-700 ease-out"
-                    style={{ width: `${progressPercentage}%` }}
-                  />
-                </div>
-                <div className="flex items-center gap-2 whitespace-nowrap">
-                  <span className={`text-[10px] font-black ${darkMode ? "text-blue-400" : "text-blue-600"}`}>
-                    {Math.round(progressPercentage)}%
-                  </span>
-                  <span className={`text-[9px] font-bold uppercase tracking-widest ${darkMode ? "text-slate-500" : "text-slate-400"}`}>
-                    {progressLabel}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            <div className="flex items-center gap-4">
-              {suggestedAnswers && !suggestedAnswers._no_match && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSuggestedAnswers(null);
-                    setLastSuggestionSource(null);
-                    setSelectedRank(null);
-                  }}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border ${
-                    darkMode
-                      ? "bg-amber-500/10 text-amber-500 border-amber-500/20 hover:bg-amber-500/20"
-                      : "bg-amber-50 text-amber-600 border-amber-100 hover:bg-amber-100"
-                  }`}
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Clear Suggestions
-                </button>
-              )}
-
-              <button
-                onClick={handleLoadSampleData}
-                className={`p-1.5 rounded-full transition-all duration-300 ${
-                  darkMode
-                    ? "bg-blue-500/10 text-blue-400 hover:text-white hover:bg-blue-500/20"
-                    : "bg-blue-50 text-blue-600 hover:text-blue-700 hover:bg-blue-100"
-                }`}
-                title="Load Sample Data"
-              >
-                <Database className="h-3.5 w-3.5" />
-              </button>
-
-              <button
-                onClick={toggleDarkMode}
-                className={`p-1.5 rounded-full transition-all duration-300 ${
-                  darkMode
-                    ? "bg-slate-800/50 text-slate-400 hover:text-white hover:bg-slate-700/50"
-                    : "bg-slate-100 text-slate-500 hover:text-slate-900 hover:bg-slate-200"
-                }`}
-              >
-                {darkMode ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="relative py-8">
-        <div className="mx-auto max-w-[98%] px-4">
-          <div className="flex flex-col lg:flex-row gap-6 items-start">
-            {/* Form Column */}
-            <div className="flex-1 w-full min-w-0 space-y-4 max-w-5xl mx-auto">
-              {/* Chassis Number Selection (If enabled and at first section) */}
-              {formSessionId && chassisNumbers.length > 0 && currentSectionIndex === 0 && (
-                <div className={`p-8 rounded-2xl border-2 ${darkMode ? "bg-purple-500/5 border-purple-500/20" : "bg-purple-50 border-purple-100"} shadow-sm relative overflow-hidden group`}>
-                    <div className="absolute top-0 right-0 p-4 opacity-10 font-bold">
-                    <Clipboard className={`w-16 h-16 ${darkMode ? "text-purple-400" : "text-purple-600"}`} />
-                    </div>
-                  <h2 className={`text-xl font-bold ${darkMode ? "text-purple-300" : "text-purple-900"} mb-6 flex items-center gap-2`}>
-                    <div className={`p-2 rounded-lg ${darkMode ? "bg-purple-800/30" : "bg-purple-100"}`}>
-                      <Users className={`w-5 h-5 ${darkMode ? "text-purple-400" : "text-purple-600"}`} />
-                      </div>
-                      Select Chassis Number *
-                    </h2>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {chassisNumbers.map((cn: { chassisNumber: string; partDescription: string }) => {
-                          const chassisAssignments = chassisTenantAssignments;
-                      const isVisibleToTenant = !user?.tenantId ||
-                            !chassisAssignments[cn.chassisNumber] ||
-                            chassisAssignments[cn.chassisNumber].length === 0 ||
-                        chassisAssignments[cn.chassisNumber].includes(user.tenantId);
-
-                          if (!isVisibleToTenant) return null;
-
-                      const displayValue = cn.partDescription ? `${cn.chassisNumber}-${cn.partDescription}` : cn.chassisNumber;
-
-                          return (
-                            <button
-                              key={cn.chassisNumber}
-                              type="button"
-                          onClick={() => handleResponseChange('chassis_number', cn.chassisNumber)}
-                              className={`p-4 rounded-xl text-left border-2 transition-all duration-200 group relative overflow-hidden ${
-                            answers['chassis_number'] === cn.chassisNumber
-                                  ? `border-purple-600 ${darkMode ? "bg-gray-800" : "bg-white"} shadow-lg ring-4 ring-purple-100 dark:ring-purple-900/30 scale-[1.02]`
-                                  : `border-white dark:border-gray-700 ${darkMode ? "bg-gray-800/60" : "bg-white/60"} hover:border-purple-300 dark:hover:border-purple-500 hover:bg-white dark:hover:bg-gray-800 hover:shadow-md`
-                              }`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="flex flex-col">
-                              <span className={`font-bold ${answers['chassis_number'] === cn.chassisNumber ? "text-purple-700 dark:text-purple-300" : "text-gray-600 dark:text-gray-400"}`}>
-                                    {cn.chassisNumber}
-                                  </span>
-                                  {cn.partDescription && (
-                                <span className={`text-xs ${answers['chassis_number'] === cn.chassisNumber ? "text-purple-500 dark:text-purple-400" : "text-gray-500 dark:text-gray-400"}`}>
-                                      {cn.partDescription}
-                                    </span>
-                                  )}
-                                </div>
-                            {answers['chassis_number'] === cn.chassisNumber && (
-                                  <div className="w-5 h-5 bg-purple-600 rounded-full flex items-center justify-center">
-                                    <Send className="w-3 h-3 text-white" />
-                                  </div>
-                                )}
-                              </div>
-                          <div className={`mt-1 text-[10px] uppercase tracking-wider font-bold ${answers['chassis_number'] === cn.chassisNumber ? "text-purple-400 dark:text-purple-500" : "text-gray-400"}`}>
-                            {answers['chassis_number'] === cn.chassisNumber ? 'Selected Chassis' : 'Available'}
-                              </div>
-                            </button>
-                          );
-                    })}
-                    </div>
-                  </div>
-                )}
-
-              <form id="customer-form" onSubmit={handleSubmit} className="space-y-0">
-                <div className="space-y-4">
-                  <div
-                    className={`rounded-xl border ${darkMode ? "border-slate-800 bg-slate-900/40" : "border-slate-200 bg-white shadow-sm shadow-slate-200/50"} overflow-hidden backdrop-blur-sm`}
-                  >
-                    <div
-                      className={`border-b ${darkMode ? "border-slate-800 bg-slate-900/40" : "border-slate-100 bg-slate-50/50"} px-6 py-6`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <div className={`inline-flex items-center gap-2.5 ${(currentSection.title || (currentSection.description && currentSection.description !== form.description)) ? 'mb-3' : ''}`}>
-                            <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-blue-600 text-white font-black text-[11px] shadow-lg shadow-blue-500/20">
-                              {currentSectionIndex + 1}
-                            </div>
-                            <div className="flex flex-col">
-                              <span className={`text-[8px] font-black uppercase tracking-[0.25em] ${darkMode ? "text-slate-600" : "text-slate-400"}`}>
-                                {effectiveViewType === "question-wise" && currentSection.isVirtual
-                                  ? `Section ${currentSection.originalSectionIndex + 1}`
-                                  : "Current Phase"}
-                              </span>
-                              <span className={`text-[10px] font-bold ${darkMode ? "text-blue-400" : "text-blue-600"}`}>
-                                {effectiveViewType === "question-wise" && currentSection.isVirtual ? (
-                                  <>Question {currentSection.questionIndex + 1} of {currentSection.totalQuestionsInSection}</>
-                                ) : (
-                                  <>0{currentSectionIndex + 1} of 0{mainSections.length}</>
-                                )}
-                              </span>
-                            </div>
-                          </div>
-                          {currentSection.title && currentSection.title !== form.title && (
-                            <h2 className={`text-lg font-black tracking-tight ${darkMode ? "text-white" : "text-slate-900"}`}>
-                                {currentSection.title || currentSection.name}
-                              </h2>
-                            )}
-                          {currentSection.description && currentSection.description !== form.description && (
-                            <p className={`mt-1 text-xs ${darkMode ? "text-slate-500" : "text-slate-500"}`}>
-                                {currentSection.description}
-                              </p>
-                            )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="px-6 py-8 space-y-6">
-                      {allSectionsToDisplay.map((section) => (
-                        <div key={section.id}>
-                          {section.isSubsection && (
-                            <div className={`mb-4 pb-2 border-b ${darkMode ? "border-emerald-500/10" : "border-emerald-100/50"}`}>
-                              <h3 className={`text-sm font-bold ${darkMode ? "text-emerald-400" : "text-emerald-700"}`}>
-                                {section.title}
-                              </h3>
-                              {section.description && (
-                                <p className={`text-[11px] ${darkMode ? "text-emerald-500/60" : "text-emerald-600/80"}`}>
-                                  {section.description}
-                                </p>
-                              )}
-                            </div>
-                          )}
-                          <SectionContent
-                            section={section}
-                            formTitle={form.title}
-                            answers={answers}
-                            onAnswerChange={handleResponseChange}
-                            validationErrors={validationErrors}
-                            formId={formId}
-                            tenantSlug={tenantSlug}
-                            suggestedAnswers={suggestedAnswers}
-                            lastSuggestionSource={lastSuggestionSource}
-                            onApplyFullSuggestion={applySuggestions}
-                            fetchingSuggestionsForId={fetchingSuggestionsForId}
-                            rankMatchedAnswers={globalRankAnswers}
-                            currentRank={globalRank}
-                            onPreviousAnswersChange={setPreviousAnswers}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </form>
-            </div>
-
-            {/* Assistant Sidebar */}
-            {activeTrackQuestion && suggestedAnswers && !suggestedAnswers._no_match && (
-              <div className="hidden lg:block w-[380px] sticky top-24 animate-in fade-in slide-in-from-right-4 duration-500 z-20">
-                <div className={`rounded-2xl border ${darkMode ? "border-slate-800 bg-slate-900/40" : "border-slate-200 bg-white shadow-xl shadow-slate-200/50"} overflow-hidden backdrop-blur-sm`}>
-                  <div className={`border-b ${darkMode ? "border-slate-800 bg-slate-900/60" : "border-slate-50 bg-slate-50/80"} px-6 py-4`}>
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-lg ${darkMode ? "bg-blue-500/20" : "bg-blue-50"}`}>
-                        <Sparkles className="h-4 w-4 text-blue-500" />
-                      </div>
-                      <div>
-                        <span className={`text-[10px] font-black uppercase tracking-[0.2em] ${darkMode ? "text-slate-500" : "text-slate-400"}`}>Assistant</span>
-                        <h3 className={`text-sm font-black ${darkMode ? "text-white" : "text-slate-900"}`}>Found Records!</h3>
-                      </div>
-                    </div>
-                  </div>
-                  {renderAssistantContent()}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Sticky Bottom Navigation */}
-      <div
-        className={`sticky bottom-0 z-40 border-t ${darkMode ? "border-slate-800 bg-slate-950/90" : "border-slate-200 bg-white/90"} backdrop-blur-xl transition-colors duration-300`}
-      >
-        <div className="mx-auto max-w-[90%] px-4 py-3">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <button
-                type="button"
-                onClick={() => navigate("/forms/analytics")}
-                className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-[10px] font-bold uppercase tracking-widest transition-all duration-200 ${
-                  darkMode
-                    ? "bg-slate-800/50 text-slate-500 hover:bg-slate-800 hover:text-slate-200"
-                    : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-900"
-                }`}
-              >
-                Back to Portal
-              </button>
-
-              {/* Location Status Badge */}
-              
-            </div>
-
-            <div className="flex items-center gap-3">
-              {currentSectionIndex > 0 && (
-                <button
-                  type="button"
-                  onClick={handlePrevSection}
-                  className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-[9.5px] font-bold uppercase tracking-wider transition-all duration-200 ${
-                    darkMode
-                      ? "bg-slate-800/50 text-slate-500 hover:bg-slate-800 hover:text-slate-200"
-                      : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-900"
-                  }`}
-                >
-                  <ChevronUp className="h-3 w-3" />
-                  <span>Previous</span>
-                </button>
-              )}
-
-              {!isLastSection ? (
-                <button
-                  type="button"
-                  onClick={handleSectionSubmit}
-                  disabled={sectionSubmitting}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-5 py-2 text-[9.5px] font-bold uppercase tracking-wider text-white hover:bg-blue-700 active:scale-[0.98] disabled:opacity-50 transition-all duration-200 shadow-lg shadow-blue-500/20"
-                >
-                  {sectionSubmitting ? (
-                    <>
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      <span>Saving...</span>
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="h-3 w-3" />
-                      <span>Next Section</span>
-                    </>
-                  )}
-                </button>
-              ) : (
-                <button
-                  type="submit"
-                  form="customer-form"
-                  onClick={handleSubmit}
-                  disabled={submitting}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-5 py-2 text-[9.5px] font-bold uppercase tracking-wider text-white hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50 transition-all duration-200 shadow-lg shadow-emerald-500/20"
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      <span>Submitting...</span>
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="h-3 w-3" />
-                      <span>Submit Response</span>
-                    </>
-                  )}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-      {/* Mobile Assistant Toggle */}
-      {activeTrackQuestion && suggestedAnswers && !suggestedAnswers._no_match && (
-        <button
-          onClick={() => setShowMobileAssistant(true)}
-          className="lg:hidden fixed bottom-24 right-6 z-50 p-4 rounded-full bg-blue-600 text-white shadow-2xl shadow-blue-500/40 animate-bounce transition-transform active:scale-95"
-        >
-          <Sparkles className="h-6 w-6" />
-          {suggestedAnswers && Array.isArray(suggestedAnswers) && suggestedAnswers.length > 0 && (
-            <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold ring-2 ring-white">
-              {suggestedAnswers.length}
+      {/* ══ TOP HEADER BAR ══ */}
+      <div className={`flex-none border-b ${darkMode ? "border-slate-800 bg-slate-950/95" : "border-slate-200 bg-white/95"} backdrop-blur-xl z-40 px-4 py-2`}>
+        <div className="flex items-center gap-4">
+          {/* Title — fixed to 30% */}
+          <div className="flex flex-col min-w-0 flex-shrink-0" style={{ width: "30%" }}>
+            <h1 className={`text-sm font-black tracking-tight truncate ${darkMode ? "text-white" : "text-slate-900"}`}>{form.title}</h1>
+            <span className="self-start px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[9px] font-black uppercase tracking-[0.2em] animate-pulse mt-0.5">
+              Preview Mode
             </span>
-          )}
-        </button>
-      )}
+          </div>
+          {/* Progress */}
+          <div className="flex items-center gap-2 flex-1">
+            <div className={`flex-1 h-1 rounded-full overflow-hidden ${darkMode ? "bg-slate-800" : "bg-slate-200"}`}>
+              <div className="h-full bg-blue-500 transition-all duration-700" style={{ width: `${progressPct}%` }} />
+            </div>
+            <span className={`text-[10px] font-black whitespace-nowrap ${darkMode ? "text-blue-400" : "text-blue-600"}`}>
+              {Math.round(progressPct)}% · {progressLabel}
+            </span>
+          </div>
+          {/* Actions */}
+          <div className="flex items-center gap-2">
+            <button onClick={handleLoadSampleData} title="Load Sample Data"
+              className={`p-1.5 rounded-full transition-all ${darkMode ? "bg-blue-500/10 text-blue-400 hover:bg-blue-500/20" : "bg-blue-50 text-blue-600 hover:bg-blue-100"}`}>
+              <Database className="h-3.5 w-3.5" />
+            </button>
+            <button onClick={toggleDarkMode}
+              className={`p-1.5 rounded-full transition-all ${darkMode ? "bg-slate-800 text-slate-400 hover:bg-slate-700" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}>
+              {darkMode ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+        </div>
+      </div>
 
-      {/* Mobile Assistant Modal */}
-      {showMobileAssistant && (
-        <div className="lg:hidden fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div 
-            className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-300"
-            onClick={() => setShowMobileAssistant(false)}
-          />
-          <div className={`relative w-full sm:max-w-lg max-h-[90vh] overflow-hidden rounded-t-3xl sm:rounded-3xl border-t sm:border border-slate-200 dark:border-slate-800 ${darkMode ? "bg-slate-900 shadow-2xl shadow-black" : "bg-white shadow-2xl"} animate-in slide-in-from-bottom-full duration-500 flex flex-col`}>
-            {/* Modal Header */}
-            <div className={`p-4 border-b flex items-center justify-between sticky top-0 z-10 ${darkMode ? "bg-slate-900/95 border-slate-800" : "bg-white/95 border-slate-100"} backdrop-blur-md`}>
-              <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${darkMode ? "bg-blue-500/20" : "bg-blue-50"}`}>
-                  <Sparkles className="h-4 w-4 text-blue-500" />
-                </div>
-                <div>
-                  <span className={`text-[10px] font-black uppercase tracking-[0.2em] ${darkMode ? "text-slate-500" : "text-slate-400"}`}>Assistant</span>
-                  <h3 className={`text-sm font-black ${darkMode ? "text-white" : "text-slate-900"}`}>Historical Records</h3>
+      {/* ══ SPLIT PANELS ══ */}
+      <div className="flex-1 flex overflow-hidden">
+
+        {/* ── LEFT: 30% — Form ── */}
+        <div
+          className={`flex flex-col border-r overflow-hidden ${darkMode ? "border-slate-800 bg-slate-950" : "border-slate-200 bg-slate-50"}`}
+          style={{ width: "20%", minWidth: 280 }}
+        >
+          {/* Panel label */}
+          <div className={`flex-none px-3 py-1.5 border-b flex items-center gap-2 ${darkMode ? "border-slate-800 bg-slate-900/60" : "border-slate-100 bg-white"}`}>
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+            <span className={`text-[9px] font-black uppercase tracking-widest ${darkMode ? "text-slate-500" : "text-slate-400"}`}>Fill in answers</span>
+          </div>
+
+          {/* Scrollable form */}
+          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+
+            {/* Chassis selector */}
+            {formSessionId && chassisNumbers.length > 0 && currentSectionIndex === 0 && (
+              <div className={`p-3 rounded-xl border ${darkMode ? "bg-purple-500/5 border-purple-500/20" : "bg-purple-50 border-purple-100"}`}>
+                <h2 className={`text-xs font-bold mb-2 flex items-center gap-1.5 ${darkMode ? "text-purple-300" : "text-purple-900"}`}>
+                  <Users className="w-3.5 h-3.5" /> Select Chassis Number *
+                </h2>
+                <div className="flex flex-col gap-1.5">
+                  {chassisNumbers.map((cn) => {
+                    const visible = !user?.tenantId || !chassisTenantAssignments[cn.chassisNumber] || !chassisTenantAssignments[cn.chassisNumber].length || chassisTenantAssignments[cn.chassisNumber].includes(user.tenantId);
+                    if (!visible) return null;
+                    return (
+                      <button key={cn.chassisNumber} type="button"
+                        onClick={() => handleResponseChange("chassis_number", cn.chassisNumber)}
+                        className={`p-2.5 rounded-lg text-left border-2 text-[10px] transition-all ${answers["chassis_number"] === cn.chassisNumber ? `border-purple-600 ${darkMode ? "bg-slate-800" : "bg-white"} shadow-md` : `border-transparent ${darkMode ? "bg-slate-800/60 hover:border-purple-500/50" : "bg-white/60 hover:border-purple-300"}`}`}>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className={`font-bold ${answers["chassis_number"] === cn.chassisNumber ? "text-purple-600" : ""}`}>{cn.chassisNumber}</div>
+                            {cn.partDescription && <div className="opacity-60 text-[9px]">{cn.partDescription}</div>}
+                          </div>
+                          {answers["chassis_number"] === cn.chassisNumber && <Send className="w-3 h-3 text-purple-600" />}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-              <button 
-                onClick={() => setShowMobileAssistant(false)}
-                className={`p-2 rounded-xl transition-colors ${darkMode ? "hover:bg-slate-800 text-slate-400" : "hover:bg-slate-100 text-slate-500"}`}
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+            )}
 
-            {/* Modal Content */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar">
-              {renderAssistantContent()}
+            {/* Section form */}
+            <form id="customer-form" onSubmit={handleSubmit}>
+              <div className={`rounded-xl border overflow-hidden ${darkMode ? "border-slate-800 bg-slate-900/40" : "border-slate-200 bg-white shadow-sm"}`}>
+                {/* Section header */}
+                <div className={`border-b px-4 py-3 ${darkMode ? "border-slate-800 bg-slate-900/40" : "border-slate-100 bg-slate-50/50"}`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center justify-center w-5 h-5 rounded-md bg-blue-600 text-white font-black text-[9px]">{currentSectionIndex + 1}</div>
+                    <span className={`text-[8px] font-black uppercase tracking-widest ${darkMode ? "text-blue-400" : "text-blue-600"}`}>
+                      {effView === "question-wise" && currentSection?.isVirtual
+                        ? `Q${currentSection.questionIndex + 1}/${currentSection.totalQuestionsInSection}`
+                        : `${currentSectionIndex + 1} of ${mainSections.length}`}
+                    </span>
+                  </div>
+                  {currentSection?.title && currentSection.title !== form.title && (
+                    <h2 className={`text-sm font-black ${darkMode ? "text-white" : "text-slate-900"}`}>{currentSection.title}</h2>
+                  )}
+                  {currentSection?.description && currentSection.description !== form.description && (
+                    <p className={`text-[10px] mt-0.5 ${darkMode ? "text-slate-500" : "text-slate-500"}`}>{currentSection.description}</p>
+                  )}
+                </div>
+
+                {/* Questions */}
+                <div className="px-4 py-4 space-y-4">
+                  {allSectionsToDisplay.map((section) => (
+                    <div key={section.id}>
+                      {section.isSubsection && (
+                        <div className={`mb-3 pb-1.5 border-b ${darkMode ? "border-emerald-500/10" : "border-emerald-100"}`}>
+                          <h3 className={`text-xs font-bold ${darkMode ? "text-emerald-400" : "text-emerald-700"}`}>{section.title}</h3>
+                        </div>
+                      )}
+                      <SectionContent
+                        section={section}
+                        formTitle={form.title}
+                        answers={answers}
+                        onAnswerChange={handleResponseChange}
+                        validationErrors={validationErrors}
+                        formId={formId}
+                        tenantSlug={tenantSlug}
+                        suggestedAnswers={null}
+                        lastSuggestionSource={null}
+                        onApplyFullSuggestion={() => { }}
+                        fetchingSuggestionsForId={null}
+                        rankMatchedAnswers={null}
+                        currentRank={null}
+                        onPreviousAnswersChange={() => { }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </form>
+          </div>
+
+          {/* Bottom nav */}
+          <div className={`flex-none border-t px-3 py-2 ${darkMode ? "border-slate-800 bg-slate-950/90" : "border-slate-200 bg-white/90"}`}>
+            <div className="flex items-center justify-between gap-2">
+              <button type="button" onClick={() => navigate("/forms/analytics")}
+                className={`text-[9px] font-bold uppercase tracking-wider px-2.5 py-1.5 rounded-lg transition-all ${darkMode ? "bg-slate-800/50 text-slate-500 hover:text-slate-200" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}>
+                ← Portal
+              </button>
+              <div className="flex items-center gap-1.5">
+                {currentSectionIndex > 0 && (
+                  <button type="button" onClick={handlePrevSection}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[9px] font-bold uppercase transition-all ${darkMode ? "bg-slate-800/50 text-slate-500 hover:text-slate-200" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}>
+                    <ChevronUp className="h-2.5 w-2.5" /> Prev
+                  </button>
+                )}
+                {!isLastSection ? (
+                  <button type="button" onClick={handleSectionSubmit} disabled={sectionSubmitting}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 disabled:opacity-50 transition-all">
+                    {sectionSubmitting ? <><Loader2 className="h-2.5 w-2.5 animate-spin" /> Saving...</> : <><CheckCircle2 className="h-2.5 w-2.5" /> Next</>}
+                  </button>
+                ) : (
+                  <button type="submit" form="customer-form" onClick={handleSubmit} disabled={submitting}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[9px] font-bold uppercase hover:bg-emerald-700 disabled:opacity-50 transition-all">
+                    {submitting ? <><Loader2 className="h-2.5 w-2.5 animate-spin" /> Submitting...</> : <><CheckCircle2 className="h-2.5 w-2.5" /> Submit</>}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
-      )}
+
+        {/* ── RIGHT: 70% — OPS Live Template ── */}
+        <div className="flex flex-col overflow-hidden bg-gray-100" style={{ width: "80%" }}>
+          {/* Panel label + print button */}
+          <div className="flex-none px-4 py-1.5 border-b border-gray-200 bg-white flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Live OPS Template</span>
+              <span className="text-[8px] text-slate-300">— updates as you type</span>
+            </div>
+            <button onClick={handlePrintOPS}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all">
+              <Printer className="h-3 w-3" /> Save as PDFs (A3)
+            </button>
+          </div>
+
+
+
+          {/* Scrollable OPS output */}
+          <div className="flex-1 overflow-auto p-2">
+            <div ref={opsContainerRef} className="bg-white shadow-sm" style={{ minWidth: 860 }}>
+              {showDebugView ? (
+                // Debug view - show all questions and answers
+                <div style={{ padding: "20px", fontFamily: "Arial", fontSize: "12px" }}>
+                  <h2 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "20px" }}>Form Questions & Answers (Debug View)</h2>
+                  <p style={{ marginBottom: "20px", color: "#666" }}>
+                    No OPS section mapping found. Please configure opsSectionMapping prop or ensure your form has sections with matching titles.
+                    Current sections: {form.sections?.map(s => s.title).join(", ") || "none"}
+                  </p>
+
+                  {form.sections?.map((section, sIdx) => (
+                    <div key={sIdx} style={{ marginBottom: "30px", border: "1px solid #ddd", borderRadius: "8px", overflow: "hidden" }}>
+                      <div style={{ background: "#f0f0f0", padding: "10px", fontWeight: "bold", borderBottom: "1px solid #ddd" }}>
+                        Section: {section.title || `Section ${sIdx + 1}`} (ID: {section.id || section._id})
+                      </div>
+                      <div style={{ padding: "15px" }}>
+                        {section.questions?.map((q, qIdx) => {
+                          const qId = q.id || q._id;
+                          const answer = answers[qId];
+                          return (
+                            <div key={qIdx} style={{ marginBottom: "15px", paddingBottom: "10px", borderBottom: "1px solid #eee" }}>
+                              <div style={{ fontWeight: "bold", marginBottom: "5px" }}>
+                                {qIdx + 1}. {q.text || q.label || `Question ${qIdx + 1}`}
+                                <span style={{ fontSize: "11px", color: "#999", marginLeft: "10px" }}>({q.type})</span>
+                              </div>
+                              <div style={{ color: "#0066cc", marginTop: "5px" }}>
+                                Answer: {answer !== undefined && answer !== null && answer !== "" ? (
+                                  typeof answer === "object" ? JSON.stringify(answer) : answer
+                                ) : (
+                                  <span style={{ color: "#999", fontStyle: "italic" }}>Not answered yet</span>
+                                )}
+                              </div>
+                              <div style={{ fontSize: "11px", color: "#999", marginTop: "3px" }}>
+                                Question ID: {qId}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {(!section.questions || section.questions.length === 0) && (
+                          <div style={{ color: "#999", fontStyle: "italic" }}>No questions in this section</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Also show all answers collected so far */}
+                  <div style={{ marginTop: "30px", border: "1px solid #ddd", borderRadius: "8px", overflow: "hidden" }}>
+                    <div style={{ background: "#f0f0f0", padding: "10px", fontWeight: "bold", borderBottom: "1px solid #ddd" }}>
+                      All Answers (Raw Data)
+                    </div>
+                    <div style={{ padding: "15px" }}>
+                      <pre style={{ background: "#f9f9f9", padding: "10px", borderRadius: "4px", overflow: "auto", fontSize: "11px" }}>
+                        {JSON.stringify(answers, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <OPSTemplate
+                  form={form}
+                  answers={answers}
+                  opsSectionMapping={effectiveOpsMapping}
+                  onPrint={handlePrintOPS}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+
+      </div>
     </div>
   );
 }

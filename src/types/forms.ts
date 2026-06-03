@@ -59,6 +59,36 @@ export interface FollowUpQuestion {
   requireFollowUp?: boolean; // Make follow-up mandatory for certain question types
 }
 
+export interface OpsTemplateConfig {
+  basicInfoLabels?: {
+    deptSection?: string;
+    lineZone?: string;
+    model?: string;
+    processStation?: string;
+    formatNo?: string;
+    controlNo?: string;
+  };
+  abnormalityHandlingRoute?: string;
+  abnormalityDetailsLabel?: string;
+  emsGuidelines?: string[];
+  fiveSGuidelines?: string[];
+  processInstructions?: string[];
+  generalInstructions?: string[];
+  troubleTasks?: Array<{
+    sno: number;
+    trouble: string;
+    task: string;
+  }>;
+  rejectionHandling?: string;
+  measuringInstruments?: string[];
+  tableHeaders?: Record<string, string>;
+  associateSignArea?: {
+    title1?: string;
+    title2?: string;
+  };
+  illustrationsQuestion?: string;
+}
+
 export interface Question {
   id: string;
   title: string;
@@ -85,6 +115,7 @@ export interface Question {
     chassisNumber: string;
     assignedTenants: string[];
   }>;
+  opsTemplateConfig?: OpsTemplateConfig;
 }
 
 export interface Response {

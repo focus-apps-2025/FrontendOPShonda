@@ -43,6 +43,7 @@ import { SectionBranchingConfig } from "./forms/SectionBranchingConfig";
 import { FormRoutingConfig } from "./forms/FormRoutingConfig";
 import PreviewForm from "./PreviewForm";
 import ParameterModal from "./ParameterModal";
+
 import {
   downloadFormImportTemplate,
   downloadNestedFormImportTemplate,
@@ -159,75 +160,75 @@ export default function FormCreator() {
       : "list"
   );
   const [forms, setForms] = useState<any[]>([]);
-  const [showPreview, setShowPreview] = useState(false);
-  const [tenants, setTenants] = useState<any[]>([]);
-  const [selectedTenantId, setSelectedTenantId] = useState<string>("");
-  const [isGlobal, setIsGlobal] = useState<boolean>(
-    new URLSearchParams(location.search).get("isGlobal") === "true"
-  );
-  const [sharedWithTenants, setSharedWithTenants] = useState<string[]>([]);
-  const [currentPage, setCurrentPage] = useState<number>(0); // For multi-page navigation
-  const [pageWindowStart, setPageWindowStart] = useState<number>(0);
-  const [openOptionMenu, setOpenOptionMenu] = useState<string | null>(null); // Track which option's menu is open
-  const [openQuestionMenu, setOpenQuestionMenu] = useState<string | null>(null); // Track which question's menu is open
-  const [openChassisMenu, setOpenChassisMenu] = useState<number | null>(null); // Track which chassis's menu is open
-  const [showSectionSelector, setShowSectionSelector] = useState(false); // Show modal for selecting a section
-  const [pendingSectionLink, setPendingSectionLink] = useState<{
-    sectionId: string;
-    parentQuestionId: string;
-    triggerValue: string;
-    path: string[];
-  } | null>(null);
-  const [showFormSelector, setShowFormSelector] = useState(false); // Show modal for selecting a form
-  const [pendingFormLink, setPendingFormLink] = useState<{
-    sectionId: string;
-    parentQuestionId: string;
-    triggerValue: string;
-    path: string[];
-  } | null>(null);
-  const [showBranchingConfig, setShowBranchingConfig] = useState(false);
-  const [branchingConfigQuestion, setBranchingConfigQuestion] = useState<{
-    questionId: string;
-    sectionId: string;
-    options: string[];
-  } | null>(null);
-  // State for chassis number tenant configuration
-  const [showChassisTenantModal, setShowChassisTenantModal] = useState(false);
-  const [chassisTenantConfig, setChassisTenantConfig] = useState<{
-    chassisNumber: string;
-    index: number;
-  } | null>(null);
-  const [newChassisNumber, setNewChassisNumber] = useState("");
-  const [newPartDescription, setNewPartDescription] = useState("");
-  const [chassisTenantAssignments, setChassisTenantAssignments] = useState<Record<string, string[]>>({});
-  const [form, setForm] = useState({
-    id: "",
-    title: "",
-    description: "",
-    isVisible: true,
-    locationEnabled: true,
-    sections: [
-      {
-        id: crypto.randomUUID(),
-        title: "Section 1",
-        description: "",
-        questions: [],
-      },
-    ] as FormSection[],
-    followUpQuestions: [] as FollowUpQuestion[],
-    chassisNumbers: [] as Array<{ chassisNumber: string; partDescription: string }>,
-  });
-  const [formSectionBranching, setFormSectionBranching] = useState<any[]>([]);
-  const [showFormRoutingConfig, setShowFormRoutingConfig] = useState(false);
-  const [formRoutingConfigQuestion, setFormRoutingConfigQuestion] = useState<{
-    questionId: string;
-    sectionId: string;
-    options: string[];
-  } | null>(null);
-  const [showParameterModal, setShowParameterModal] = useState(false);
-  const [parameters, setParameters] = useState<any[]>([]);
-  const [tempParameters, setTempParameters] = useState<any[]>([]);
-  const { showSuccess, showError, showConfirm } = useNotification();
+const [showPreview, setShowPreview] = useState(false);
+   const [tenants, setTenants] = useState<any[]>([]);
+   const [selectedTenantId, setSelectedTenantId] = useState<string>("");
+   const [isGlobal, setIsGlobal] = useState<boolean>(
+     new URLSearchParams(location.search).get("isGlobal") === "true"
+   );
+   const [sharedWithTenants, setSharedWithTenants] = useState<string[]>([]);
+   const [currentPage, setCurrentPage] = useState<number>(0); // For multi-page navigation
+   const [pageWindowStart, setPageWindowStart] = useState<number>(0);
+   const [openOptionMenu, setOpenOptionMenu] = useState<string | null>(null); // Track which option's menu is open
+   const [openQuestionMenu, setOpenQuestionMenu] = useState<string | null>(null); // Track which question's menu is open
+   const [openChassisMenu, setOpenChassisMenu] = useState<number | null>(null); // Track which chassis's menu is open
+   const [showSectionSelector, setShowSectionSelector] = useState(false); // Show modal for selecting a section
+   const [pendingSectionLink, setPendingSectionLink] = useState<{
+     sectionId: string;
+     parentQuestionId: string;
+     triggerValue: string;
+     path: string[];
+   } | null>(null);
+   const [showFormSelector, setShowFormSelector] = useState(false); // Show modal for selecting a form
+   const [pendingFormLink, setPendingFormLink] = useState<{
+     sectionId: string;
+     parentQuestionId: string;
+     triggerValue: string;
+     path: string[];
+   } | null>(null);
+   const [showBranchingConfig, setShowBranchingConfig] = useState(false);
+   const [branchingConfigQuestion, setBranchingConfigQuestion] = useState<{
+     questionId: string;
+     sectionId: string;
+     options: string[];
+   } | null>(null);
+   // State for chassis number tenant configuration
+   const [showChassisTenantModal, setShowChassisTenantModal] = useState(false);
+   const [chassisTenantConfig, setChassisTenantConfig] = useState<{
+     chassisNumber: string;
+     index: number;
+   } | null>(null);
+   const [newChassisNumber, setNewChassisNumber] = useState("");
+   const [newPartDescription, setNewPartDescription] = useState("");
+   const [chassisTenantAssignments, setChassisTenantAssignments] = useState<Record<string, string[]>>({});
+   const [form, setForm] = useState({
+     id: "",
+     title: "",
+     description: "",
+     isVisible: true,
+     locationEnabled: true,
+     sections: [
+       {
+         id: crypto.randomUUID(),
+         title: "Section 1",
+         description: "",
+         questions: [],
+       },
+     ] as FormSection[],
+     followUpQuestions: [] as FollowUpQuestion[],
+     chassisNumbers: [] as Array<{ chassisNumber: string; partDescription: string }>,
+   });
+   const [formSectionBranching, setFormSectionBranching] = useState<any[]>([]);
+   const [showFormRoutingConfig, setShowFormRoutingConfig] = useState(false);
+   const [formRoutingConfigQuestion, setFormRoutingConfigQuestion] = useState<{
+     questionId: string;
+     sectionId: string;
+     options: string[];
+   } | null>(null);
+   const [showParameterModal, setShowParameterModal] = useState(false);
+   const [parameters, setParameters] = useState<any[]>([]);
+   const [tempParameters, setTempParameters] = useState<any[]>([]);
+   const { showSuccess, showError, showConfirm } = useNotification();
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -309,87 +310,87 @@ export default function FormCreator() {
             setSharedWithTenants(backendForm.sharedWithTenants);
           }
 
-          // Transform backend form to frontend format
-          // Reconstruct nested follow-up questions from flat array or use existing nested structure
-          const sectionsWithNestedFollowUps = (backendForm.sections || []).map(
-            (section: any) => {
-              const mainQuestions: Question[] = [];
-              const followUpMap = new Map<string, FollowUpQuestion[]>();
+           // Transform backend form to frontend format
+           // Reconstruct nested follow-up questions from flat array or use existing nested structure
+           const sectionsWithNestedFollowUps = (backendForm.sections || []).map(
+             (section: any) => {
+               const mainQuestions: Question[] = [];
+               const followUpMap = new Map<string, FollowUpQuestion[]>();
 
-              // First pass: separate main questions and follow-ups (for backward compatibility with flat structure)
-              section.questions.forEach((q: any) => {
-                if (q.showWhen && q.showWhen.questionId) {
-                  // This is a follow-up question
-                  const parentId = q.showWhen.questionId;
-                  if (!followUpMap.has(parentId)) {
-                    followUpMap.set(parentId, []);
-                  }
-                  followUpMap.get(parentId)!.push(q as FollowUpQuestion);
-                } else {
-                  // This is a main question
-                  mainQuestions.push(q as Question);
-                }
-              });
+               // First pass: separate main questions and follow-ups (for backward compatibility with flat structure)
+               section.questions.forEach((q: any) => {
+                 if (q.showWhen && q.showWhen.questionId) {
+                   // This is a follow-up question
+                   const parentId = q.showWhen.questionId;
+                   if (!followUpMap.has(parentId)) {
+                     followUpMap.set(parentId, []);
+                   }
+                   followUpMap.get(parentId)!.push(q as FollowUpQuestion);
+                 } else {
+                   // This is a main question
+                   mainQuestions.push(q as Question);
+                 }
+               });
 
-              // Second pass: attach follow-ups to their parent questions and initialize followUpConfig
-              const questionsWithFollowUps = mainQuestions.map((q) => {
-                // Use existing nested follow-ups if present, otherwise reconstruct from flat array
-                const followUps =
-                  q.followUpQuestions && q.followUpQuestions.length > 0
-                    ? q.followUpQuestions
-                    : followUpMap.get(q.id) || [];
+               // Second pass: attach follow-ups to their parent questions and initialize followUpConfig
+               const questionsWithFollowUps = mainQuestions.map((q) => {
+                 // Use existing nested follow-ups if present, otherwise reconstruct from flat array
+                 const followUps =
+                   q.followUpQuestions && q.followUpQuestions.length > 0
+                     ? q.followUpQuestions
+                     : followUpMap.get(q.id) || [];
 
-                // Initialize followUpConfig if not present
-                const followUpConfig = q.followUpConfig || {};
-                if (q.options && q.options.length > 0) {
-                  q.options.forEach((option: string) => {
-                    if (!followUpConfig[option]) {
-                      followUpConfig[option] = {
-                        hasFollowUp: false,
-                        required: false,
-                      };
-                    }
-                  });
-                  // Mark options that have follow-ups
-                  followUps.forEach((followUp) => {
-                    if (
-                      followUp.showWhen?.value &&
-                      followUpConfig[followUp.showWhen.value]
-                    ) {
-                      followUpConfig[followUp.showWhen.value].hasFollowUp =
-                        true;
-                    }
-                  });
-                }
+                 // Initialize followUpConfig if not present
+                 const followUpConfig = q.followUpConfig || {};
+                 if (q.options && q.options.length > 0) {
+                   q.options.forEach((option: string) => {
+                     if (!followUpConfig[option]) {
+                       followUpConfig[option] = {
+                         hasFollowUp: false,
+                         required: false,
+                       };
+                     }
+                   });
+                   // Mark options that have follow-ups
+                   followUps.forEach((followUp) => {
+                     if (
+                       followUp.showWhen?.value &&
+                       followUpConfig[followUp.showWhen.value]
+                     ) {
+                       followUpConfig[followUp.showWhen.value].hasFollowUp =
+                         true;
+                     }
+                   });
+                 }
 
-                return {
-                  ...q,
-                  followUpQuestions: followUps,
-                  followUpConfig: followUpConfig,
-                };
-              });
+                 return {
+                   ...q,
+                   followUpQuestions: followUps,
+                   followUpConfig: followUpConfig,
+                 };
+               });
 
-              return {
-                ...section,
-                id: section.id || section._id,
-                nextSectionId: section.nextSectionId,
-                questions: questionsWithFollowUps,
-              };
-            }
-          );
+               return {
+                 ...section,
+                 id: section.id || section._id,
+                 nextSectionId: section.nextSectionId,
+                 questions: questionsWithFollowUps,
+               };
+             }
+           );
 
-          setForm({
-            id: backendForm.id,
-            title: backendForm.title,
-            description: backendForm.description,
-            isVisible: backendForm.isVisible,
-            locationEnabled: backendForm.locationEnabled !== false,
-            sections: sectionsWithNestedFollowUps,
-            followUpQuestions: backendForm.followUpQuestions || [],
-            chassisNumbers: (backendForm.chassisNumbers || []).map((cn: any) => 
-              typeof cn === 'string' ? { chassisNumber: cn, partDescription: '' } : cn
-            ),
-          });
+           setForm({
+             id: backendForm.id,
+             title: backendForm.title,
+             description: backendForm.description,
+             isVisible: backendForm.isVisible,
+             locationEnabled: backendForm.locationEnabled !== false,
+             sections: sectionsWithNestedFollowUps,
+             followUpQuestions: backendForm.followUpQuestions || [],
+             chassisNumbers: (backendForm.chassisNumbers || []).map((cn: any) => 
+               typeof cn === 'string' ? { chassisNumber: cn, partDescription: '' } : cn
+             ),
+           });
 
           if (backendForm.sectionBranching) {
             setFormSectionBranching(backendForm.sectionBranching);
@@ -574,12 +575,12 @@ export default function FormCreator() {
     setChassisTenantAssignments(newAssignments);
   };
 
-  const handleExportTemplate = (type: 'flat' | 'nested' = 'flat') => {
+  const handleExportTemplate = async (type: 'flat' | 'nested' = 'flat') => {
     try {
       if (type === 'nested') {
         downloadNestedFormImportTemplate();
       } else {
-        downloadFormImportTemplate();
+        await downloadFormImportTemplate({}, undefined, form.opsTemplateConfig);
       }
       showSuccess(`${type === 'nested' ? 'Nested' : 'Flat'} template exported successfully!`, "Export Template");
     } catch (error) {
@@ -597,16 +598,16 @@ export default function FormCreator() {
     try {
       const importedData = await parseFormWorkbook(file);
 
-      const newForm = {
-        id: "",
-        title: (importedData as any).title || "Imported Form",
-        description: (importedData as any).description || "",
-        isVisible: true,
-        locationEnabled: true,
-        sections: (importedData as any).sections || [],
-        followUpQuestions: [],
-        chassisNumbers: [],
-      };
+       const newForm = {
+         id: "",
+         title: (importedData as any).title || "Imported Form",
+         description: (importedData as any).description || "",
+         isVisible: true,
+         locationEnabled: true,
+         sections: (importedData as any).sections || [],
+         followUpQuestions: [],
+         chassisNumbers: [],
+       };
 
       setForm(newForm);
 
@@ -3758,6 +3759,8 @@ export default function FormCreator() {
       </div>
     );
   }
+
+
 
   return (
     <div className="w-full overflow-auto bg-gradient-to-br from-blue-50 via-white to-blue-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950">

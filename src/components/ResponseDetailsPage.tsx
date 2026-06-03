@@ -25,7 +25,7 @@ import {
   ChevronDown,
   MapPin,
   ArrowLeft,
-  TrendingUp,
+  TrendingUp, Printer
 } from "lucide-react";
 import { Bar, Line, Pie, Radar } from "react-chartjs-2";
 import {
@@ -182,6 +182,680 @@ type SectionStat = {
   hasYesNo: boolean;
 };
 
+// Updated OPSTemplate matching the generateOPSHTML() layout (Image 2)
+// Replace your existing OPSTemplate function with this one.
+
+// Updated OPSTemplate matching the generateOPSHTML() layout (Image 2)
+// Replace your existing OPSTemplate function with this one.
+
+// Updated OPSTemplate matching the generateOPSHTML() layout (Image 2)
+// Replace your existing OPSTemplate function with this one.
+
+// Updated OPSTemplate matching the generateOPSHTML() layout (Image 2)
+// Replace your existing OPSTemplate function with this one.
+
+// Updated OPSTemplate matching the generateOPSHTML() layout (Image 2)
+// Replace your existing OPSTemplate function with this one.
+
+// Updated OPSTemplate matching the generateOPSHTML() layout (Image 2)
+// Replace your existing OPSTemplate function with this one.
+
+function OPSTemplate({ form, response, }) {
+  const ASSETS = {
+    logo: "/assets/Companylogo.png",
+    stop: "/assets/Safetyposter.png",
+    noRun: "/assets/Dontrun.png",
+    noMob: "/assets/dontusemobile.png",
+    ppeG: "/assets/PPEGuide.png",
+    ppeGl: "/assets/PPEGUIDE2.png",
+    fiveS: "/assets/5S_Guidelines.png",
+    qr: "/assets/Qrcode.png",
+  };
+
+  const SECTION_MAP = {
+    header: "sec_basic_info",
+    genIns: "sec_doc_control",
+    pastProbs: "sec_abnormalities_handling",
+    processSteps: "sec_process_steps",
+    assocSign: "sec_associate_sign",
+    illustrations: "sec_illustrations",
+  };
+
+  const getAnswerString = (qId) => {
+    if (!response?.answers) return "";
+    const a = response.answers[qId];
+    if (a === null || a === undefined || a === "") return "";
+    if (typeof a === "object") {
+      if (a.status) return String(a.status);
+      if (a.chassisNumber) return String(a.chassisNumber);
+      if (a.remark) return String(a.remark);
+      if (a.zonesData) {
+        const z = Object.keys(a.zonesData);
+        if (z.length) return `Zones: ${z.join(", ")}`;
+      }
+      if (Array.isArray(a)) return a.join(", ");
+      try { return JSON.stringify(a); } catch { return String(a); }
+    }
+    return String(a);
+  };
+
+  const findQuestions = (sectionId) => {
+    const section = form?.sections?.find((s) => s.id === sectionId);
+    return (section?.questions || []).filter((q) => !q.parentId && !q.showWhen?.questionId);
+  };
+
+
+  const hQ = findQuestions(SECTION_MAP.header);
+  const iQ = findQuestions(SECTION_MAP.genIns);
+  const pQ = findQuestions(SECTION_MAP.pastProbs);
+  const prQ = findQuestions(SECTION_MAP.processSteps);
+  const aQ = findQuestions(SECTION_MAP.assocSign);
+  const ilQ = findQuestions(SECTION_MAP.illustrations);
+  // Add this after the findQuestions calls (around line 50-60)
+  console.log("=== OPS TEMPLATE DEBUG ===");
+  console.log("Illustrations section ID:", SECTION_MAP.illustrations);
+  console.log("Illustrations questions found:", ilQ.map(q => ({
+    id: q.id,
+    title: q.title || q.text,
+    type: q.type
+  })));
+  console.log("All response answers keys:", Object.keys(response?.answers || {}));
+  console.log("Illustrations answers:", ilQ.map(q => ({
+    id: q.id,
+    answer: response?.answers?.[q.id],
+    answerType: typeof response?.answers?.[q.id],
+    isString: typeof response?.answers?.[q.id] === 'string',
+    startsWithHttp: typeof response?.answers?.[q.id] === 'string' && response?.answers?.[q.id]?.startsWith?.('http')
+  })));
+
+  const DEF_FIFO = `1. Bin/trolley must be changed only after complete usage of all material in it.\n2. Empty bin/trolley should be replaced with new one.\n3. Don't top up partially filled bin.\n4. Follow FIFO on line during Process.\n5. Do not use next bin / Trolley material until running not consumed.`;
+  const DEF_NONLUB = "Do not use any lubrication if not specified in OPS / Process Sheet.";
+  const DEF_ENV = `1. Do waste segregation.\n2. Switch off idle lights & machines.\n3. Ensure 3R Principal in daily activities.\n4. If there was any leakage, communicate to Sub Leader.`;
+  const DEF_SAFE = `1. Follow POS sheet in case of any Chemical.\n2. Follow MSDS/SDS in case of any emergency regarding chemical.\n3. Follow your PPE's.`;
+  const DEF_PROC_INS = [
+    "1. Do Exercise at Shift Start.",
+    "2. Do Not Use Fallen Electrical/Functional Parts.",
+    "3. Ensure Model / Variant Change.",
+    "4. Report in case of part / hardware fallen inside vehicle.",
+    "5. TQ Wrench Arrow Mark should be in correct direction.",
+    "6. Put Fallen Hardware in Red Bin for Zone In-Charge judgement.",
+    "7. Take approval from SH / HOD before changing process sequence.",
+    "8. Zone In-Charge is overall responsible to ensure work is as per OPS.",
+    "9. Contaminant parts should be covered properly.",
+  ];
+
+  const SHIFT_ROWS = [
+    { act: "Shift Start", a: "06:00 AM", b: "02:50 PM" },
+    { act: "Shift End", a: "02:50 PM", b: "11:40 PM" },
+    { act: "Shift Start 3S & Meeting", a: "06:00 AM to 06:10 AM", b: "02:50 PM to 03:00 PM" },
+    { act: "Shift End 3S", a: "02:40 PM to 02:50 PM", b: "11:30 PM to 11:40 PM" },
+  ];
+
+  const TROUBLE_ROWS = [
+    "Equipment Trouble / Machine Break Down",
+    "A Trouble You Are Responsible For",
+    "Empty Marshal Carrier",
+    "Stock Out / Material Shortage",
+    "A Trouble From Different Section",
+  ];
+
+  const PROC_COLS = [
+    { idx: 2, label: "Step\n(What / Activity)", w: "8%" },
+    { idx: 3, label: "Method\n(How)", w: "6%" },
+    { idx: 4, label: "Frequency\n/ When", w: "4.5%" },
+    { idx: 5, label: "Standard\n(Spec./Judgment Criteria)", w: "9%" },
+    { idx: 6, label: "Responsibility", w: "5%" },
+    { idx: 7, label: "Equipment /\nMeasuring Eq.", w: "5.5%" },
+    { idx: 8, label: "Possible\nAbnormalities", w: "5.5%" },
+    { idx: 9, label: "Reaction\nPlan", w: "4.5%" },
+    { idx: 10, label: "Part Name\n& QTY", w: "5%" },
+    { idx: 11, label: "PPEs\nrequired", w: "4%" },
+    { idx: 12, label: "Record /\nDocument", w: "4.5%" },
+    { idx: 13, label: "Remarks", w: "4%" },
+  ];
+
+  const getHeaderValue = (idx) => {
+    const q = hQ[idx];
+    return q && response?.answers?.[q.id] ? String(response.answers[q.id]) : "—";
+  };
+
+  const getInstructionValue = (idx) => {
+    const q = iQ[idx];
+    if (!q || !response?.answers?.[q.id]) return "";
+    return String(response.answers[q.id]);
+  };
+
+  const getPastProblemValue = (idx) => {
+    const q = pQ[idx];
+    return q && response?.answers?.[q.id] ? String(response.answers[q.id]) : "";
+  };
+
+  const qlabel = (q, fb) => q?.text || q?.title || q?.label || fb;
+
+  const maxRows = Math.max(5, 1);
+  const procRows = Array.from({ length: maxRows }, (_, i) => {
+    if (i === 0) {
+      const imgQ = ilQ.find((q) => q.id === "q_illustrations_images");
+      const imgAns = imgQ ? response?.answers?.["q_illustrations_images"] : null;
+      const imgUrl = imgAns && typeof imgAns === "string" && imgAns.startsWith("http") ? imgAns : null;
+      const importance = prQ[1] ? getAnswerString(prQ[1].id) : "";
+      const cells = PROC_COLS.map((col) => {
+        const q = prQ[col.idx];
+        return q ? getAnswerString(q.id) : "";
+      });
+      return { empty: false, sn: i + 1, importance, cells, imgUrl };
+    }
+    return { empty: true, sn: i + 1 };
+  });
+
+  // ─── shared style strings (inline objects for JSX) ───────────────────────
+  const cellBase = {
+    border: "1px solid #999",
+    padding: "1px 2px",
+    fontSize: "6pt",
+    lineHeight: 1.2,
+    overflowWrap: "break-word",
+    overflow: "hidden",
+  };
+  const hdrCell = { ...cellBase, background: "#d9d9d9", fontWeight: 700, textAlign: "center", verticalAlign: "middle" };
+  const valCell = { ...cellBase, background: "#fff", verticalAlign: "middle" };
+  const lblCell = { ...cellBase, background: "#e8e8e8", fontWeight: 700, verticalAlign: "middle" };
+  const boldBorder = { border: "2px solid #000" };
+
+  return (
+    <div style={{ width: "100%", minWidth: 900, fontFamily: "Arial,sans-serif", fontSize: "7pt", background: "#fff", color: "#000", overflowX: "auto" }}>
+
+      {/* ── RETENTION BAR ── */}
+      <table style={{ width: "100%", borderCollapse: "collapse", border: "2px solid #000" }}>
+        <tbody>
+          <tr>
+            <td style={{ padding: "1px 6px", textAlign: "right", fontWeight: 700, fontSize: "6.5pt" }}>
+              Retention Period : 20 years after Model is discontinued
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* ── TOP HEADER TABLE ──
+          Column layout (15 logical cols after logo):
+          C1=logo(rowspan8) | C2=dept-lbl | C3=dept-val | C4=line-lbl | C5=line-val
+          C6=Op.Std / "Your Work" (colspan 3) | C7=S.No | C8=Trouble | C9=YourTask
+          C10=Prepared | C11=Checked | C12=Approved | C13=No | C14=DD/MM/YY | C15=Revision
+          C16=Format/Control/QR (rowspan8)
+      */}
+      <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
+        <colgroup>
+          {/* C1 Logo */}
+          <col style={{ width: "5%" }} />
+          {/* C2-C5 Dept/Line labels+values */}
+          <col style={{ width: "5%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "5%" }} />
+          <col style={{ width: "9%" }} />
+          {/* C6 Op.Std title + "Your Work" header (colspan3 => C6+C7+C8) */}
+          <col style={{ width: "16%" }} />
+          {/* C7 S.No */}
+          <col style={{ width: "3%" }} />
+          {/* C8 Trouble */}
+          <col style={{ width: "13%" }} />
+          {/* C9 Your task */}
+          <col style={{ width: "11%" }} />
+          {/* C10-C12 Prepared/Checked/Approved */}
+          <col style={{ width: "6%" }} />
+          <col style={{ width: "6%" }} />
+          <col style={{ width: "6%" }} />
+          {/* C13-C15 No / DD MM YY / Revision */}
+          <col style={{ width: "3%" }} />
+          <col style={{ width: "5%" }} />
+          <col style={{ width: "8%" }} />
+          {/* C16 Format/Control/QR */}
+          <col style={{ width: "8%" }} />
+        </colgroup>
+        <tbody>
+
+          {/* ── ROW 1: Dept / Line / "Operation Standard" title ──
+              Columns: C1(logo rs8) | C2(dept-lbl) | C3(dept-val) | C4(line-lbl) | C5(line-val)
+                       | C6+C7+C8+C9(Op.Std colspan4 rs2) | C10(prep rs7) | C11(chk rs7) | C12(app rs7)
+                       | C13(no rs7) | C14(dd rs7) | C15(rev rs7) | C16(fmt rs8)
+          */}
+          <tr>
+            {/* C1 Logo – rowspan 8 */}
+            <td rowSpan={8} style={{ ...boldBorder, textAlign: "center", verticalAlign: "middle", padding: 2 }}>
+              <img src={ASSETS.logo} alt="Logo" style={{ maxWidth: "100%", maxHeight: 80, objectFit: "contain" }}
+                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+            </td>
+            {/* C2 Dept label */}
+            <td style={lblCell}>{qlabel(hQ[0], "Dept. / Section")} :</td>
+            {/* C3 Dept value */}
+            <td style={{ ...valCell, fontWeight: 700 }}>{getHeaderValue(0)}</td>
+            {/* C4 Line label */}
+            <td style={lblCell}>{qlabel(hQ[1], "Line / Zonesss")} :</td>
+            {/* C5 Line value */}
+            <td style={{ ...valCell, fontWeight: 700 }}>{getHeaderValue(1)}</td>
+            {/* C6+C7+C8+C9 "Operation Standard" – colspan 4, rowspan 1 only (row2 uses same cols for "Your Work") */}
+            <td colSpan={4} style={{ ...boldBorder, textAlign: "center", verticalAlign: "middle", padding: 2 }}>
+              <span style={{ fontSize: "13pt", fontWeight: 700, letterSpacing: 1 }}>Operation Standard</span>
+            </td>
+            {/* C10-C12 Prepared/Checked/Approved — blank content area, rowspan 7 */}
+            <td rowSpan={7} style={{ ...boldBorder, background: "#fff", verticalAlign: "top", padding: 2 }}></td>
+            <td rowSpan={7} style={{ ...boldBorder, background: "#fff", verticalAlign: "top", padding: 2 }}></td>
+            <td rowSpan={7} style={{ ...boldBorder, background: "#fff", verticalAlign: "top", padding: 2 }}></td>
+            {/* C13-C15 No/Date/Revision — lined sub-table, rowspan 7 */}
+            <td rowSpan={7} style={{ ...boldBorder, background: "#fff", padding: 0, verticalAlign: "top" }}>
+              <table style={{ width: "100%", height: "100%", borderCollapse: "collapse" }}>
+                {Array(8).fill(null).map((_, i) => (
+                  <tr key={i}><td style={{ borderBottom: "1px solid #ccc", height: 11, padding: "0 2px" }}>&nbsp;</td></tr>
+                ))}
+              </table>
+            </td>
+            <td rowSpan={7} style={{ ...boldBorder, background: "#fff", padding: 0, verticalAlign: "top" }}>
+              <table style={{ width: "100%", height: "100%", borderCollapse: "collapse" }}>
+                {Array(8).fill(null).map((_, i) => (
+                  <tr key={i}><td style={{ borderBottom: "1px solid #ccc", height: 11, padding: "0 2px" }}>&nbsp;</td></tr>
+                ))}
+              </table>
+            </td>
+            <td rowSpan={7} style={{ ...boldBorder, background: "#fff", padding: 0, verticalAlign: "top" }}>
+              <table style={{ width: "100%", height: "100%", borderCollapse: "collapse" }}>
+                {Array(8).fill(null).map((_, i) => (
+                  <tr key={i}><td style={{ borderBottom: "1px solid #ccc", height: 11, padding: "0 2px" }}>&nbsp;</td></tr>
+                ))}
+              </table>
+            </td>
+            {/* C16 Format/Control/QR – rowspan 8 */}
+            <td rowSpan={8} style={{ ...boldBorder, verticalAlign: "top", padding: "3px 4px", fontSize: "6pt" }}>
+              <div style={{ fontWeight: 700, color: "#c00", marginBottom: 1, marginTop: 2 }}>{qlabel(iQ[0], "Format No.")} :</div>
+              <div style={{ fontWeight: 700, fontSize: "7pt", marginBottom: 2 }}>{getInstructionValue(0) || "—"}</div>
+              <div style={{ borderTop: "1px solid #999", margin: "2px 0" }}></div>
+              <div style={{ fontWeight: 700, color: "#c00", marginBottom: 1 }}>{qlabel(iQ[1], "Control No.")} :</div>
+              <div style={{ fontWeight: 700, fontSize: "7pt", marginBottom: 2 }}>{getInstructionValue(1) || "—"}</div>
+              <div style={{ borderTop: "1px solid #999", margin: "2px 0" }}></div>
+              <div style={{ fontWeight: 700, marginBottom: 1 }}>QR Code :</div>
+              <img src={ASSETS.qr} alt="QR" style={{ width: 70, height: 60, marginLeft: 23, objectFit: "contain" }}
+                onError={(e) => { e.target.style.display = "none"; }} />
+            </td>
+          </tr>
+
+          {/* ── ROW 2: Model / Process-Station / "Your Work When Trouble…" spanning same 4 cols ── */}
+          <tr>
+            {/* C2 Model label */}
+            <td style={lblCell}>{qlabel(hQ[2], "Model")} :</td>
+            {/* C3 Model value */}
+            <td style={{ ...valCell, fontWeight: 700 }}>{getHeaderValue(2)}</td>
+            {/* C4 Process label */}
+            <td style={lblCell}>{qlabel(hQ[3], "Process / Station")} :</td>
+            {/* C5 Process value */}
+            <td style={{ ...valCell, fontWeight: 700 }}>{getHeaderValue(3)}</td>
+            {/* C6+C7+C8+C9 "Your Work When Trouble…" — same colspan 4 as Op.Std above */}
+            <td colSpan={4} style={{ ...hdrCell, fontSize: "7pt", padding: "3px 6px" }}>
+              Your Work When Trouble Stopped The Production Line
+            </td>
+            {/* C10-C15 consumed by rowspan-7 from row1 */}
+          </tr>
+
+          {/* ── ROW 3: Rejection | Meas.Instr.label | Gauge text | Stop poster | S.No hdr | Trouble hdr | YourTask hdr ── */}
+          <tr>
+            {/* C2+C3 Rejection Handling — rowspan 6 (rows 3–8) */}
+            <td rowSpan={6} colSpan={2} style={{ ...boldBorder, padding: "2px 3px", verticalAlign: "top", fontSize: "5.5pt", lineHeight: 1.3 }}>
+              <div style={{ fontWeight: 700, marginBottom: 2, fontSize: "10px" }}>REJECTION HANDLING :-</div>
+              <div style={{ fontSize: "9px" }}>Clearly Identify Rejected / NG parts. Keep them properly with proper identification at defined Location.</div>
+            </td>
+            {/* C4 "Measuring Instruments or Gauges" label — rowspan 6 */}
+            <td rowSpan={6} style={{ ...boldBorder, padding: 2, textAlign: "center", verticalAlign: "middle", fontWeight: 700, fontSize: "10px" }}>
+              Measuring<br />Instruments<br />or Gauges
+            </td>
+            {/* C5 Gauge text instructions — rowspan 6 */}
+            <td rowSpan={6} style={{ ...boldBorder, padding: 0, verticalAlign: "top", fontSize: "6.5pt", lineHeight: 1.2 }}>
+              <div style={{ padding: "5px 4px", borderBottom: "1px solid #bbb", lineHeight: "1.3" }}>Always use Calibrated Measuring Instruments / Gauges (Ensure Calibration status before using the instrument).</div>
+              <div style={{ padding: "5px 4px", borderBottom: "1px solid #bbb", lineHeight: "1.3" }}>Ensure Zero setting before use.</div>
+              <div style={{ padding: "5px 4px", borderBottom: "1px solid #bbb", lineHeight: "1.3" }}>Do Not Use Unidentified Measuring Tool / Gauges.</div>
+              <div style={{ padding: "5px 4px", lineHeight: "1.3" }}>In case of any abnormality, inform Line leader and Quality Engineer to take action for suspected NG parts.</div>
+            </td>
+            {/* C6 Stop poster — rowspan 6 */}
+            <td rowSpan={6} style={{ ...boldBorder, textAlign: "center", verticalAlign: "middle", padding: 1 }}>
+              <img src={ASSETS.stop} alt="Stop Call Wait"
+                style={{ maxWidth: "100%", height: "160px", objectFit: "contain", marginLeft: "25px" }}
+                onError={(e) => { e.target.style.display = "none"; }} />
+            </td>
+            {/* C7 S.No — rowspan 6: header + 5 data rows, using inner table to split header from data */}
+            <td rowSpan={6} style={{ ...boldBorder, verticalAlign: "top", padding: 0, fontSize: "6pt" }}>
+              <div style={{ background: "#d9d9d9", fontWeight: 700, textAlign: "center", padding: "1px 2px", borderBottom: "1px solid #999" }}>S.No.</div>
+              <div style={{ borderBottom: "1px solid #999", textAlign: "center", padding: "1px 0" }}>1</div>
+              <div style={{ borderBottom: "1px solid #999", textAlign: "center", padding: "1px 0" }}>2</div>
+              <div style={{ borderBottom: "1px solid #999", textAlign: "center", padding: "1px 0" }}>3</div>
+              <div style={{ borderBottom: "1px solid #999", textAlign: "center", padding: "1px 0" }}>4</div>
+              <div style={{ textAlign: "center", padding: "1px 0" }}>5</div>
+            </td>
+            {/* C8 Trouble — rowspan 6: header + 5 data rows */}
+            <td rowSpan={6} style={{ ...boldBorder, verticalAlign: "top", padding: 0, fontSize: "6pt" }}>
+              <div style={{ background: "#d9d9d9", fontWeight: 700, textAlign: "center", padding: "1px 2px", borderBottom: "1px solid #999" }}>Trouble</div>
+              {TROUBLE_ROWS.map((t, i) => (
+                <div key={i} style={{ borderBottom: i < 4 ? "1px solid #999" : "none", padding: "1px 3px" }}>{t}</div>
+              ))}
+            </td>
+            {/* C9 Your task — rowspan 6: header label + task text below */}
+            <td rowSpan={6} style={{ ...boldBorder, verticalAlign: "top", padding: 0, fontSize: "6pt" }}>
+              <div style={{ background: "#d9d9d9", fontWeight: 700, textAlign: "center", padding: "1px 2px", borderBottom: "1px solid #999" }}>Your task</div>
+              <div style={{ padding: "30px 3px", textAlign: "center", lineHeight: 1.5, fontSize: "6.5pt" }}>
+                Stop The Line<br />
+                Inform the Zone Leader<br />
+                Write on card if mentioned in OPS
+              </div>
+            </td>
+            {/* C10-C15 consumed by rowspan-7 from row1 */}
+          </tr>
+
+          {/* ── ROW 4: Trouble 1 ── (S.No/Trouble/YourTask all consumed by rowspan-6) */}
+          <tr></tr>
+
+          {/* ── ROW 5: Trouble 2 ── */}
+          <tr></tr>
+
+          {/* ── ROW 6: Trouble 3 ── */}
+          <tr></tr>
+
+          {/* ── ROW 7: Trouble 4 ── */}
+          <tr></tr>
+
+          {/* ── ROW 8: Trouble 5 + Prepared/Checked/Approved labels + No/Date/Revision labels ──
+              C2+C3 Rejection (rowspan6 ends), C4 Meas (rowspan6 ends), C5 Gauge (rowspan6 ends),
+              C6 Stop (rowspan6 ends), C7 S.No, C8 Trouble, C9 YourTask(rowspan6 ends),
+              C10=Prepared, C11=Checked, C12=Approved, C13=No, C14=DD/MM/YY, C15=Revision,
+              C16 Format/QR (rowspan8 ends) */}
+          <tr>
+            {/* C7+C8+C9 all consumed by rowspan-6 */}
+            {/* C10-C15 rowspan-7 ends here — output their header labels */}
+            <td style={{ ...hdrCell, fontSize: "6pt" }}>Prepared</td>
+            <td style={{ ...hdrCell, fontSize: "6pt" }}>Checked</td>
+            <td style={{ ...hdrCell, fontSize: "6pt" }}>Approved</td>
+            <td style={{ ...hdrCell, fontSize: "6pt" }}>No.</td>
+            <td style={{ ...hdrCell, fontSize: "6pt" }}>DD /MM/<br />YY</td>
+            <td style={{ ...hdrCell, fontSize: "6pt" }}>Issuance / Revision details</td>
+          </tr>
+
+        </tbody>
+      </table>
+
+      {/* ── GENERAL INSTRUCTIONS TITLE ── */}
+      <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "1px solid #999" }}>
+        <tbody>
+          <tr>
+            <td style={{ padding: "2px 6px", fontWeight: 700, fontSize: "8pt", textAlign: "center", background: "#d9d9d9" }}>
+              General Instructions
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* ── GENERAL INSTRUCTIONS TABLE ── */}
+      <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
+        <colgroup>
+          <col style={{ width: "11%" }} />
+          <col style={{ width: "5%" }} />
+          <col style={{ width: "5%" }} />
+          <col style={{ width: "6%" }} />
+          <col style={{ width: "6%" }} />
+          <col style={{ width: "14%" }} />
+          <col style={{ width: "7%" }} />
+          <col style={{ width: "7%" }} />
+          <col style={{ width: "16%" }} />
+          <col style={{ width: "14%" }} />
+        </colgroup>
+        <thead>
+          <tr>
+            <th style={hdrCell}>FIFO System</th>
+            <th colSpan={2} style={{ ...hdrCell, fontSize: "7pt" }}>Non Lubrication Rule:</th>
+            <th style={{ ...hdrCell, fontSize: "6pt" }}>Always wear PPEs /<br />Proper uniform</th>
+            <th style={{ ...hdrCell, fontSize: "6pt" }}>Wear PPEs as per your<br />station's requirements</th>
+            <th style={hdrCell}>Shift Timings</th>
+            <th colSpan={2} style={hdrCell}>EMS &amp; Safety Guidelines</th>
+            <th style={hdrCell}>5S Guidelines</th>
+            <th style={hdrCell}>Process Instructions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style={{ verticalAlign: "top" }}>
+            {/* FIFO */}
+            <td style={{ ...cellBase, padding: 4, verticalAlign: "top" }}>
+              <div style={{ fontWeight: 700, marginBottom: 3 }}>FIFO System</div>
+              <div style={{ whiteSpace: "pre-line", fontSize: "6.5pt" }}>{getInstructionValue(4) || DEF_FIFO}</div>
+            </td>
+
+            {/* Non-Lub + No Mobile / No Run images – colspan 2 */}
+            <td colSpan={2} style={{ ...cellBase, padding: 0, verticalAlign: "top" }}>
+              <table style={{ width: "100%", height: "100%", borderCollapse: "collapse" }}>
+                <tbody>
+                  <tr>
+                    <td colSpan={2} style={{ borderBottom: "1px solid #999", padding: 4, textAlign: "center", fontSize: "6.5pt" }}>
+                      {getInstructionValue(5) || DEF_NONLUB}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={{ borderBottom: "1px solid #999", borderRight: "1px solid #999", padding: 3, textAlign: "center", fontWeight: 700, fontSize: "6pt", background: "#d9d9d9" }}>
+                      Do not use mobile on the shopfloor
+                    </td>
+                    <td style={{ borderBottom: "1px solid #999", padding: 3, textAlign: "center", fontWeight: 700, fontSize: "6pt", background: "#d9d9d9" }}>
+                      Do not run on the shopfloor
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={{ borderRight: "1px solid #999", padding: 4, textAlign: "center", verticalAlign: "middle" }}>
+                      <img src={ASSETS.noMob} alt="No Mobile" style={{ maxWidth: "100%", maxHeight: 75, objectFit: "contain" }} onError={(e) => { e.target.style.display = "none"; }} />
+                    </td>
+                    <td style={{ padding: 4, textAlign: "center", verticalAlign: "middle" }}>
+                      <img src={ASSETS.noRun} alt="No Running" style={{ maxWidth: "100%", maxHeight: 75, objectFit: "contain" }} onError={(e) => { e.target.style.display = "none"; }} />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </td>
+
+            {/* PPE Uniform */}
+            <td style={{ ...cellBase, padding: 3, textAlign: "center", verticalAlign: "top" }}>
+              <img src={ASSETS.ppeG} alt="PPE Uniform" style={{ width: "100%", maxHeight: 130, objectFit: "contain", display: "block", marginTop: 14 }} onError={(e) => { e.target.style.display = "none"; }} />
+            </td>
+
+            {/* PPE Items */}
+            <td style={{ ...cellBase, padding: 3, textAlign: "center", verticalAlign: "top" }}>
+              <img src={ASSETS.ppeGl} alt="PPE Items" style={{ width: "100%", maxHeight: 130, objectFit: "contain", display: "block", marginTop: 14 }} onError={(e) => { e.target.style.display = "none"; }} />
+            </td>
+
+            {/* Shift Timings */}
+            <td style={{ ...cellBase, padding: 3, verticalAlign: "top" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "5.5pt" }}>
+                <thead>
+                  <tr style={{ background: "#d9d9d9" }}>
+                    <th style={{ border: "1px solid #aaa", padding: "1px 3px", textAlign: "left" }}>Activity</th>
+                    <th style={{ border: "1px solid #aaa", padding: "1px 3px", textAlign: "center" }}>A</th>
+                    <th style={{ border: "1px solid #aaa", padding: "1px 3px", textAlign: "center" }}>B</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {SHIFT_ROWS.map((r, i) => (
+                    <tr key={i}>
+                      <td style={{ border: "1px solid #aaa", padding: "1px 3px" }}>{r.act}</td>
+                      <td style={{ border: "1px solid #aaa", padding: "1px 3px", textAlign: "center" }}>{r.a}</td>
+                      <td style={{ border: "1px solid #aaa", padding: "1px 3px", textAlign: "center" }}>{r.b}</td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td colSpan={3} style={{ border: "1px solid #aaa", padding: "1px 3px", fontSize: "5pt", fontStyle: "italic" }}>
+                      Tea Break / Lunch / Dinner timings will be as per company timings.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </td>
+
+            {/* EMS Environmental */}
+            <td style={{ ...cellBase, padding: 2, verticalAlign: "top" }}>
+              <div style={{ ...hdrCell, fontSize: "6pt", marginBottom: 2 }}>Environmental Issues</div>
+              <div style={{ whiteSpace: "pre-line", fontSize: "6.5pt" }}>{getInstructionValue(8) || DEF_ENV}</div>
+            </td>
+
+            {/* EMS Safety */}
+            <td style={{ ...cellBase, padding: 2, verticalAlign: "top" }}>
+              <div style={{ ...hdrCell, fontSize: "6pt", marginBottom: 2 }}>Safety Issues</div>
+              <div style={{ whiteSpace: "pre-line", fontSize: "6.5pt" }}>{getInstructionValue(9) || DEF_SAFE}</div>
+            </td>
+
+            {/* 5S Guidelines */}
+            <td style={{ ...cellBase, padding: 0, textAlign: "center", verticalAlign: "top" }}>
+              <img src={ASSETS.fiveS} alt="5S Guidelines" style={{ width: "100%", maxHeight: 180, objectFit: "fill", display: "block" }} onError={(e) => { e.target.style.display = "none"; }} />
+            </td>
+
+            {/* Process Instructions */}
+            <td style={{ ...cellBase, padding: 4, verticalAlign: "top", fontSize: "6.5pt" }}>
+              {DEF_PROC_INS.map((ins, i) => (
+                <div key={i} style={{ marginBottom: 2 }}>{getInstructionValue(10 + i) || ins}</div>
+              ))}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* ── PROCESS STEPS TABLE ── */}
+      <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
+        <colgroup>
+          <col style={{ width: "9%" }} />
+          <col style={{ width: "2.5%" }} />
+          <col style={{ width: "4%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "6%" }} />
+          <col style={{ width: "5.5%" }} />
+          <col style={{ width: "9%" }} />
+          <col style={{ width: "5%" }} />
+          <col style={{ width: "6.5%" }} />
+          <col style={{ width: "5.5%" }} />
+          <col style={{ width: "4.5%" }} />
+          <col style={{ width: "5%" }} />
+          <col style={{ width: "4%" }} />
+          <col style={{ width: "4.5%" }} />
+          <col style={{ width: "4%" }} />
+        </colgroup>
+        <thead>
+          <tr>
+            <th style={{ ...hdrCell, background: "#ffff00", color: "#000" }}>
+              {form?.sections?.find((s) => s.id === SECTION_MAP.illustrations)?.title || "Illustrations & Process Details"}
+            </th>
+            <th style={hdrCell}>{qlabel(prQ[0], "SN")}</th>
+            <th style={hdrCell}>{qlabel(prQ[1], "★")}</th>
+            {PROC_COLS.map((c, i) => (
+              <th key={i} style={{ ...hdrCell, whiteSpace: "pre-line", lineHeight: 1.2 }}>{c.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {procRows.map((row, ri) => {
+            const star = row.sn === 1 ? "★" : row.sn === 2 ? "★★" : row.sn === 3 ? "★★★" : "☆";
+            if (row.empty) {
+              return (
+                <tr key={ri} style={{ height: 56 }}>
+                  <td style={{ ...cellBase, background: "#ffff00" }}></td>
+                  <td style={{ ...hdrCell, fontWeight: 700, fontSize: "8pt" }}>{row.sn}</td>
+                  <td style={{ ...cellBase, textAlign: "center", color: "#ccc" }}>☆</td>
+                  {PROC_COLS.map((_, ci) => <td key={ci} style={{ ...cellBase, background: "#fff" }}></td>)}
+                </tr>
+              );
+            }
+            return (
+              <tr key={ri} style={{ minHeight: 56, verticalAlign: "top" }}>
+                <td style={{ ...cellBase, background: "#ffff00", padding: 2, textAlign: "center", verticalAlign: "middle" }}>
+                  {row.imgUrl ? (
+                    <img src={row.imgUrl} alt="Illustration" style={{ maxWidth: "100%", maxHeight: 80, objectFit: "contain" }} />
+                  ) : (
+                    <div style={{ width: "100%", height: 56, display: "flex", alignItems: "center", justifyContent: "center", color: "#bbb", fontSize: 20 }}>📷</div>
+                  )}
+                </td>
+                <td style={{ ...hdrCell, fontWeight: 700, fontSize: "8pt" }}>{row.sn}</td>
+                <td style={{ ...cellBase, textAlign: "center", verticalAlign: "middle", color: "#b8860b" }}>{star}</td>
+                {(row.cells).map((val, ci) => (
+                  <td key={ci} style={{ ...cellBase, padding: 3, verticalAlign: "top", background: "#fff", lineHeight: 1.3 }}>
+                    {val || <span style={{ color: "#ccc" }}>—</span>}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {/* ── ABNORMALITY + PAST PROBLEMS ── */}
+      <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
+        <colgroup>
+          <col style={{ width: "14%" }} />
+          <col style={{ width: "86%" }} />
+        </colgroup>
+        <tbody>
+          <tr>
+            <td rowSpan={2} style={{ ...cellBase, padding: 4, verticalAlign: "top", fontSize: "6.5pt" }}>
+              <div style={{ fontWeight: 700, marginBottom: 2 }}>{qlabel(pQ[0], "Abnormality handling route")} :</div>
+              <div>In case of any abnormality inform the Zone In-Charge</div>
+              <div style={{ marginTop: 2 }}>Flow of Communication :-</div>
+              <div>Operator ▶ Team Member ▶ Section Mgr ▶ As required</div>
+            </td>
+            <td style={{ ...lblCell, padding: "2px", textAlign: "center", fontSize: "7pt" }}>
+              {qlabel(pQ[1], "Past Problem Details")}
+            </td>
+          </tr>
+          <tr>
+            <td style={{ ...cellBase, padding: 4, verticalAlign: "top", minHeight: 60, height: 60, fontSize: "7pt", background: "#fff" }}>
+              {getPastProblemValue(1) || <span style={{ color: "#ccc", fontStyle: "italic" }}>No data recorded</span>}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* ── ASSOCIATE NAME & SIGN ── */}
+      {(() => {
+        const ACOLS = 22;
+        return (
+          <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
+            <colgroup>
+              <col style={{ width: "5%" }} />
+              {Array.from({ length: ACOLS }, (_, i) => (
+                <col key={i} style={{ width: `${(95 / ACOLS).toFixed(2)}%` }} />
+              ))}
+            </colgroup>
+            <tbody>
+              <tr>
+                <td style={{ ...lblCell, padding: 3, textAlign: "center", fontSize: "6.5pt", verticalAlign: "middle" }}>
+                  Associate Name<br />&amp; Emp. Code
+                </td>
+                {Array.from({ length: ACOLS }, (_, i) => (
+                  <td key={i} style={{ ...cellBase, textAlign: "center", height: 22, background: "#fff" }}></td>
+                ))}
+              </tr>
+              <tr>
+                <td style={{ ...lblCell, padding: 3, textAlign: "center", fontSize: "6.5pt", verticalAlign: "middle" }}>
+                  Sign &amp; Date
+                </td>
+                {Array.from({ length: ACOLS }, (_, i) => (
+                  <td key={i} style={{ ...cellBase, textAlign: "center", height: 26, background: "#fff" }}></td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        );
+      })()}
+
+      {/* ── PAGE NUMBER ── */}
+      <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
+        <colgroup>
+          <col style={{ width: "82%" }} />
+          <col style={{ width: "18%" }} />
+        </colgroup>
+        <tbody>
+          <tr>
+            <td style={{ ...cellBase, padding: 2 }}>{form?.title || "Operation Standard"}</td>
+            <td style={{ ...hdrCell, padding: 3, fontSize: "8.5pt" }}>Page Number : XX / XX</td>
+          </tr>
+        </tbody>
+      </table>
+
+    </div>
+  );
+}
 export default function ResponseDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -192,7 +866,7 @@ export default function ResponseDetailsPage() {
   const [form, setForm] = useState<Form | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"dashboard" | "responses">(
+  const [viewMode, setViewMode] = useState<"dashboard" | "responses" | "ops">(
     "dashboard"
   );
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -218,16 +892,16 @@ export default function ResponseDetailsPage() {
   const [showSectionsPDFModal, setShowSectionsPDFModal] = useState(false);
   const [downloadingSectionsPDF, setDownloadingSectionsPDF] = useState(false);
   const [autoOpenSectionId, setAutoOpenSectionId] = useState<string | null>(null);
- 
+
 
 
   const [pdfProgress, setPdfProgress] = useState<{
-  stage: 'uploading' | 'generating' | 'downloading' | 'complete' | 'error';
-  percentage: number;
-  message?: string;
-} | null>(null);
+    stage: 'uploading' | 'generating' | 'downloading' | 'complete' | 'error';
+    percentage: number;
+    message?: string;
+  } | null>(null);
 
-const [pdfDownloadProgress, setPdfDownloadProgress] = useState<number | null>(null);
+  const [pdfDownloadProgress, setPdfDownloadProgress] = useState<number | null>(null);
 
   useEffect(() => {
     fetchResponseDetails();
@@ -311,11 +985,11 @@ const [pdfDownloadProgress, setPdfDownloadProgress] = useState<number | null>(nu
           for (const q of section.questions) {
             // Check for yesNoNA type and at least 2 options
             if (q.type === "yesNoNA" && q.options && q.options.length >= 2) {
-              const hasCustomLabels = 
-                q.options[0] !== "Yes" || 
-                q.options[1] !== "No" || 
+              const hasCustomLabels =
+                q.options[0] !== "Yes" ||
+                q.options[1] !== "No" ||
                 (q.options[2] && q.options[2] !== "N/A");
-              
+
               if (hasCustomLabels) {
                 return {
                   yes: q.options[0] || "Yes",
@@ -325,7 +999,7 @@ const [pdfDownloadProgress, setPdfDownloadProgress] = useState<number | null>(nu
                   wrong: q.options[1] || "Wrong"
                 };
               }
-              
+
               // If we haven't found custom labels yet, store the first yesNoNA labels we find as fallback
               if (labels.yes === "Yes") {
                 labels.yes = q.options[0] || "Yes";
@@ -363,7 +1037,7 @@ const [pdfDownloadProgress, setPdfDownloadProgress] = useState<number | null>(nu
       if (!formIdentifier) {
         throw new Error("Missing form identifier for response");
       }
-      
+
       const formData = await apiClient.getForm(formIdentifier);
       const selectedForm = formData.form;
 
@@ -483,11 +1157,11 @@ const [pdfDownloadProgress, setPdfDownloadProgress] = useState<number | null>(nu
     try {
       // If type is not provided, default to 'default' (full report)
       const exportType = type || 'default';
-      
+
       const fileName = `${form.title}_${exportType !== 'default' ? exportType + '_' : ''}${formatTimestamp(
         response.createdAt
       )}.xlsx`;
-      
+
       await generateResponseExcelReport([response], form, fileName, exportType);
       showSuccess("Excel file downloaded successfully.");
     } catch (err) {
@@ -521,21 +1195,21 @@ const [pdfDownloadProgress, setPdfDownloadProgress] = useState<number | null>(nu
     if (!response || !form) return;
 
     setShowPDFTypeSelector(false);
-    
+
     if (type === 'section') {
       setShowSectionsPDFModal(true);
       return;
     }
-    
+
     await handleDownloadPDFNow(type);
   };
- 
+
   const handleDownloadSectionsPDF = async () => {
     if (!response || !form) return;
 
     setDownloadingSectionsPDF(true);
     await new Promise(resolve => setTimeout(resolve, 500));
-    
+
     try {
       await handleDownloadPDFNow('section');
       setShowSectionsPDFModal(false);
@@ -545,125 +1219,125 @@ const [pdfDownloadProgress, setPdfDownloadProgress] = useState<number | null>(nu
   };
 
   const handleDownloadPDFNow = async (type?: 'yes-only' | 'no-only' | 'na-only' | 'both' | 'section' | 'default' | 'responses-view') => {
-  if (!response || !form) return;
+    if (!response || !form) return;
 
-  setPdfDownloadProgress(0);
-  setGeneratingPDF(true);
-  
-  try {
-    const availableSections = form.sections || [];
+    setPdfDownloadProgress(0);
+    setGeneratingPDF(true);
 
-    // Prepare section question stats
-    const questionStats: Record<string, any[]> = {};
-    availableSections.forEach((section: any) => {
-      questionStats[section.id] = getSectionYesNoQuestionStats(section.id);
-    });
+    try {
+      const availableSections = form.sections || [];
 
-    // Create PDF options
-    const pdfOptions = {
-      filename: `${form.title}_Report_${formatTimestamp(response.createdAt, 'file')}_${type || 'default'}.pdf`,
-      formTitle: form.title,
-      submittedDate: formatTimestamp(response.createdAt),
-      sectionStats: sectionStats,
-      sectionQuestionStats: questionStats,
-      form: form,
-      response: response,
-      availableSections: availableSections,
-      type: type // Add the type parameter
-    };
+      // Prepare section question stats
+      const questionStats: Record<string, any[]> = {};
+      availableSections.forEach((section: any) => {
+        questionStats[section.id] = getSectionYesNoQuestionStats(section.id);
+      });
 
-    // Create progress callback
-    const onProgress = (progress: {
-      stage: 'uploading' | 'generating' | 'downloading' | 'complete';
-      percentage: number;
-      message?: string;
-    }) => {
-      console.log('📊 PDF Progress:', progress);
-      setPdfDownloadProgress(Math.round(progress.percentage));
-    };
+      // Create PDF options
+      const pdfOptions = {
+        filename: `${form.title}_Report_${formatTimestamp(response.createdAt, 'file')}_${type || 'default'}.pdf`,
+        formTitle: form.title,
+        submittedDate: formatTimestamp(response.createdAt),
+        sectionStats: sectionStats,
+        sectionQuestionStats: questionStats,
+        form: form,
+        response: response,
+        availableSections: availableSections,
+        type: type // Add the type parameter
+      };
 
-    // Call generateAndDownloadPDF with progress callback ONCE
-    await generateAndDownloadPDF(pdfOptions, type, onProgress);
+      // Create progress callback
+      const onProgress = (progress: {
+        stage: 'uploading' | 'generating' | 'downloading' | 'complete';
+        percentage: number;
+        message?: string;
+      }) => {
+        console.log('📊 PDF Progress:', progress);
+        setPdfDownloadProgress(Math.round(progress.percentage));
+      };
 
-    showSuccess("PDF downloaded successfully.");
-  } catch (err: any) {
-    console.error("Failed to generate PDF:", err);
-    showError(err.message || "Failed to generate PDF. Please try again.");
-  } finally {
-    setGeneratingPDF(false);
-    setPdfDownloadProgress(null);
-  }
-};
+      // Call generateAndDownloadPDF with progress callback ONCE
+      await generateAndDownloadPDF(pdfOptions, type, onProgress);
 
-const handleBulkDownloadZip = async () => {
-  if (!response || !form) return;
-
-  try {
-    setExportingZip(true);
-    isCancelledRef.current = false;
-    
-    const formIdentifier = response.questionId || response.formId;
-    if (!formIdentifier) {
-      throw new Error("Form identifier not found for this response.");
+      showSuccess("PDF downloaded successfully.");
+    } catch (err: any) {
+      console.error("Failed to generate PDF:", err);
+      showError(err.message || "Failed to generate PDF. Please try again.");
+    } finally {
+      setGeneratingPDF(false);
+      setPdfDownloadProgress(null);
     }
+  };
 
-    // Fetch all responses for this form
-    const responsesData = await apiClient.getResponses();
-    const filteredResponses = responsesData.responses.filter(
-      (r: Response) => {
-        const rFormId = r.questionId || r.formId || (r as any).formIdentifier;
-        return rFormId === formIdentifier || String(rFormId) === String(formIdentifier);
+  const handleBulkDownloadZip = async () => {
+    if (!response || !form) return;
+
+    try {
+      setExportingZip(true);
+      isCancelledRef.current = false;
+
+      const formIdentifier = response.questionId || response.formId;
+      if (!formIdentifier) {
+        throw new Error("Form identifier not found for this response.");
       }
-    );
 
-    if (filteredResponses.length === 0) {
-      throw new Error("No responses found for this form.");
+      // Fetch all responses for this form
+      const responsesData = await apiClient.getResponses();
+      const filteredResponses = responsesData.responses.filter(
+        (r: Response) => {
+          const rFormId = r.questionId || r.formId || (r as any).formIdentifier;
+          return rFormId === formIdentifier || String(rFormId) === String(formIdentifier);
+        }
+      );
+
+      if (filteredResponses.length === 0) {
+        throw new Error("No responses found for this form.");
+      }
+
+      // Get the full form data to ensure we have everything needed
+      const formData = await apiClient.getForm(formIdentifier);
+      const fullForm = formData.form;
+
+      await exportAllResponsesToZip(
+        filteredResponses,
+        fullForm,
+        (progress) => {
+          setPdfProgress({
+            stage: 'generating',
+            percentage: (progress.current / progress.total) * 100,
+            message: progress.message
+          });
+        },
+        () => isCancelledRef.current
+      );
+
+      if (isCancelledRef.current) {
+        showSuccess("Bulk download cancelled.");
+        setPdfProgress(null);
+        return;
+      }
+
+      showSuccess(`Bulk download of ${filteredResponses.length} responses completed.`);
+      setPdfProgress({
+        stage: 'complete',
+        percentage: 100,
+        message: 'Download complete'
+      });
+
+      setTimeout(() => setPdfProgress(null), 3000);
+
+    } catch (err: any) {
+      console.error("Bulk download failed:", err);
+      showError(err.message || "Bulk download failed.");
+      setPdfProgress({
+        stage: 'error',
+        percentage: 0,
+        message: err.message
+      });
+    } finally {
+      setExportingZip(false);
     }
-
-    // Get the full form data to ensure we have everything needed
-    const formData = await apiClient.getForm(formIdentifier);
-    const fullForm = formData.form;
-
-    await exportAllResponsesToZip(
-      filteredResponses,
-      fullForm,
-      (progress) => {
-        setPdfProgress({
-          stage: 'generating',
-          percentage: (progress.current / progress.total) * 100,
-          message: progress.message
-        });
-      },
-      () => isCancelledRef.current
-    );
-
-    if (isCancelledRef.current) {
-      showSuccess("Bulk download cancelled.");
-      setPdfProgress(null);
-      return;
-    }
-
-    showSuccess(`Bulk download of ${filteredResponses.length} responses completed.`);
-    setPdfProgress({
-      stage: 'complete',
-      percentage: 100,
-      message: 'Download complete'
-    });
-    
-    setTimeout(() => setPdfProgress(null), 3000);
-    
-  } catch (err: any) {
-    console.error("Bulk download failed:", err);
-    showError(err.message || "Bulk download failed.");
-    setPdfProgress({
-      stage: 'error',
-      percentage: 0,
-      message: err.message
-    });
-  } finally {
-    setExportingZip(false);
-  }
-};
+  };
 
   const getStatusInfo = (status: string) => {
     switch (status.toLowerCase()) {
@@ -769,7 +1443,7 @@ const handleBulkDownloadZip = async () => {
 
   const renderHighlightedAnswer = (value: any, question?: any, compact: boolean = false) => {
     const isArray = Array.isArray(value);
-    
+
     // Helper to get string representation for comparison
     const getStringValue = (val: any): string => {
       if (Array.isArray(val)) return val.map(v => getStringValue(v)).join(", ");
@@ -784,16 +1458,16 @@ const handleBulkDownloadZip = async () => {
 
     const strValue = getStringValue(value);
     const normalized = strValue.trim().toLowerCase();
-    
+
     let bgColor = "bg-white dark:bg-gray-700";
     let textColor = "text-gray-900 dark:text-gray-100";
     let borderColor = "border-gray-200 dark:border-gray-600";
     let Icon = null;
-    
+
     let isYes = normalized === "yes";
     let isNo = normalized === "no";
     let isNA = normalized === "n/a" || normalized === "na" || normalized === "not applicable";
-    
+
     // For yesNoNA type, we should use the option position if available
     if (question && question.type === "yesNoNA" && question.options && question.options.length >= 2) {
       isYes = normalized === String(question.options[0]).toLowerCase();
@@ -802,16 +1476,16 @@ const handleBulkDownloadZip = async () => {
         isNA = normalized === String(question.options[2]).toLowerCase();
       }
     }
-    
+
     // Quiz logic
     const isQuiz = question && (question.correctAnswer || (question.correctAnswers && question.correctAnswers.length > 0));
     let isCorrect = false;
-    
+
     if (isQuiz) {
       if (question.correctAnswers && question.correctAnswers.length > 0) {
         if (isArray) {
-          isCorrect = value.length === question.correctAnswers.length && 
-                      value.every((a: any) => question.correctAnswers!.some((ca: any) => String(ca).toLowerCase() === getStringValue(a).toLowerCase()));
+          isCorrect = value.length === question.correctAnswers.length &&
+            value.every((a: any) => question.correctAnswers!.some((ca: any) => String(ca).toLowerCase() === getStringValue(a).toLowerCase()));
         } else {
           isCorrect = question.correctAnswers.some((ca: any) => String(ca).toLowerCase() === normalized);
         }
@@ -850,10 +1524,10 @@ const handleBulkDownloadZip = async () => {
     }
 
     const answerBox = (
-      <div 
+      <div
         className={`${compact ? 'w-full px-4 py-2' : 'flex-1 p-3'} ${bgColor} ${textColor} ${borderColor} rounded-lg border text-sm break-words font-medium flex items-center shadow-sm`}
         style={{
-          boxShadow: isQuiz 
+          boxShadow: isQuiz
             ? (isCorrect ? '0 4px 12px rgba(34, 197, 94, 0.4)' : '0 4px 12px rgba(239, 68, 68, 0.4)')
             : (isYes ? '0 4px 12px rgba(34, 197, 94, 0.4)' : (isNo ? '0 4px 12px rgba(239, 68, 68, 0.4)' : '0 1px 2px 0 rgba(0, 0, 0, 0.05)'))
         }}
@@ -888,12 +1562,12 @@ const handleBulkDownloadZip = async () => {
                     if (val.answer && isImageUrl(String(val.answer))) {
                       return <ImageLink text={String(val.answer)} />;
                     }
-                    
+
                     const entries = Object.entries(val);
-                    
+
                     // Check if this is a chassis-type object
                     const isChassisType = val.chassisNumber !== undefined || val.status !== undefined || val.zone !== undefined || val.categories !== undefined;
-                    
+
                     if (isChassisType) {
                       // Get color for zone
                       const getZoneColor = (zoneName: string): string => {
@@ -906,7 +1580,7 @@ const handleBulkDownloadZip = async () => {
                         if (z.includes('zone f') || z === 'f') return 'cyan';
                         return 'indigo';
                       };
-                      
+
                       const colorMap: Record<string, string> = {
                         blue: 'bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200',
                         green: 'bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-200',
@@ -918,9 +1592,9 @@ const handleBulkDownloadZip = async () => {
                         amber: 'bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200',
                         indigo: 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-200',
                       };
-                      
+
                       const parts: { label: string; value: any; zoneColor?: string; isImage?: boolean }[] = [];
-                      
+
                       if (val.chassisNumber && String(val.chassisNumber).trim() && String(val.chassisNumber).toLowerCase() !== 'no response') {
                         parts.push({ label: 'Chassis', value: String(val.chassisNumber), zoneColor: 'blue' });
                       }
@@ -941,22 +1615,22 @@ const handleBulkDownloadZip = async () => {
                           }
                         }
                       }
-                      
+
                       // Handle zonesData with colors
                       if (val.zonesData && typeof val.zonesData === 'object') {
                         const zoneEntries = Object.entries(val.zonesData);
                         for (const [zoneName, zoneVal] of zoneEntries) {
                           const zoneColor = getZoneColor(zoneName);
                           const colorClass = colorMap[zoneColor] || colorMap.indigo;
-                          
+
                           parts.push({ label: 'Zone', value: zoneName, zoneColor });
-                          
+
                           const categories = (zoneVal as any)?.categories;
                           if (categories && Array.isArray(categories)) {
                             for (const cat of categories) {
                               const catName = typeof cat === 'string' ? cat : (cat?.name || cat?.category || '-');
                               parts.push({ label: 'Category', value: String(catName), zoneColor });
-                              
+
                               const defects = cat?.defects;
                               if (defects && Array.isArray(defects)) {
                                 for (const defect of defects) {
@@ -977,7 +1651,7 @@ const handleBulkDownloadZip = async () => {
                           }
                         }
                       }
-                      
+
                       // Handle categories (direct property) - both object and array formats
                       if (val.categories) {
                         if (Array.isArray(val.categories)) {
@@ -986,7 +1660,7 @@ const handleBulkDownloadZip = async () => {
                             const catName = cat?.name || cat?.category || '-';
                             if (catName !== '-') {
                               parts.push({ label: 'Category', value: String(catName), zoneColor: 'purple' });
-                              
+
                               const defects = cat?.defects;
                               if (defects && Array.isArray(defects)) {
                                 for (const defect of defects) {
@@ -1013,12 +1687,12 @@ const handleBulkDownloadZip = async () => {
                           }
                         }
                       }
-                      
+
                       // Handle evidenceUrl
                       if (val.evidenceUrl && String(val.evidenceUrl).toLowerCase() !== 'no response' && String(val.evidenceUrl).trim()) {
                         parts.push({ label: 'Evidence', value: String(val.evidenceUrl), zoneColor: 'indigo', isImage: true });
                       }
-                      
+
                       if (parts.length > 0) {
                         return (
                           <div className="flex flex-col gap-1">
@@ -1042,10 +1716,10 @@ const handleBulkDownloadZip = async () => {
                           </div>
                         );
                       }
-                      
+
                       return <span className="text-gray-400 italic">No response</span>;
                     }
-                    
+
                     if (entries.length > 0) {
                       // Filter out empty values and "No response" strings
                       const filteredEntries = entries.filter(([k, v]) => {
@@ -1065,11 +1739,11 @@ const handleBulkDownloadZip = async () => {
                         }
                         return true;
                       });
-                      
+
                       if (filteredEntries.length === 0) {
                         return <span className="text-gray-400 italic">No response</span>;
                       }
-                      
+
                       return (
                         <div className="flex flex-col gap-1">
                           {filteredEntries.map(([k, v], i) => {
@@ -1157,14 +1831,14 @@ const handleBulkDownloadZip = async () => {
 
           const rawValue = answers?.[question.id];
           const normalizedValues = extractYesNoValues(rawValue);
-          
+
           // Check if it has any value (not null/undefined/empty string/empty array)
-          const hasValue = rawValue !== null && rawValue !== undefined && rawValue !== "" && 
-                          (!Array.isArray(rawValue) || rawValue.length > 0) &&
-                          (typeof rawValue !== 'object' || Object.keys(rawValue).length > 0);
+          const hasValue = rawValue !== null && rawValue !== undefined && rawValue !== "" &&
+            (!Array.isArray(rawValue) || rawValue.length > 0) &&
+            (typeof rawValue !== 'object' || Object.keys(rawValue).length > 0);
 
           counts.total += 1;
-          
+
           if (!hasValue) {
             if (question.required) {
               counts.answeredCount += 1;
@@ -1180,7 +1854,7 @@ const handleBulkDownloadZip = async () => {
           }
 
           counts.answeredCount += 1;
-          
+
           if (isAccuracy) {
             const isNA = normalizedValues.some(v => ["n/a", "na", "not applicable"].includes(v));
             if (isNA) {
@@ -1193,8 +1867,8 @@ const handleBulkDownloadZip = async () => {
 
               if (question.correctAnswers && question.correctAnswers.length > 0) {
                 if (isArray) {
-                  isCorrect = rawValue.length === question.correctAnswers.length && 
-                              rawValue.every((a: any) => question.correctAnswers!.some((ca: any) => String(ca).toLowerCase() === String(a).toLowerCase()));
+                  isCorrect = rawValue.length === question.correctAnswers.length &&
+                    rawValue.every((a: any) => question.correctAnswers!.some((ca: any) => String(ca).toLowerCase() === String(a).toLowerCase()));
                 } else {
                   isCorrect = question.correctAnswers.some((ca: any) => String(ca).toLowerCase() === normalized);
                 }
@@ -1208,9 +1882,9 @@ const handleBulkDownloadZip = async () => {
                 // Special logic for chassis/zone types: if rejected or has defects, it's "Wrong"
                 if (["chassis-with-zone", "zone-in", "zone-out", "chassis-without-zone"].includes(question.type)) {
                   if (rawValue && typeof rawValue === 'object') {
-                    const hasDefects = rawValue.status === 'Rejected' || 
-                                     (rawValue.zonesData && Object.keys(rawValue.zonesData).length > 0) ||
-                                     (rawValue.categories && Object.keys(rawValue.categories).length > 0);
+                    const hasDefects = rawValue.status === 'Rejected' ||
+                      (rawValue.zonesData && Object.keys(rawValue.zonesData).length > 0) ||
+                      (rawValue.categories && Object.keys(rawValue.categories).length > 0);
                     if (hasDefects) {
                       isCorrect = false;
                     }
@@ -1228,9 +1902,9 @@ const handleBulkDownloadZip = async () => {
             // Special logic for chassis/zone types within compliance
             if (["chassis-with-zone", "zone-in", "zone-out", "chassis-without-zone"].includes(question.type)) {
               if (rawValue && typeof rawValue === 'object') {
-                const hasDefects = rawValue.status === 'Rejected' || 
-                                 (rawValue.zonesData && Object.keys(rawValue.zonesData).length > 0) ||
-                                 (rawValue.categories && Object.keys(rawValue.categories).length > 0);
+                const hasDefects = rawValue.status === 'Rejected' ||
+                  (rawValue.zonesData && Object.keys(rawValue.zonesData).length > 0) ||
+                  (rawValue.categories && Object.keys(rawValue.categories).length > 0);
                 if (hasDefects) {
                   counts.no = 1;
                 } else {
@@ -1318,9 +1992,9 @@ const handleBulkDownloadZip = async () => {
         const isCompliance = question.type === "yesNoNA" || ["chassisNumber", "chassis-with-zone", "chassis-without-zone", "zone-in", "zone-out"].includes(question.type);
         const isAccuracy = !isCompliance;
 
-        const hasValue = rawValue !== null && rawValue !== undefined && rawValue !== "" && 
-                        (!Array.isArray(rawValue) || rawValue.length > 0) &&
-                        (typeof rawValue !== 'object' || Object.keys(rawValue).length > 0);
+        const hasValue = rawValue !== null && rawValue !== undefined && rawValue !== "" &&
+          (!Array.isArray(rawValue) || rawValue.length > 0) &&
+          (typeof rawValue !== 'object' || Object.keys(rawValue).length > 0);
 
         if (!hasValue) {
           if (question.required) {
@@ -1348,8 +2022,8 @@ const handleBulkDownloadZip = async () => {
 
               if (question.correctAnswers && question.correctAnswers.length > 0) {
                 if (isArray) {
-                  isCorrect = rawValue.length === question.correctAnswers.length && 
-                              rawValue.every((a: any) => question.correctAnswers!.some((ca: any) => String(ca).toLowerCase() === String(a).toLowerCase()));
+                  isCorrect = rawValue.length === question.correctAnswers.length &&
+                    rawValue.every((a: any) => question.correctAnswers!.some((ca: any) => String(ca).toLowerCase() === String(a).toLowerCase()));
                 } else {
                   isCorrect = question.correctAnswers.some((ca: any) => String(ca).toLowerCase() === normalized);
                 }
@@ -1363,9 +2037,9 @@ const handleBulkDownloadZip = async () => {
                 // Special logic for chassis/zone types: if rejected or has defects, it's "Wrong"
                 if (["chassis-with-zone", "zone-in", "zone-out", "chassis-without-zone"].includes(question.type)) {
                   if (rawValue && typeof rawValue === 'object') {
-                    const hasDefects = rawValue.status === 'Rejected' || 
-                                     (rawValue.zonesData && Object.keys(rawValue.zonesData).length > 0) ||
-                                     (rawValue.categories && Object.keys(rawValue.categories).length > 0);
+                    const hasDefects = rawValue.status === 'Rejected' ||
+                      (rawValue.zonesData && Object.keys(rawValue.zonesData).length > 0) ||
+                      (rawValue.categories && Object.keys(rawValue.categories).length > 0);
                     if (hasDefects) {
                       isCorrect = false;
                     }
@@ -1755,7 +2429,7 @@ const handleBulkDownloadZip = async () => {
         const naPercent = stat.total ? (stat.na / stat.total) * 100 : 0;
         const correctPercent = stat.total ? (stat.correct / stat.total) * 100 : 0;
         const wrongPercent = stat.total ? (stat.wrong / stat.total) * 100 : 0;
-        
+
         return {
           id: stat.id,
           title: stat.title,
@@ -1943,11 +2617,10 @@ const handleBulkDownloadZip = async () => {
             <div className="flex gap-1 bg-white dark:bg-gray-700 rounded-lg p-1 w-fit border border-gray-200 dark:border-gray-600">
               <button
                 onClick={() => setViewMode("dashboard")}
-                className={`flex items-center gap-2 px-3.5 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
-                  viewMode === "dashboard"
-                      ? "text-white"
-                      : "text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white"
-                }`}
+                className={`flex items-center gap-2 px-3.5 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${viewMode === "dashboard"
+                  ? "text-white"
+                  : "text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white"
+                  }`}
                 style={{ backgroundColor: viewMode === "dashboard" ? "#1e3a8a" : "transparent" }}
               >
                 <BarChart3 className="w-4 h-4" />
@@ -1955,15 +2628,25 @@ const handleBulkDownloadZip = async () => {
               </button>
               <button
                 onClick={() => setViewMode("responses")}
-                className={`flex items-center gap-2 px-3.5 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
-                  viewMode === "responses"
-                      ? "text-white"
-                      : "text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white"
-                }`}
+                className={`flex items-center gap-2 px-3.5 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${viewMode === "responses"
+                  ? "text-white"
+                  : "text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white"
+                  }`}
                 style={{ backgroundColor: viewMode === "responses" ? "#1e3a8a" : "transparent" }}
               >
                 <FileText className="w-4 h-4" />
                 Responses
+              </button>
+              <button
+                onClick={() => setViewMode("ops")}
+                className={`flex items-center gap-2 px-3.5 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${viewMode === "ops"
+                  ? "text-white"
+                  : "text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white"
+                  }`}
+                style={{ backgroundColor: viewMode === "ops" ? "#1e3a8a" : "transparent" }}
+              >
+                <Printer className="w-4 h-4" />
+                OPS Template
               </button>
             </div>
 
@@ -2010,7 +2693,7 @@ const handleBulkDownloadZip = async () => {
             </button>
 
             {viewMode === "responses" && (
-                <button
+              <button
                 onClick={() => handleExportExcel()}
                 disabled={exportingExcel}
                 className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-white rounded-lg transition-all duration-200 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -2025,141 +2708,141 @@ const handleBulkDownloadZip = async () => {
                 <span className="hidden sm:inline">
                   {exportingExcel ? "Exporting..." : "Excel"}
                 </span>
-                </button>
+              </button>
             )}
 
             {viewMode === "dashboard" && (
               <div className="relative pdf-type-selector">
                 <button
-    onClick={(e) => {
-      e.stopPropagation();
-      setShowPDFTypeSelector(!showPDFTypeSelector);
-    }}
-    disabled={generatingPDF}
-    className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-white rounded-lg transition-all duration-200 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-    style={{ backgroundColor: "#0891b2" }}
-    title="Download PDF"
-  >
-    {generatingPDF ? (
-      <div className="flex items-center gap-2">
-        <div className="relative w-5 h-5">
-          {/* Spinner */}
-          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          
-          {/* Progress text overlay */}
-          {pdfDownloadProgress !== null && pdfDownloadProgress > 0 && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              
-            </div>
-          )}
-        </div>
-        <span className="hidden sm:inline whitespace-nowrap">
-          {pdfDownloadProgress !== null ? `Downloading..${pdfDownloadProgress}%` : 'Generating...'}
-        </span>
-      </div>
-    ) : (
-      <>
-        <FileText className="w-4 h-4" />
-        <span className="hidden sm:inline">PDF</span>
-        {showPDFTypeSelector && (
-          <ChevronDown className="w-4 h-4 ml-1 transition-transform" />
-        )}
-      </>
-    )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowPDFTypeSelector(!showPDFTypeSelector);
+                  }}
+                  disabled={generatingPDF}
+                  className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-white rounded-lg transition-all duration-200 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: "#0891b2" }}
+                  title="Download PDF"
+                >
+                  {generatingPDF ? (
+                    <div className="flex items-center gap-2">
+                      <div className="relative w-5 h-5">
+                        {/* Spinner */}
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+
+                        {/* Progress text overlay */}
+                        {pdfDownloadProgress !== null && pdfDownloadProgress > 0 && (
+                          <div className="absolute inset-0 flex items-center justify-center">
+
+                          </div>
+                        )}
+                      </div>
+                      <span className="hidden sm:inline whitespace-nowrap">
+                        {pdfDownloadProgress !== null ? `Downloading..${pdfDownloadProgress}%` : 'Generating...'}
+                      </span>
+                    </div>
+                  ) : (
+                    <>
+                      <FileText className="w-4 h-4" />
+                      <span className="hidden sm:inline">PDF</span>
+                      {showPDFTypeSelector && (
+                        <ChevronDown className="w-4 h-4 ml-1 transition-transform" />
+                      )}
+                    </>
+                  )}
                 </button>
 
-  {showPDFTypeSelector && !generatingPDF && (
-    <div className="absolute top-full mt-2 right-0 w-56 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-      <div className="py-1">
-        <div className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-          {complianceLabels.yes === "Accepted" ? "Compliance Status" : "Response Types"}
-        </div>
-                <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowPDFTypeSelector(false);
-            handleDownloadPDF('yes-only');
-          }}
-          className="flex items-center w-full px-3 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors duration-150"
-                >
-          <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400 mr-2 flex-shrink-0" />
-          <span>{complianceLabels.yes} Responses (Type 1)</span>
-                </button>
-                <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowPDFTypeSelector(false);
-            handleDownloadPDF('no-only');
-          }}
-          className="flex items-center w-full px-3 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors duration-150"
-                >
-          <XCircle className="w-4 h-4 text-red-600 dark:text-red-400 mr-2 flex-shrink-0" />
-          <span>{complianceLabels.no} Responses (Type 2)</span>
-                </button>
-                <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowPDFTypeSelector(false);
-            handleDownloadPDF('na-only');
-          }}
-          className="flex items-center w-full px-3 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 transition-colors duration-150"
-        >
-          <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mr-2 flex-shrink-0" />
-          <span>{complianceLabels.na} Responses (Type 3)</span>
-                </button>
-        <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
-            <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowPDFTypeSelector(false);
-            handleDownloadPDF('both');
-          }}
-          className="flex items-center w-full px-3 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors duration-150"
-            >
-          <FileCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0" />
-          <span>All Response Types (Type 4)</span>
-            </button>
-        <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
-            <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowPDFTypeSelector(false);
-            handleDownloadPDF('section');
-          }}
-          className="flex items-center w-full px-3 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors duration-150"
-            >
-          <BarChart3 className="w-4 h-4 text-purple-600 dark:text-purple-400 mr-2 flex-shrink-0" />
-          <span>View Sections</span>
-            </button>
-        <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
-            <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowPDFTypeSelector(false);
-            handleDownloadPDF('responses-view');
-          }}
-          className="flex items-center w-full px-3 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 transition-colors duration-150"
-            >
-          <FileText className="w-4 h-4 text-cyan-600 dark:text-cyan-400 mr-2 flex-shrink-0" />
-          <span>Responses Detail</span>
-            </button>
-        <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowPDFTypeSelector(false);
-            handleBulkDownloadZip();
-          }}
-          disabled={exportingZip || generatingPDF}
-          className="flex items-center w-full px-3 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors duration-150"
-        >
-          <Download className="w-4 h-4 text-indigo-600 dark:text-indigo-400 mr-2 flex-shrink-0" />
-          <span>Bulk Download (ZIP)</span>
-        </button>
-      </div>
-    </div>
-  )}
-</div>  
+                {showPDFTypeSelector && !generatingPDF && (
+                  <div className="absolute top-full mt-2 right-0 w-56 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="py-1">
+                      <div className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                        {complianceLabels.yes === "Accepted" ? "Compliance Status" : "Response Types"}
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowPDFTypeSelector(false);
+                          handleDownloadPDF('yes-only');
+                        }}
+                        className="flex items-center w-full px-3 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors duration-150"
+                      >
+                        <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400 mr-2 flex-shrink-0" />
+                        <span>{complianceLabels.yes} Responses (Type 1)</span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowPDFTypeSelector(false);
+                          handleDownloadPDF('no-only');
+                        }}
+                        className="flex items-center w-full px-3 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors duration-150"
+                      >
+                        <XCircle className="w-4 h-4 text-red-600 dark:text-red-400 mr-2 flex-shrink-0" />
+                        <span>{complianceLabels.no} Responses (Type 2)</span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowPDFTypeSelector(false);
+                          handleDownloadPDF('na-only');
+                        }}
+                        className="flex items-center w-full px-3 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 transition-colors duration-150"
+                      >
+                        <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mr-2 flex-shrink-0" />
+                        <span>{complianceLabels.na} Responses (Type 3)</span>
+                      </button>
+                      <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowPDFTypeSelector(false);
+                          handleDownloadPDF('both');
+                        }}
+                        className="flex items-center w-full px-3 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors duration-150"
+                      >
+                        <FileCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0" />
+                        <span>All Response Types (Type 4)</span>
+                      </button>
+                      <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowPDFTypeSelector(false);
+                          handleDownloadPDF('section');
+                        }}
+                        className="flex items-center w-full px-3 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors duration-150"
+                      >
+                        <BarChart3 className="w-4 h-4 text-purple-600 dark:text-purple-400 mr-2 flex-shrink-0" />
+                        <span>View Sections</span>
+                      </button>
+                      <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowPDFTypeSelector(false);
+                          handleDownloadPDF('responses-view');
+                        }}
+                        className="flex items-center w-full px-3 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 transition-colors duration-150"
+                      >
+                        <FileText className="w-4 h-4 text-cyan-600 dark:text-cyan-400 mr-2 flex-shrink-0" />
+                        <span>Responses Detail</span>
+                      </button>
+                      <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowPDFTypeSelector(false);
+                          handleBulkDownloadZip();
+                        }}
+                        disabled={exportingZip || generatingPDF}
+                        className="flex items-center w-full px-3 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors duration-150"
+                      >
+                        <Download className="w-4 h-4 text-indigo-600 dark:text-indigo-400 mr-2 flex-shrink-0" />
+                        <span>Bulk Download (ZIP)</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
             <div className="h-6 w-px bg-gray-300 dark:bg-gray-700 mx-1"></div>
@@ -2186,15 +2869,15 @@ const handleBulkDownloadZip = async () => {
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-0.5">
-                          {summaryTotals.correct + summaryTotals.wrong > 0 
-                            ? (complianceLabels.yes === "Accepted" ? "Inspection Score" : "Accuracy Score") 
+                          {summaryTotals.correct + summaryTotals.wrong > 0
+                            ? (complianceLabels.yes === "Accepted" ? "Inspection Score" : "Accuracy Score")
                             : "Overall Score"}
                         </p>
                         <p className="text-lg font-bold text-blue-900 dark:text-blue-100">
                           {(() => {
                             const scoringTotal = summaryTotals.yes + summaryTotals.no + summaryTotals.correct + summaryTotals.wrong;
                             const totalSuccess = summaryTotals.yes + summaryTotals.correct;
-                            
+
                             return scoringTotal > 0 ? ((totalSuccess / scoringTotal) * 100).toFixed(1) : "0.0";
                           })()}%
                         </p>
@@ -2340,129 +3023,128 @@ const handleBulkDownloadZip = async () => {
 
                 {/* Basic Information - 75% */}
                 <div className="w-full lg:w-3/4 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5">
-                {form?.sections && form.sections.length > 0 ? (
-                  (() => {
-                    const section = form.sections[0];
-                    return (
-                      <div key={section.id || 0}>
-                        <div className="mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
-                          <h4 className="text-sm font-semibold text-indigo-900 dark:text-indigo-100 mb-1">
-                            {section.title || "Section 1"}
-                          </h4>
-                        </div>
-                        
-                        {section.questions && section.questions.length > 0 ? (
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {section.questions.map((question: any) => {
-                              const answer = response.answers?.[question.id];
-                              const isMainQuestion = question && !question.parentId && !question.showWhen?.questionId;
-                              return (
-                                <div 
-                                  key={question.id} 
-                                  className={`p-3 rounded-lg border transition-shadow ${
-                                    isMainQuestion 
-                                        ? "bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 border-blue-200 dark:border-blue-700" 
-                                        : "bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700"
-                                  }`}
-                                >
-                                  <div className="flex flex-col gap-1 mb-1">
-                                    {question.subParam1 && (
-                                      <span className="inline-block bg-blue-100/60 dark:bg-blue-900/30 text-blue-900 dark:text-blue-200 px-2 py-0.5 rounded font-semibold text-xs w-fit">
-                                        {question.subParam1}
-                                      </span>
-                                    )}
-                                    <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
-                                      {question.text || question.label || question.id}
-                                    </p>
-                                  </div>
-                                  <div className="mt-1 flex flex-col gap-1">
-                                    {answer !== undefined && answer !== null && answer !== '' 
-                                      ? (
-                                        <>
-                                          {renderHighlightedAnswer(answer, question)}
-                                          {question.trackResponseRank && response.responseRanks?.[question.id] && (
-                                             <div className="flex flex-col gap-1 mt-2">
-                                              {question.trackResponseRankLabel && (
-                                                <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-tight leading-none">
-                                                  {question.trackResponseRankLabel}
+                  {form?.sections && form.sections.length > 0 ? (
+                    (() => {
+                      const section = form.sections[0];
+                      return (
+                        <div key={section.id || 0}>
+                          <div className="mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
+                            <h4 className="text-sm font-semibold text-indigo-900 dark:text-indigo-100 mb-1">
+                              {section.title || "Section 1"}
+                            </h4>
+                          </div>
+
+                          {section.questions && section.questions.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                              {section.questions.map((question: any) => {
+                                const answer = response.answers?.[question.id];
+                                const isMainQuestion = question && !question.parentId && !question.showWhen?.questionId;
+                                return (
+                                  <div
+                                    key={question.id}
+                                    className={`p-3 rounded-lg border transition-shadow ${isMainQuestion
+                                      ? "bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 border-blue-200 dark:border-blue-700"
+                                      : "bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700"
+                                      }`}
+                                  >
+                                    <div className="flex flex-col gap-1 mb-1">
+                                      {question.subParam1 && (
+                                        <span className="inline-block bg-blue-100/60 dark:bg-blue-900/30 text-blue-900 dark:text-blue-200 px-2 py-0.5 rounded font-semibold text-xs w-fit">
+                                          {question.subParam1}
+                                        </span>
+                                      )}
+                                      <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+                                        {question.text || question.label || question.id}
+                                      </p>
+                                    </div>
+                                    <div className="mt-1 flex flex-col gap-1">
+                                      {answer !== undefined && answer !== null && answer !== ''
+                                        ? (
+                                          <>
+                                            {renderHighlightedAnswer(answer, question)}
+                                            {question.trackResponseRank && response.responseRanks?.[question.id] && (
+                                              <div className="flex flex-col gap-1 mt-2">
+                                                {question.trackResponseRankLabel && (
+                                                  <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-tight leading-none">
+                                                    {question.trackResponseRankLabel}
+                                                  </span>
+                                                )}
+                                                <span className={`text-[10px] font-bold min-w-[24px] h-6 px-1.5 rounded-full flex items-center justify-center border shadow-sm w-fit ${getRankStyle(answer, document.documentElement.classList.contains("dark"))}`}>
+                                                  #{response.responseRanks[question.id]}
                                                 </span>
-                                              )}
-                                              <span className={`text-[10px] font-bold min-w-[24px] h-6 px-1.5 rounded-full flex items-center justify-center border shadow-sm w-fit ${getRankStyle(answer, document.documentElement.classList.contains("dark"))}`}>
-                                                #{response.responseRanks[question.id]}
-                                              </span>
-                                            </div>
-                                          )}
-                                        </>
-                                      )
-                                      : <span className="text-gray-400 italic text-xs">No answer</span>
-                                    }
+                                              </div>
+                                            )}
+                                          </>
+                                        )
+                                        : <span className="text-gray-400 italic text-xs">No answer</span>
+                                      }
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <div className="text-center py-4 text-xs text-gray-500 dark:text-gray-400">
-                            No questions in this section
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {response.dealerName && (
-                      <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-                        <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1">
-                          Dealer Name
-                        </p>
-                        <p className="text-sm font-medium text-gray-900 dark:text-white break-words">
-                          {response.dealerName}
-                        </p>
-                      </div>
-                    )}
-                    {response.answers?.dealerCode && (
-                      <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-                        <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1">
-                          Dealer Code
-                        </p>
-                        <p className="text-sm font-medium text-gray-900 dark:text-white break-words">
-                          {renderHighlightedAnswer(response.answers.dealerCode)}
-                        </p>
-                      </div>
-                    )}
-                    {response.answers?.location && (
-                      <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-                        <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1">
-                          Location
-                        </p>
-                        <p className="text-sm font-medium text-gray-900 dark:text-white break-words">
-                          {renderHighlightedAnswer(response.answers.location)}
-                        </p>
-                      </div>
-                    )}
-                    {response.answers?.auditorDate && (
-                      <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-                        <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1">
-                          Auditor Date
-                        </p>
-                        <p className="text-sm font-medium text-gray-900 dark:text-white break-words">
-                          {renderHighlightedAnswer(response.answers.auditorDate)}
-                        </p>
-                      </div>
-                    )}
-                    {response.answers?.auditorName && (
-                      <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-                        <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1">
-                          Auditor Name
-                        </p>
-                        <p className="text-sm font-medium text-gray-900 dark:text-white break-words">
-                          {renderHighlightedAnswer(response.answers.auditorName)}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="text-center py-4 text-xs text-gray-500 dark:text-gray-400">
+                              No questions in this section
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {response.dealerName && (
+                        <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+                          <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1">
+                            Dealer Name
+                          </p>
+                          <p className="text-sm font-medium text-gray-900 dark:text-white break-words">
+                            {response.dealerName}
+                          </p>
+                        </div>
+                      )}
+                      {response.answers?.dealerCode && (
+                        <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+                          <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1">
+                            Dealer Code
+                          </p>
+                          <p className="text-sm font-medium text-gray-900 dark:text-white break-words">
+                            {renderHighlightedAnswer(response.answers.dealerCode)}
+                          </p>
+                        </div>
+                      )}
+                      {response.answers?.location && (
+                        <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+                          <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1">
+                            Location
+                          </p>
+                          <p className="text-sm font-medium text-gray-900 dark:text-white break-words">
+                            {renderHighlightedAnswer(response.answers.location)}
+                          </p>
+                        </div>
+                      )}
+                      {response.answers?.auditorDate && (
+                        <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+                          <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1">
+                            Auditor Date
+                          </p>
+                          <p className="text-sm font-medium text-gray-900 dark:text-white break-words">
+                            {renderHighlightedAnswer(response.answers.auditorDate)}
+                          </p>
+                        </div>
+                      )}
+                      {response.answers?.auditorName && (
+                        <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+                          <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1">
+                            Auditor Name
+                          </p>
+                          <p className="text-sm font-medium text-gray-900 dark:text-white break-words">
+                            {renderHighlightedAnswer(response.answers.auditorName)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -2470,142 +3152,142 @@ const handleBulkDownloadZip = async () => {
               <div className="flex flex-col lg:flex-row gap-4 items-stretch">
                 <div className="flex-shrink-0 lg:w-[70%]">
 
-              {/* Section-wise Breakdown Table */}
-              <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-                <div className="bg-primary-600 p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-2xl font-bold text-white flex items-center">
-                        <BarChart3 className="w-7 h-7 mr-3" />
-                        Section-wise Breakdown
-                      </h3>
-                      <p className="text-blue-100 mt-1">
-                        Detailed performance analysis by section
-                      </p>
+                  {/* Section-wise Breakdown Table */}
+                  <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                    <div className="bg-primary-600 p-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-2xl font-bold text-white flex items-center">
+                            <BarChart3 className="w-7 h-7 mr-3" />
+                            Section-wise Breakdown
+                          </h3>
+                          <p className="text-blue-100 mt-1">
+                            Detailed performance analysis by section
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
+                        <thead className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-800 sticky top-0">
+                          <tr>
+                            <th className="px-6 py-5 text-left font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider min-w-48">
+                              Section
+                            </th>
+                            <th className="px-6 py-5 text-left font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider min-w-20">
+                              Total
+                            </th>
+                            {summaryTotals.hasAnyQuiz && (
+                              <>
+                                <th className="px-6 py-5 text-left font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider min-w-24 text-green-600 dark:text-green-400">
+                                  {complianceLabels.correct}
+                                </th>
+                                <th className="px-6 py-5 text-left font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider min-w-24 text-red-600 dark:text-red-400">
+                                  {complianceLabels.wrong}
+                                </th>
+                              </>
+                            )}
+                            {summaryTotals.hasAnyYesNo && (
+                              <>
+                                <th className="px-6 py-5 text-left font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider min-w-24">
+                                  {complianceLabels.yes}
+                                </th>
+                                <th className="px-6 py-5 text-left font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider min-w-24">
+                                  {complianceLabels.no}
+                                </th>
+                                <th className="px-6 py-5 text-left font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider min-w-24">
+                                  {complianceLabels.na}
+                                </th>
+                              </>
+                            )}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
+                          {sectionSummaryRows.map((row) => (
+                            <tr
+                              key={row.id}
+                              onClick={() => {
+                                setAutoOpenSectionId(null);
+                                setTimeout(() => setAutoOpenSectionId(row.id), 10);
+                              }}
+                              className="group hover:bg-gradient-to-r hover:from-blue-50 hover:to-purple-50 dark:hover:from-gray-700 dark:hover:to-gray-600 transition-all duration-300 bg-white dark:bg-gray-900 cursor-pointer"
+                            >
+                              <td className="px-6 py-5 font-bold text-gray-900 dark:text-gray-100 flex items-center">
+                                <div className="w-3 h-3 bg-blue-500 rounded-full mr-3"></div>
+                                <span className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
+                                  {row.title}
+                                </span>
+                              </td>
+                              <td className="px-6 py-5 text-gray-700 dark:text-gray-300 font-medium">
+                                {row.total}
+                              </td>
+                              {summaryTotals.hasAnyQuiz && (
+                                <>
+                                  <td className="px-6 py-5 text-green-600 dark:text-green-400 font-bold">
+                                    {row.hasQuiz ? `${row.correct} (${row.correctPercent.toFixed(1)}%)` : "-"}
+                                  </td>
+                                  <td className="px-6 py-5 text-red-600 dark:text-red-400 font-bold">
+                                    {row.hasQuiz ? `${row.wrong} (${row.wrongPercent.toFixed(1)}%)` : "-"}
+                                  </td>
+                                </>
+                              )}
+                              {summaryTotals.hasAnyYesNo && (
+                                <>
+                                  <td className="px-6 py-5 text-gray-700 dark:text-gray-300 font-medium">
+                                    {row.hasYesNo ? `${row.yes} (${row.yesPercent.toFixed(1)}%)` : "-"}
+                                  </td>
+                                  <td className="px-6 py-5 text-gray-700 dark:text-gray-300 font-medium">
+                                    {row.hasYesNo ? `${row.no} (${row.noPercent.toFixed(1)}%)` : "-"}
+                                  </td>
+                                  <td className="px-6 py-5 text-gray-700 dark:text-gray-300 font-medium">
+                                    {row.hasYesNo ? `${row.na} (${row.naPercent.toFixed(1)}%)` : "-"}
+                                  </td>
+                                </>
+                              )}
+                            </tr>
+                          ))}
+
+                          {/* Total Row */}
+                          <tr className="bg-gray-50 dark:bg-gray-800/50 font-bold border-t-2 border-gray-300 dark:border-gray-600">
+                            <td className="px-6 py-5 text-gray-900 dark:text-gray-100 flex items-center">
+                              <div className="w-3 h-3 bg-indigo-600 rounded-full mr-3"></div>
+                              <span>TOTAL</span>
+                            </td>
+                            <td className="px-6 py-5 text-gray-900 dark:text-gray-100 font-bold">
+                              {summaryTotals.total}
+                            </td>
+                            {summaryTotals.hasAnyQuiz && (
+                              <>
+                                <td className="px-6 py-5 text-green-600 dark:text-green-400 font-bold">
+                                  {summaryTotals.correct} ({summaryTotals.total > 0 ? ((summaryTotals.correct / summaryTotals.total) * 100).toFixed(1) : 0}%)
+                                </td>
+                                <td className="px-6 py-5 text-red-600 dark:text-red-400 font-bold">
+                                  {summaryTotals.wrong} ({summaryTotals.total > 0 ? ((summaryTotals.wrong / summaryTotals.total) * 100).toFixed(1) : 0}%)
+                                </td>
+                              </>
+                            )}
+                            {summaryTotals.hasAnyYesNo && (
+                              <>
+                                <td className="px-6 py-5 text-gray-900 dark:text-gray-100 font-bold">
+                                  {summaryTotals.yes} ({summaryTotals.total > 0 ? ((summaryTotals.yes / summaryTotals.total) * 100).toFixed(1) : 0}%)
+                                </td>
+                                <td className="px-6 py-5 text-gray-900 dark:text-gray-100 font-bold">
+                                  {summaryTotals.no} ({summaryTotals.total > 0 ? ((summaryTotals.no / summaryTotals.total) * 100).toFixed(1) : 0}%)
+                                </td>
+                                <td className="px-6 py-5 text-gray-900 dark:text-gray-100 font-bold">
+                                  {summaryTotals.na} ({summaryTotals.total > 0 ? ((summaryTotals.na / summaryTotals.total) * 100).toFixed(1) : 0}%)
+                                </td>
+                              </>
+                            )}
+                          </tr>
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
-                    <thead className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-800 sticky top-0">
-                      <tr>
-                        <th className="px-6 py-5 text-left font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider min-w-48">
-                          Section
-                        </th>
-                        <th className="px-6 py-5 text-left font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider min-w-20">
-                          Total
-                        </th>
-                        {summaryTotals.hasAnyQuiz && (
-                          <>
-                            <th className="px-6 py-5 text-left font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider min-w-24 text-green-600 dark:text-green-400">
-                              {complianceLabels.correct}
-                            </th>
-                            <th className="px-6 py-5 text-left font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider min-w-24 text-red-600 dark:text-red-400">
-                              {complianceLabels.wrong}
-                            </th>
-                          </>
-                        )}
-                        {summaryTotals.hasAnyYesNo && (
-                          <>
-                            <th className="px-6 py-5 text-left font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider min-w-24">
-                              {complianceLabels.yes}
-                            </th>
-                            <th className="px-6 py-5 text-left font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider min-w-24">
-                              {complianceLabels.no}
-                            </th>
-                            <th className="px-6 py-5 text-left font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider min-w-24">
-                              {complianceLabels.na}
-                            </th>
-                          </>
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
-                      {sectionSummaryRows.map((row) => (
-                        <tr 
-                          key={row.id} 
-                          onClick={() => {
-                            setAutoOpenSectionId(null);
-                            setTimeout(() => setAutoOpenSectionId(row.id), 10);
-                          }}
-                          className="group hover:bg-gradient-to-r hover:from-blue-50 hover:to-purple-50 dark:hover:from-gray-700 dark:hover:to-gray-600 transition-all duration-300 bg-white dark:bg-gray-900 cursor-pointer"
-                        >
-                          <td className="px-6 py-5 font-bold text-gray-900 dark:text-gray-100 flex items-center">
-                            <div className="w-3 h-3 bg-blue-500 rounded-full mr-3"></div>
-                            <span className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
-                              {row.title}
-                            </span>
-                          </td>
-                          <td className="px-6 py-5 text-gray-700 dark:text-gray-300 font-medium">
-                            {row.total}
-                          </td>
-                          {summaryTotals.hasAnyQuiz && (
-                            <>
-                              <td className="px-6 py-5 text-green-600 dark:text-green-400 font-bold">
-                                {row.hasQuiz ? `${row.correct} (${row.correctPercent.toFixed(1)}%)` : "-"}
-                              </td>
-                              <td className="px-6 py-5 text-red-600 dark:text-red-400 font-bold">
-                                {row.hasQuiz ? `${row.wrong} (${row.wrongPercent.toFixed(1)}%)` : "-"}
-                              </td>
-                            </>
-                          )}
-                          {summaryTotals.hasAnyYesNo && (
-                            <>
-                              <td className="px-6 py-5 text-gray-700 dark:text-gray-300 font-medium">
-                                {row.hasYesNo ? `${row.yes} (${row.yesPercent.toFixed(1)}%)` : "-"}
-                              </td>
-                              <td className="px-6 py-5 text-gray-700 dark:text-gray-300 font-medium">
-                                {row.hasYesNo ? `${row.no} (${row.noPercent.toFixed(1)}%)` : "-"}
-                              </td>
-                              <td className="px-6 py-5 text-gray-700 dark:text-gray-300 font-medium">
-                                {row.hasYesNo ? `${row.na} (${row.naPercent.toFixed(1)}%)` : "-"}
-                              </td>
-                            </>
-                          )}
-                        </tr>
-                      ))}
-
-                      {/* Total Row */}
-                      <tr className="bg-gray-50 dark:bg-gray-800/50 font-bold border-t-2 border-gray-300 dark:border-gray-600">
-                        <td className="px-6 py-5 text-gray-900 dark:text-gray-100 flex items-center">
-                          <div className="w-3 h-3 bg-indigo-600 rounded-full mr-3"></div>
-                          <span>TOTAL</span>
-                        </td>
-                        <td className="px-6 py-5 text-gray-900 dark:text-gray-100 font-bold">
-                          {summaryTotals.total}
-                        </td>
-                        {summaryTotals.hasAnyQuiz && (
-                          <>
-                            <td className="px-6 py-5 text-green-600 dark:text-green-400 font-bold">
-                              {summaryTotals.correct} ({summaryTotals.total > 0 ? ((summaryTotals.correct / summaryTotals.total) * 100).toFixed(1) : 0}%)
-                            </td>
-                            <td className="px-6 py-5 text-red-600 dark:text-red-400 font-bold">
-                              {summaryTotals.wrong} ({summaryTotals.total > 0 ? ((summaryTotals.wrong / summaryTotals.total) * 100).toFixed(1) : 0}%)
-                            </td>
-                          </>
-                        )}
-                        {summaryTotals.hasAnyYesNo && (
-                          <>
-                            <td className="px-6 py-5 text-gray-900 dark:text-gray-100 font-bold">
-                              {summaryTotals.yes} ({summaryTotals.total > 0 ? ((summaryTotals.yes / summaryTotals.total) * 100).toFixed(1) : 0}%)
-                            </td>
-                            <td className="px-6 py-5 text-gray-900 dark:text-gray-100 font-bold">
-                              {summaryTotals.no} ({summaryTotals.total > 0 ? ((summaryTotals.no / summaryTotals.total) * 100).toFixed(1) : 0}%)
-                            </td>
-                            <td className="px-6 py-5 text-gray-900 dark:text-gray-100 font-bold">
-                              {summaryTotals.na} ({summaryTotals.total > 0 ? ((summaryTotals.na / summaryTotals.total) * 100).toFixed(1) : 0}%)
-                            </td>
-                          </>
-                        )}
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
                 <div className="lg:w-[30%] flex flex-col gap-4">
                   <div className="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/30 dark:from-gray-800 dark:via-blue-900/10 dark:to-indigo-900/10 p-2 rounded-2xl border border-blue-200/50 dark:border-blue-700/50 transform hover:scale-[1.02] transition-all duration-500 backdrop-blur-sm w-full flex flex-col">
                     <div className="flex flex-col items-center justify-center mb-1 gap-1">
@@ -2640,11 +3322,11 @@ const handleBulkDownloadZip = async () => {
                       </div>
                     </div>
                     <div id="section-performance-chart" className="w-full h-48 flex items-center justify-center">
-                      <Radar data={sectionChartData} options={{...sectionChartOptions, maintainAspectRatio: false}} />
+                      <Radar data={sectionChartData} options={{ ...sectionChartOptions, maintainAspectRatio: false }} />
                     </div>
                   </div>
                 </div>
-          </div>
+              </div>
 
 
 
@@ -2652,7 +3334,7 @@ const handleBulkDownloadZip = async () => {
 
 
 
-            
+
 
 
               {/* Section - Yes/No/N/A Analysis for ALL Sections */}
@@ -3017,318 +3699,316 @@ const handleBulkDownloadZip = async () => {
 
                     {/* Main Parameters Table */}
                     {(() => {
-                    const allSectionQuestions = getSectionQuestionsWithFollowUps(section.id);
-                    
-                    // Filter: Only show main questions that have at least one answered follow-up question
-                    // We check if any of the follow-ups for THIS main question have an actual answer
-                    const sectionQuestions = allSectionQuestions.filter((q: any) => {
-                      return q.followUpQuestions?.some((fq: any) => {
-                        const checkIsImage = (val: any): boolean => {
-                          if (!val) return false;
-                          if (Array.isArray(val)) return val.some(v => checkIsImage(v));
-                          if (typeof val === 'object') {
-                            if (val.url && isImageUrl(String(val.url))) return true;
-                            if (val.answer && isImageUrl(String(val.answer))) return true;
-                            return Object.values(val).some(v => checkIsImage(v));
-                          }
-                          return isImageUrl(String(val));
-                        };
+                      const allSectionQuestions = getSectionQuestionsWithFollowUps(section.id);
 
-                        const hasActualAnswer = fq.answer !== undefined && fq.answer !== null && fq.answer !== "" && 
-                          fq.answer !== "N/A" && fq.answer !== "n/a" && 
-                          String(fq.answer).toLowerCase() !== complianceLabels.na.toLowerCase();
+                      // Filter: Only show main questions that have at least one answered follow-up question
+                      // We check if any of the follow-ups for THIS main question have an actual answer
+                      const sectionQuestions = allSectionQuestions.filter((q: any) => {
+                        return q.followUpQuestions?.some((fq: any) => {
+                          const checkIsImage = (val: any): boolean => {
+                            if (!val) return false;
+                            if (Array.isArray(val)) return val.some(v => checkIsImage(v));
+                            if (typeof val === 'object') {
+                              if (val.url && isImageUrl(String(val.url))) return true;
+                              if (val.answer && isImageUrl(String(val.answer))) return true;
+                              return Object.values(val).some(v => checkIsImage(v));
+                            }
+                            return isImageUrl(String(val));
+                          };
 
-                        return hasActualAnswer || checkIsImage(fq.answer);
+                          const hasActualAnswer = fq.answer !== undefined && fq.answer !== null && fq.answer !== "" &&
+                            fq.answer !== "N/A" && fq.answer !== "n/a" &&
+                            String(fq.answer).toLowerCase() !== complianceLabels.na.toLowerCase();
+
+                          return hasActualAnswer || checkIsImage(fq.answer);
+                        });
                       });
-                    });
 
-                    if (sectionQuestions.length === 0) {
-                      return null;
-                    }
-
-                    const allFollowUpIds = new Set<string>();
-                    const followUpIdAnswerStatus = new Map<string, boolean>();
-
-                    sectionQuestions.forEach((q: any) => {
-                      q.followUpQuestions.forEach((fq: any) => {
-                        allFollowUpIds.add(fq.id);
-                        
-                        // Check if it's an image (recursive check)
-                        const checkIsImage = (val: any): boolean => {
-                          if (!val) return false;
-                          if (Array.isArray(val)) return val.some(v => checkIsImage(v));
-                          if (typeof val === 'object') {
-                            if (val.url && isImageUrl(String(val.url))) return true;
-                            if (val.answer && isImageUrl(String(val.answer))) return true;
-                            return Object.values(val).some(v => checkIsImage(v));
-                          }
-                          return isImageUrl(String(val));
-                        };
-
-                        const hasActualAnswer = fq.answer !== undefined && fq.answer !== null && fq.answer !== "" && 
-                          fq.answer !== "N/A" && fq.answer !== "n/a" && 
-                          String(fq.answer).toLowerCase() !== complianceLabels.na.toLowerCase();
-
-                        if (hasActualAnswer || checkIsImage(fq.answer)) {
-                          followUpIdAnswerStatus.set(fq.id, true);
-                        }
-                      });
-                    });
-
-                    const followUpIdsWithAnswers = Array.from(allFollowUpIds).filter(
-                      (id) => followUpIdAnswerStatus.get(id) === true
-                    );
-
-                    const followUpsBySubParam: Map<
-                      string,
-                      Array<{ id: string; subParam1?: string; answer?: any }>
-                    > = new Map();
-
-                    followUpIdsWithAnswers.forEach((followUpId) => {
-                      const followUpObj = sectionQuestions
-                        .flatMap((q: any) => q.followUpQuestions)
-                        .find((fq: any) => fq.id === followUpId);
-
-                      const subParamKey = followUpObj?.subParam1 || followUpId;
-                      if (!followUpsBySubParam.has(subParamKey)) {
-                        followUpsBySubParam.set(subParamKey, []);
+                      if (sectionQuestions.length === 0) {
+                        return null;
                       }
-                      followUpsBySubParam.get(subParamKey)!.push({
-                        id: followUpId,
-                        subParam1: followUpObj?.subParam1,
-                        answer: followUpObj?.answer,
-                      });
-                    });
 
-                    const uniqueSubParams = Array.from(followUpsBySubParam.keys());
+                      const allFollowUpIds = new Set<string>();
+                      const followUpIdAnswerStatus = new Map<string, boolean>();
 
-                    const hasImages = Array.from(followUpsBySubParam.values()).some(
-                      (items) => items.some((item) => {
-                        const checkValue = (val: any): boolean => {
-                          if (!val) return false;
-                          if (Array.isArray(val)) return val.some(v => checkValue(v));
-                          if (typeof val === 'object') {
-                            if (val.url && isImageUrl(String(val.url))) return true;
-                            if (val.answer && isImageUrl(String(val.answer))) return true;
-                            return Object.values(val).some(v => checkValue(v));
+                      sectionQuestions.forEach((q: any) => {
+                        q.followUpQuestions.forEach((fq: any) => {
+                          allFollowUpIds.add(fq.id);
+
+                          // Check if it's an image (recursive check)
+                          const checkIsImage = (val: any): boolean => {
+                            if (!val) return false;
+                            if (Array.isArray(val)) return val.some(v => checkIsImage(v));
+                            if (typeof val === 'object') {
+                              if (val.url && isImageUrl(String(val.url))) return true;
+                              if (val.answer && isImageUrl(String(val.answer))) return true;
+                              return Object.values(val).some(v => checkIsImage(v));
+                            }
+                            return isImageUrl(String(val));
+                          };
+
+                          const hasActualAnswer = fq.answer !== undefined && fq.answer !== null && fq.answer !== "" &&
+                            fq.answer !== "N/A" && fq.answer !== "n/a" &&
+                            String(fq.answer).toLowerCase() !== complianceLabels.na.toLowerCase();
+
+                          if (hasActualAnswer || checkIsImage(fq.answer)) {
+                            followUpIdAnswerStatus.set(fq.id, true);
                           }
-                          return isImageUrl(String(val));
-                        };
-                        return checkValue(item.answer);
-                      })
-                    );
+                        });
+                      });
 
-                    return (
-                      <div className="bg-gradient-to-br from-blue-50 to-blue-50 dark:from-blue-900/20 dark:to-blue-900/20 p-8 rounded-3xl border border-blue-200 dark:border-blue-800 mt-4">
-                        <div className="mb-6 flex items-center justify-between">
-                          <h3 className="text-2xl font-bold text-blue-900 dark:text-blue-100 flex items-center gap-3">
-                            <div className="w-1 h-8 bg-blue-600 rounded-full"></div>
-                            {section.title || "Section"} - Main Parameters
-                          </h3>
-                          {hasImages && (
-                            <button
-                              onClick={() =>
-                                setShowMainParamsImages((prev) => ({
-                                  ...prev,
-                                  [section.id]: !prev[section.id],
-                                }))
-                              }
-                              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                                showMainParamsImages[section.id]
-                                    ? "bg-blue-600 text-white hover:bg-blue-700"
-                                    : "bg-gray-300 text-gray-700 hover:bg-gray-400 dark:bg-gray-600 dark:text-gray-200"
-                              }`}
-                            >
-                              {showMainParamsImages[section.id] ? "Hide Images" : "View Images"}
-                            </button>
-                          )}
-                        </div>
+                      const followUpIdsWithAnswers = Array.from(allFollowUpIds).filter(
+                        (id) => followUpIdAnswerStatus.get(id) === true
+                      );
 
-                        {allFollowUpIds.size === 0 && sectionQuestions.length > 0 && (
-                          <div className="mt-3 p-3 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-300 rounded text-sm text-yellow-800 dark:text-yellow-200">
-                            <strong>⚠️ No follow-up questions found</strong> for{" "}
-                            {sectionQuestions.length} main question(s)
-                          </div>
-                        )}
+                      const followUpsBySubParam: Map<
+                        string,
+                        Array<{ id: string; subParam1?: string; answer?: any }>
+                      > = new Map();
 
-                        <div className="overflow-x-auto">
-                          <table className="w-full border-collapse">
-                            <thead>
-                              <tr className="bg-blue-200 dark:bg-blue-800/50">
-                                <th className="px-6 py-3 text-left text-blue-900 dark:text-blue-100 font-semibold border border-blue-300 dark:border-blue-700 min-w-64">
-                                  Main Parameters
-                                </th>
-                                {uniqueSubParams.map((subParam) => (
-                                  <th
-                                    key={subParam}
-                                    className="px-4 py-3 text-left text-blue-900 dark:text-blue-100 font-semibold border border-blue-300 dark:border-blue-700 min-w-48 bg-blue-50 dark:bg-blue-900/30"
-                                  >
-                                    <span className="text-xs font-bold uppercase tracking-wider text-blue-700 dark:text-blue-300">
-                                      {subParam}
-                                    </span>
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {sectionQuestions.map((mainQuestion, index) => (
-                                <tr
-                                  key={mainQuestion.id}
-                                  className={`border-b border-blue-200 dark:border-blue-800 ${
-                                    index % 2 === 0
-                                        ? "bg-white dark:bg-gray-800/50"
-                                        : "bg-blue-100/30 dark:bg-blue-900/10"
+                      followUpIdsWithAnswers.forEach((followUpId) => {
+                        const followUpObj = sectionQuestions
+                          .flatMap((q: any) => q.followUpQuestions)
+                          .find((fq: any) => fq.id === followUpId);
+
+                        const subParamKey = followUpObj?.subParam1 || followUpId;
+                        if (!followUpsBySubParam.has(subParamKey)) {
+                          followUpsBySubParam.set(subParamKey, []);
+                        }
+                        followUpsBySubParam.get(subParamKey)!.push({
+                          id: followUpId,
+                          subParam1: followUpObj?.subParam1,
+                          answer: followUpObj?.answer,
+                        });
+                      });
+
+                      const uniqueSubParams = Array.from(followUpsBySubParam.keys());
+
+                      const hasImages = Array.from(followUpsBySubParam.values()).some(
+                        (items) => items.some((item) => {
+                          const checkValue = (val: any): boolean => {
+                            if (!val) return false;
+                            if (Array.isArray(val)) return val.some(v => checkValue(v));
+                            if (typeof val === 'object') {
+                              if (val.url && isImageUrl(String(val.url))) return true;
+                              if (val.answer && isImageUrl(String(val.answer))) return true;
+                              return Object.values(val).some(v => checkValue(v));
+                            }
+                            return isImageUrl(String(val));
+                          };
+                          return checkValue(item.answer);
+                        })
+                      );
+
+                      return (
+                        <div className="bg-gradient-to-br from-blue-50 to-blue-50 dark:from-blue-900/20 dark:to-blue-900/20 p-8 rounded-3xl border border-blue-200 dark:border-blue-800 mt-4">
+                          <div className="mb-6 flex items-center justify-between">
+                            <h3 className="text-2xl font-bold text-blue-900 dark:text-blue-100 flex items-center gap-3">
+                              <div className="w-1 h-8 bg-blue-600 rounded-full"></div>
+                              {section.title || "Section"} - Main Parameters
+                            </h3>
+                            {hasImages && (
+                              <button
+                                onClick={() =>
+                                  setShowMainParamsImages((prev) => ({
+                                    ...prev,
+                                    [section.id]: !prev[section.id],
+                                  }))
+                                }
+                                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${showMainParamsImages[section.id]
+                                  ? "bg-blue-600 text-white hover:bg-blue-700"
+                                  : "bg-gray-300 text-gray-700 hover:bg-gray-400 dark:bg-gray-600 dark:text-gray-200"
                                   }`}
-                                >
-                                  <td className="px-6 py-4 font-medium text-gray-800 dark:text-gray-200 border border-blue-200 dark:border-blue-800 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30">
-                                    <div className="flex flex-col gap-3">
-                                      {mainQuestion.subParam1 && (
-                                        <span
-                                          className="inline-block px-3 py-1 bg-blue-100/60 dark:bg-blue-900/30 text-blue-900 dark:text-blue-200 text-xs font-bold rounded-md w-fit"
-                                          title={mainQuestion.subParam1}
+                              >
+                                {showMainParamsImages[section.id] ? "Hide Images" : "View Images"}
+                              </button>
+                            )}
+                          </div>
+
+                          {allFollowUpIds.size === 0 && sectionQuestions.length > 0 && (
+                            <div className="mt-3 p-3 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-300 rounded text-sm text-yellow-800 dark:text-yellow-200">
+                              <strong>⚠️ No follow-up questions found</strong> for{" "}
+                              {sectionQuestions.length} main question(s)
+                            </div>
+                          )}
+
+                          <div className="overflow-x-auto">
+                            <table className="w-full border-collapse">
+                              <thead>
+                                <tr className="bg-blue-200 dark:bg-blue-800/50">
+                                  <th className="px-6 py-3 text-left text-blue-900 dark:text-blue-100 font-semibold border border-blue-300 dark:border-blue-700 min-w-64">
+                                    Main Parameters
+                                  </th>
+                                  {uniqueSubParams.map((subParam) => (
+                                    <th
+                                      key={subParam}
+                                      className="px-4 py-3 text-left text-blue-900 dark:text-blue-100 font-semibold border border-blue-300 dark:border-blue-700 min-w-48 bg-blue-50 dark:bg-blue-900/30"
+                                    >
+                                      <span className="text-xs font-bold uppercase tracking-wider text-blue-700 dark:text-blue-300">
+                                        {subParam}
+                                      </span>
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {sectionQuestions.map((mainQuestion, index) => (
+                                  <tr
+                                    key={mainQuestion.id}
+                                    className={`border-b border-blue-200 dark:border-blue-800 ${index % 2 === 0
+                                      ? "bg-white dark:bg-gray-800/50"
+                                      : "bg-blue-100/30 dark:bg-blue-900/10"
+                                      }`}
+                                  >
+                                    <td className="px-6 py-4 font-medium text-gray-800 dark:text-gray-200 border border-blue-200 dark:border-blue-800 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30">
+                                      <div className="flex flex-col gap-3">
+                                        {mainQuestion.subParam1 && (
+                                          <span
+                                            className="inline-block px-3 py-1 bg-blue-100/60 dark:bg-blue-900/30 text-blue-900 dark:text-blue-200 text-xs font-bold rounded-md w-fit"
+                                            title={mainQuestion.subParam1}
+                                          >
+                                            {mainQuestion.subParam1}
+                                          </span>
+                                        )}
+                                        <div
+                                          className="text-xs text-gray-600 dark:text-gray-400"
+                                          title={mainQuestion.title}
                                         >
-                                          {mainQuestion.subParam1}
-                                        </span>
-                                      )}
-                                      <div
-                                        className="text-xs text-gray-600 dark:text-gray-400"
-                                        title={mainQuestion.title}
-                                      >
-                                        {mainQuestion.title}
+                                          {mainQuestion.title}
+                                        </div>
                                       </div>
-                                    </div>
-                                  </td>
-                                  {uniqueSubParams.map((subParam) => {
-                                    const followUpsForParam =
-                                      followUpsBySubParam.get(subParam) || [];
-                                    const answerQuestionPairs = followUpsForParam
-                                      .map((followUp) => {
-                                        const followUpFromMain =
-                                          mainQuestion.followUpQuestions.find(
-                                            (fq: any) => fq.id === followUp.id
+                                    </td>
+                                    {uniqueSubParams.map((subParam) => {
+                                      const followUpsForParam =
+                                        followUpsBySubParam.get(subParam) || [];
+                                      const answerQuestionPairs = followUpsForParam
+                                        .map((followUp) => {
+                                          const followUpFromMain =
+                                            mainQuestion.followUpQuestions.find(
+                                              (fq: any) => fq.id === followUp.id
+                                            );
+                                          const answer = followUpFromMain?.answer;
+
+                                          const isNotEmpty = answer !== undefined && answer !== null && answer !== "" &&
+                                            (!Array.isArray(answer) || answer.length > 0) &&
+                                            (typeof answer !== "object" || Object.keys(answer).length > 0);
+
+                                          const isNA = typeof answer === "string" && (
+                                            answer === "N/A" ||
+                                            answer === "n/a" ||
+                                            answer.toLowerCase() === complianceLabels.na.toLowerCase()
                                           );
-                                        const answer = followUpFromMain?.answer;
-                                        
-                                        const isNotEmpty = answer !== undefined && answer !== null && answer !== "" && 
-                                          (!Array.isArray(answer) || answer.length > 0) &&
-                                          (typeof answer !== "object" || Object.keys(answer).length > 0);
-                                        
-                                        const isNA = typeof answer === "string" && (
-                                          answer === "N/A" || 
-                                          answer === "n/a" || 
-                                          answer.toLowerCase() === complianceLabels.na.toLowerCase()
-                                        );
 
-                                        if (isNotEmpty && !isNA) {
-                                          return {
-                                            answer,
-                                            question: followUpFromMain,
-                                          };
-                                        }
-                                        return null;
-                                      })
-                                      .filter((item) => item !== null);
+                                          if (isNotEmpty && !isNA) {
+                                            return {
+                                              answer,
+                                              question: followUpFromMain,
+                                            };
+                                          }
+                                          return null;
+                                        })
+                                        .filter((item) => item !== null);
 
-                                    return (
-                                      <td
-                                        key={subParam}
-                                        className="px-4 py-4 border border-blue-200 dark:border-blue-800 text-sm text-gray-700 dark:text-gray-300 bg-blue-50/40 dark:bg-blue-900/20"
-                                      >
-                                        {answerQuestionPairs.length > 0 ? (
-                                          <div className="flex flex-wrap gap-2">
-                                            {answerQuestionPairs.map((item: any, idx) => {
-                                              const renderValue = (val: any): React.ReactNode => {
-                                                if (val === null || val === undefined || val === "") return null;
+                                      return (
+                                        <td
+                                          key={subParam}
+                                          className="px-4 py-4 border border-blue-200 dark:border-blue-800 text-sm text-gray-700 dark:text-gray-300 bg-blue-50/40 dark:bg-blue-900/20"
+                                        >
+                                          {answerQuestionPairs.length > 0 ? (
+                                            <div className="flex flex-wrap gap-2">
+                                              {answerQuestionPairs.map((item: any, idx) => {
+                                                const renderValue = (val: any): React.ReactNode => {
+                                                  if (val === null || val === undefined || val === "") return null;
 
-                                                if (Array.isArray(val)) {
-                                                  return (
-                                                    <div className="flex flex-col gap-1">
-                                                      {val.map((v, i) => (
-                                                        <div key={i}>{renderValue(v)}</div>
-                                                      ))}
-                                                    </div>
-                                                  );
-                                                }
-
-                                                if (typeof val === 'object') {
-                                                  if (val.url && isImageUrl(String(val.url))) {
-                                                    return (
-                                                      <ImageLink 
-                                                        text={String(val.url)} 
-                                                        showImage={showMainParamsImages[section.id] ?? false} 
-                                                      />
-                                                    );
-                                                  }
-                                                  if (val.answer && isImageUrl(String(val.answer))) {
-                                                    return (
-                                                      <ImageLink 
-                                                        text={String(val.answer)} 
-                                                        showImage={showMainParamsImages[section.id] ?? false} 
-                                                      />
-                                                    );
-                                                  }
-                                                  
-                                                  const entries = Object.entries(val);
-                                                  if (entries.length > 0) {
+                                                  if (Array.isArray(val)) {
                                                     return (
                                                       <div className="flex flex-col gap-1">
-                                                        {entries.map(([k, v], i) => (
-                                                          <div key={i} className="flex flex-col gap-0.5">
-                                                            <span className="text-[10px] font-bold opacity-70 uppercase tracking-tighter text-blue-800 dark:text-blue-300">
-                                                              {k}
-                                                            </span>
-                                                            {renderValue(v)}
-                                                          </div>
+                                                        {val.map((v, i) => (
+                                                          <div key={i}>{renderValue(v)}</div>
                                                         ))}
                                                       </div>
                                                     );
                                                   }
-                                                  return JSON.stringify(val);
-                                                }
 
-                                                const textValue = String(val);
-                                                if (isImageUrl(textValue)) {
-                                                  return (
-                                                    <ImageLink 
-                                                      text={textValue} 
-                                                      showImage={showMainParamsImages[section.id] ?? false} 
-                                                    />
-                                                  );
-                                                }
+                                                  if (typeof val === 'object') {
+                                                    if (val.url && isImageUrl(String(val.url))) {
+                                                      return (
+                                                        <ImageLink
+                                                          text={String(val.url)}
+                                                          showImage={showMainParamsImages[section.id] ?? false}
+                                                        />
+                                                      );
+                                                    }
+                                                    if (val.answer && isImageUrl(String(val.answer))) {
+                                                      return (
+                                                        <ImageLink
+                                                          text={String(val.answer)}
+                                                          showImage={showMainParamsImages[section.id] ?? false}
+                                                        />
+                                                      );
+                                                    }
 
-                                                return textValue;
-                                              };
+                                                    const entries = Object.entries(val);
+                                                    if (entries.length > 0) {
+                                                      return (
+                                                        <div className="flex flex-col gap-1">
+                                                          {entries.map(([k, v], i) => (
+                                                            <div key={i} className="flex flex-col gap-0.5">
+                                                              <span className="text-[10px] font-bold opacity-70 uppercase tracking-tighter text-blue-800 dark:text-blue-300">
+                                                                {k}
+                                                              </span>
+                                                              {renderValue(v)}
+                                                            </div>
+                                                          ))}
+                                                        </div>
+                                                      );
+                                                    }
+                                                    return JSON.stringify(val);
+                                                  }
 
-                                              return (
-                                                <div key={idx} className="w-full">
-                                                  <div className="font-medium text-gray-800 dark:text-gray-200">
-                                                    {renderValue(item.answer)}
-                                                  </div>
-                                                  {response?.responseRanks?.[item.question?.id] && (
-                                                    <div className={`text-[10px] font-bold min-w-[24px] h-6 px-1.5 rounded-full flex items-center justify-center border shadow-sm w-fit mt-1 ${getRankStyle(item.answer, document.documentElement.classList.contains("dark"))}`}>
-                                                      #{response.responseRanks[item.question.id]}
+                                                  const textValue = String(val);
+                                                  if (isImageUrl(textValue)) {
+                                                    return (
+                                                      <ImageLink
+                                                        text={textValue}
+                                                        showImage={showMainParamsImages[section.id] ?? false}
+                                                      />
+                                                    );
+                                                  }
+
+                                                  return textValue;
+                                                };
+
+                                                return (
+                                                  <div key={idx} className="w-full">
+                                                    <div className="font-medium text-gray-800 dark:text-gray-200">
+                                                      {renderValue(item.answer)}
                                                     </div>
-                                                  )}
-                                                </div>
-                                              );
-                                            })}
-                                          </div>
-                                        ) : (
-                                          <span className="text-gray-400 italic">
-                                            {complianceLabels.na}
-                                          </span>
-                                        )}
-                                      </td>
-                                    );
-                                  })}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                                                    {response?.responseRanks?.[item.question?.id] && (
+                                                      <div className={`text-[10px] font-bold min-w-[24px] h-6 px-1.5 rounded-full flex items-center justify-center border shadow-sm w-fit mt-1 ${getRankStyle(item.answer, document.documentElement.classList.contains("dark"))}`}>
+                                                        #{response.responseRanks[item.question.id]}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          ) : (
+                                            <span className="text-gray-400 italic">
+                                              {complianceLabels.na}
+                                            </span>
+                                          )}
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })()}
+                      );
+                    })()}
                   </div>
                 );
               })}
@@ -3394,632 +4074,637 @@ const handleBulkDownloadZip = async () => {
               </p>
             </div>
           )
-    ) : (
-  <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-      <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-        Form Responses
-      </h3>
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          onClick={() => handleDownloadPDF('responses-view')}
-          disabled={generatingPDF || exportingZip}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold text-white rounded-xl transition-all duration-300 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{ backgroundColor: "#0891b2" }}
-        >
-          {generatingPDF ? (
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <FileText className="w-4 h-4" />
-          )}
-          <span>{generatingPDF ? "Generating PDF..." : "Download as PDF"}</span>
-        </button>
-        <button
-          onClick={handleBulkDownloadZip}
-          disabled={generatingPDF || exportingZip}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold text-white rounded-xl transition-all duration-300 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{ backgroundColor: "#0e7490" }}
-        >
-          {exportingZip ? (
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <Download className="w-4 h-4" />
-          )}
-          <span>{exportingZip ? "Preparing ZIP..." : "Bulk Download (ZIP)"}</span>
-        </button>
-      </div>
-    </div>
-    
-{/* Structured Table View */}
-<div className="overflow-x-auto">
-  {(() => {
-    const allRows: Array<{
-      id: string;
-      questionText: string;
-      subParam1?: string;
-      subParam2?: string;
-      answer: any;
-      sectionTitle: string;
-    }> = [];
-
-    const answeredKeys = new Set<string>();
-
-    // 1. Add Submission Metadata first
-    if (response?.submissionMetadata) {
-      const meta = response.submissionMetadata;
-      if (meta.ipAddress) allRows.push({ id: 'meta-ip', questionText: 'IP Address', answer: meta.ipAddress, sectionTitle: 'Submission Metadata' });
-      if (meta.submittedAt || response.createdAt) allRows.push({ id: 'meta-time', questionText: 'Submission Time', answer: formatTimestamp(meta.submittedAt || response.createdAt), sectionTitle: 'Submission Metadata' });
-      if (meta.browser) allRows.push({ id: 'meta-browser', questionText: 'Browser', answer: meta.browser, sectionTitle: 'Submission Metadata' });
-      if (meta.os) allRows.push({ id: 'meta-os', questionText: 'Operating System', answer: meta.os, sectionTitle: 'Submission Metadata' });
-      if (meta.device) allRows.push({ id: 'meta-device', questionText: 'Device', answer: meta.device, sectionTitle: 'Submission Metadata' });
-      if (meta.location) {
-        const loc = meta.location;
-        const locStr = [loc.city, loc.region, loc.country].filter(Boolean).join(', ');
-        if (locStr) allRows.push({ id: 'meta-location', questionText: 'IP Location', answer: locStr, sectionTitle: 'Submission Metadata' });
-      }
-    }
-
-    // 2. Add specific metadata fields
-    if (response?.dealerName) allRows.push({ id: 'meta-dealer', questionText: 'Dealer Name', answer: response.dealerName, sectionTitle: 'Submission Metadata' });
-    if (response?.answers?.auditorName) {
-      allRows.push({ id: 'meta-auditor', questionText: 'Auditor Name', answer: response.answers.auditorName, sectionTitle: 'Submission Metadata' });
-      answeredKeys.add('auditorName');
-    }
-
-    // 3. Add form questions
-    form?.sections?.forEach((section: any) => {
-      section.questions?.forEach((question: any) => {
-        const answer = response?.answers?.[question.id];
-        if (answer !== undefined && answer !== null && answer !== '') {
-          answeredKeys.add(question.id);
-          allRows.push({
-            id: question.id,
-            questionText: question.text || question.label || question.id,
-            subParam1: question.subParam1,
-            subParam2: question.subParam2,
-            answer,
-            sectionTitle: section.title || "Untitled Section"
-          });
-        }
-        question.followUpQuestions?.forEach((followUp: any) => {
-          const followUpAnswer = response?.answers?.[followUp.id];
-          if (followUpAnswer !== undefined && followUpAnswer !== null && followUpAnswer !== '') {
-            answeredKeys.add(followUp.id);
-            allRows.push({
-              id: followUp.id,
-              questionText: followUp.text || followUp.label || followUp.id,
-              subParam1: followUp.subParam1,
-              subParam2: followUp.subParam2,
-              answer: followUpAnswer,
-              sectionTitle: section.title || "Untitled Section"
-            });
-          }
-        });
-      });
-    });
-
-    form?.followUpQuestions?.forEach((followUp: any) => {
-      const followUpAnswer = response?.answers?.[followUp.id];
-      if (followUpAnswer !== undefined && followUpAnswer !== null && followUpAnswer !== '') {
-        answeredKeys.add(followUp.id);
-        allRows.push({
-          id: followUp.id,
-          questionText: followUp.text || followUp.label || followUp.id,
-          subParam1: followUp.subParam1,
-          subParam2: followUp.subParam2,
-          answer: followUpAnswer,
-          sectionTitle: "Follow-up Questions"
-        });
-      }
-    });
-
-    // 4. Add any other unmapped answers
-    Object.entries(response?.answers || {}).forEach(([key, value]) => {
-      if (!answeredKeys.has(key) && !key.startsWith('synthetic_') && value !== undefined && value !== null && value !== '') {
-        allRows.push({
-          id: key,
-          questionText: key,
-          answer: value,
-          sectionTitle: "Additional Data"
-        });
-      }
-    });
-
-    const isZoneStructured = (val: any): boolean => {
-      if (!val || typeof val !== 'object') return false;
-      // Only treat as structured if it has hierarchical zone data or explicit defects
-      return ('zonesData' in val && Object.keys(val.zonesData || {}).length > 0) || 
-             ('defects' in val && Array.isArray(val.defects) && val.defects.length > 0);
-    };
-
-    const renderSimpleAnswer = (val: any): React.ReactNode => {
-      if (val === null || val === undefined || val === '') return <span className="text-gray-400 italic text-xs">-</span>;
-      if (typeof val === 'string') {
-        if (isImageUrl(val)) return <ImageLink text={val} />;
-        return <span className="text-sm">{val}</span>;
-      }
-      if (Array.isArray(val)) {
-        return (
-          <div className="flex flex-col gap-1">
-            {val.map((v, i) => <div key={i}>{renderSimpleAnswer(v)}</div>)}
-          </div>
-        );
-      }
-      if (typeof val === 'object') {
-        if (val.url && isImageUrl(String(val.url))) return <ImageLink text={val.url} />;
-        if (val.answer !== undefined) return renderSimpleAnswer(val.answer);
-
-        // Special handling for chassis/zone types in simple view
-        const isChassisType = 'chassisNumber' in val || 'status' in val || 'zone' in val || 'zones' in val;
-        if (isChassisType) {
-          const parts = [];
-          if (val.status) parts.push(<div key="status" className="flex gap-1"><span className="font-bold text-orange-600 dark:text-orange-400 text-[10px] uppercase">Status:</span><span className="text-xs font-semibold">{val.status}</span></div>);
-          if (val.chassisNumber) parts.push(<div key="chassis" className="flex gap-1"><span className="font-bold text-blue-600 dark:text-blue-400 text-[10px] uppercase">Chassis:</span><span className="text-xs font-semibold">{val.chassisNumber}</span></div>);
-          const zones = val.zone || val.zones;
-          if (zones) {
-            const zonesStr = Array.isArray(zones) ? zones.join(', ') : zones;
-            if (zonesStr) parts.push(<div key="zones" className="flex gap-1"><span className="font-bold text-indigo-600 dark:text-indigo-400 text-[10px] uppercase">Zones:</span><span className="text-xs font-semibold">{zonesStr}</span></div>);
-          }
-          if (val.remark) parts.push(<div key="remark" className="flex gap-1 mt-0.5"><span className="font-bold text-gray-500 text-[10px] uppercase">Remark:</span><span className="text-xs italic text-gray-600 dark:text-gray-400">📝 {val.remark}</span></div>);
-          if (val.evidenceUrl) {
-            parts.push(
-              <div key="evidence" className="mt-1">
-                {isImageUrl(val.evidenceUrl) ? <ImageLink text={val.evidenceUrl} /> : <a href={val.evidenceUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 underline font-bold uppercase tracking-tighter">View Evidence</a>}
+        ) : viewMode === "ops" ? (
+          <OPSTemplate
+            form={form}
+            response={response}
+          />
+        ) : (
+          <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                Form Responses
+              </h3>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  onClick={() => handleDownloadPDF('responses-view')}
+                  disabled={generatingPDF || exportingZip}
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold text-white rounded-xl transition-all duration-300 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: "#0891b2" }}
+                >
+                  {generatingPDF ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <FileText className="w-4 h-4" />
+                  )}
+                  <span>{generatingPDF ? "Generating PDF..." : "Download as PDF"}</span>
+                </button>
+                <button
+                  onClick={handleBulkDownloadZip}
+                  disabled={generatingPDF || exportingZip}
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold text-white rounded-xl transition-all duration-300 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: "#0e7490" }}
+                >
+                  {exportingZip ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  <span>{exportingZip ? "Preparing ZIP..." : "Bulk Download (ZIP)"}</span>
+                </button>
               </div>
-            );
-          }
-          
-          return <div className="flex flex-col gap-0.5 py-1">{parts}</div>;
-        }
+            </div>
 
-        return (
-          <div className="flex flex-col gap-1">
-            {Object.entries(val).map(([k, v], i) => (
-              <div key={i} className="flex gap-1">
-                <span className="font-semibold text-gray-500 text-xs">{k}:</span>
-                <span className="text-xs">{renderSimpleAnswer(v)}</span>
-              </div>
-            ))}
-          </div>
-        );
-      }
-      return <span className="text-sm">{String(val)}</span>;
-    };
+            {/* Structured Table View */}
+            <div className="overflow-x-auto">
+              {(() => {
+                const allRows: Array<{
+                  id: string;
+                  questionText: string;
+                  subParam1?: string;
+                  subParam2?: string;
+                  answer: any;
+                  sectionTitle: string;
+                }> = [];
 
-    allRows.sort((a, b) => {
-      if (a.sectionTitle !== b.sectionTitle) return a.sectionTitle.localeCompare(b.sectionTitle);
-      return a.id.localeCompare(b.id);
-    });
+                const answeredKeys = new Set<string>();
 
-    const isChassisType = (val: any): boolean => 
-      val && typeof val === 'object' && ('chassisNumber' in val || 'status' in val || 'zone' in val || 'zones' in val || 'zonesData' in val);
+                // 1. Add Submission Metadata first
+                if (response?.submissionMetadata) {
+                  const meta = response.submissionMetadata;
+                  if (meta.ipAddress) allRows.push({ id: 'meta-ip', questionText: 'IP Address', answer: meta.ipAddress, sectionTitle: 'Submission Metadata' });
+                  if (meta.submittedAt || response.createdAt) allRows.push({ id: 'meta-time', questionText: 'Submission Time', answer: formatTimestamp(meta.submittedAt || response.createdAt), sectionTitle: 'Submission Metadata' });
+                  if (meta.browser) allRows.push({ id: 'meta-browser', questionText: 'Browser', answer: meta.browser, sectionTitle: 'Submission Metadata' });
+                  if (meta.os) allRows.push({ id: 'meta-os', questionText: 'Operating System', answer: meta.os, sectionTitle: 'Submission Metadata' });
+                  if (meta.device) allRows.push({ id: 'meta-device', questionText: 'Device', answer: meta.device, sectionTitle: 'Submission Metadata' });
+                  if (meta.location) {
+                    const loc = meta.location;
+                    const locStr = [loc.city, loc.region, loc.country].filter(Boolean).join(', ');
+                    if (locStr) allRows.push({ id: 'meta-location', questionText: 'IP Location', answer: locStr, sectionTitle: 'Submission Metadata' });
+                  }
+                }
 
-    // Check if ANY row has zone/chassis data
-    const hasAnyZoneData = allRows.some(r => isChassisType(r.answer));
-    
-    // Check if Category and Defects columns are actually needed
-    const showCategoryCol = allRows.some(r => {
-      const val = r.answer;
-      if (!val || typeof val !== 'object') return false;
-      if (val.zonesData) {
-        return Object.values(val.zonesData).some((z: any) => z.categories && z.categories.length > 0);
-      }
-      return val.category || val.categoryName;
-    });
+                // 2. Add specific metadata fields
+                if (response?.dealerName) allRows.push({ id: 'meta-dealer', questionText: 'Dealer Name', answer: response.dealerName, sectionTitle: 'Submission Metadata' });
+                if (response?.answers?.auditorName) {
+                  allRows.push({ id: 'meta-auditor', questionText: 'Auditor Name', answer: response.answers.auditorName, sectionTitle: 'Submission Metadata' });
+                  answeredKeys.add('auditorName');
+                }
 
-    const showDefectsCol = allRows.some(r => {
-      const val = r.answer;
-      if (!val || typeof val !== 'object') return false;
-      if (val.zonesData) {
-        return Object.values(val.zonesData).some((z: any) => 
-          z.categories?.some((c: any) => c.defects && c.defects.length > 0)
-        );
-      }
-      return (val.defects && val.defects.length > 0) || val.defect || val.defects;
-    });
-
-    const columnCount = 4 + (hasAnyZoneData ? (5 + (showCategoryCol ? 1 : 0) + (showDefectsCol ? 1 : 0)) : 1) + 1;
-
-    const rows: JSX.Element[] = [];
-    let currentSection = '';
-    let rowIndex = 0;
-
-    allRows.forEach((row) => {
-      if (currentSection !== row.sectionTitle) {
-        currentSection = row.sectionTitle;
-        rows.push(
-          <tr key={`section-${currentSection}`} className="bg-gradient-to-r from-blue-100 to-indigo-100 dark:from-blue-900/40 dark:to-indigo-900/40">
-            <td
-              colSpan={columnCount}
-              className="px-4 py-2 text-[10px] font-bold text-blue-900 dark:text-blue-200 border border-gray-200 dark:border-gray-600 uppercase tracking-widest"
-            >
-              Section: {currentSection}
-            </td>
-          </tr>
-        );
-      }
-
-      const isEven = rowIndex % 2 === 0;
-      rowIndex++;
-
-      if (isZoneStructured(row.answer)) {
-        const val = row.answer;
-        const status = val?.status || '-';
-        const zones = val?.zone || val?.zones;
-        const zonesData = val?.zonesData || {};
-
-        type ZoneEntry = {
-          zone: string;
-          category: string;
-          defects: string;
-          remark: string;
-          file: string;
-          zoneRowSpan?: number;
-          categoryRowSpan?: number;
-          showZone?: boolean;
-          showCategory?: boolean;
-        };
-
-        const zoneEntries: ZoneEntry[] = [];
-
-        if (zonesData && typeof zonesData === 'object') {
-          Object.entries(zonesData).forEach(([zoneName, zoneVal]: [string, any]) => {
-            const categories = zoneVal?.categories;
-            const zoneStartIndex = zoneEntries.length;
-
-            if (Array.isArray(categories) && categories.length > 0) {
-              categories.forEach((cat: any) => {
-                const catName = typeof cat === 'string' ? cat : (cat?.name || cat?.category || '-');
-                const defects = cat?.defects;
-                const catStartIndex = zoneEntries.length;
-
-                if (Array.isArray(defects) && defects.length > 0) {
-                  defects.forEach((defect: any) => {
-                    const defectName = typeof defect === 'string'
-                      ? defect
-                      : (defect?.name || defect?.defect || defect?.title || '-');
-                    const details = typeof defect === 'object' ? (defect?.details || {}) : {};
-                    const remark = typeof defect === 'object'
-                      ? (details?.remark || details?.remarks || defect?.remark || defect?.remarks || defect?.comment || '-')
-                      : '-';
-                    const file = typeof defect === 'object'
-                      ? (details?.fileUrl || details?.file || defect?.fileUrl || defect?.file || defect?.imageUrl || defect?.photo || defect?.image || defect?.url || '')
-                      : '';
-                    zoneEntries.push({
-                      zone: zoneName,
-                      category: catName,
-                      defects: defectName,
-                      remark: remark || '-',
-                      file: file || '',
-                      showZone: false,
-                      showCategory: false,
+                // 3. Add form questions
+                form?.sections?.forEach((section: any) => {
+                  section.questions?.forEach((question: any) => {
+                    const answer = response?.answers?.[question.id];
+                    if (answer !== undefined && answer !== null && answer !== '') {
+                      answeredKeys.add(question.id);
+                      allRows.push({
+                        id: question.id,
+                        questionText: question.text || question.label || question.id,
+                        subParam1: question.subParam1,
+                        subParam2: question.subParam2,
+                        answer,
+                        sectionTitle: section.title || "Untitled Section"
+                      });
+                    }
+                    question.followUpQuestions?.forEach((followUp: any) => {
+                      const followUpAnswer = response?.answers?.[followUp.id];
+                      if (followUpAnswer !== undefined && followUpAnswer !== null && followUpAnswer !== '') {
+                        answeredKeys.add(followUp.id);
+                        allRows.push({
+                          id: followUp.id,
+                          questionText: followUp.text || followUp.label || followUp.id,
+                          subParam1: followUp.subParam1,
+                          subParam2: followUp.subParam2,
+                          answer: followUpAnswer,
+                          sectionTitle: section.title || "Untitled Section"
+                        });
+                      }
                     });
                   });
-                } else {
-                  const details = typeof cat === 'object' ? (cat?.details || {}) : {};
-                  const remark = typeof cat === 'object' ? (details?.remark || cat?.remark || '-') : '-';
-                  const file = typeof cat === 'object' ? (details?.fileUrl || details?.file || cat?.fileUrl || cat?.file || '') : '';
-                  zoneEntries.push({
-                    zone: zoneName,
-                    category: catName,
-                    defects: '-',
-                    remark: remark || '-',
-                    file: file || '',
-                    showZone: false,
-                    showCategory: false,
-                  });
+                });
+
+                form?.followUpQuestions?.forEach((followUp: any) => {
+                  const followUpAnswer = response?.answers?.[followUp.id];
+                  if (followUpAnswer !== undefined && followUpAnswer !== null && followUpAnswer !== '') {
+                    answeredKeys.add(followUp.id);
+                    allRows.push({
+                      id: followUp.id,
+                      questionText: followUp.text || followUp.label || followUp.id,
+                      subParam1: followUp.subParam1,
+                      subParam2: followUp.subParam2,
+                      answer: followUpAnswer,
+                      sectionTitle: "Follow-up Questions"
+                    });
+                  }
+                });
+
+                // 4. Add any other unmapped answers
+                Object.entries(response?.answers || {}).forEach(([key, value]) => {
+                  if (!answeredKeys.has(key) && !key.startsWith('synthetic_') && value !== undefined && value !== null && value !== '') {
+                    allRows.push({
+                      id: key,
+                      questionText: key,
+                      answer: value,
+                      sectionTitle: "Additional Data"
+                    });
+                  }
+                });
+
+                const isZoneStructured = (val: any): boolean => {
+                  if (!val || typeof val !== 'object') return false;
+                  // Only treat as structured if it has hierarchical zone data or explicit defects
+                  return ('zonesData' in val && Object.keys(val.zonesData || {}).length > 0) ||
+                    ('defects' in val && Array.isArray(val.defects) && val.defects.length > 0);
+                };
+
+                const renderSimpleAnswer = (val: any): React.ReactNode => {
+                  if (val === null || val === undefined || val === '') return <span className="text-gray-400 italic text-xs">-</span>;
+                  if (typeof val === 'string') {
+                    if (isImageUrl(val)) return <ImageLink text={val} />;
+                    return <span className="text-sm">{val}</span>;
+                  }
+                  if (Array.isArray(val)) {
+                    return (
+                      <div className="flex flex-col gap-1">
+                        {val.map((v, i) => <div key={i}>{renderSimpleAnswer(v)}</div>)}
+                      </div>
+                    );
+                  }
+                  if (typeof val === 'object') {
+                    if (val.url && isImageUrl(String(val.url))) return <ImageLink text={val.url} />;
+                    if (val.answer !== undefined) return renderSimpleAnswer(val.answer);
+
+                    // Special handling for chassis/zone types in simple view
+                    const isChassisType = 'chassisNumber' in val || 'status' in val || 'zone' in val || 'zones' in val;
+                    if (isChassisType) {
+                      const parts = [];
+                      if (val.status) parts.push(<div key="status" className="flex gap-1"><span className="font-bold text-orange-600 dark:text-orange-400 text-[10px] uppercase">Status:</span><span className="text-xs font-semibold">{val.status}</span></div>);
+                      if (val.chassisNumber) parts.push(<div key="chassis" className="flex gap-1"><span className="font-bold text-blue-600 dark:text-blue-400 text-[10px] uppercase">Chassis:</span><span className="text-xs font-semibold">{val.chassisNumber}</span></div>);
+                      const zones = val.zone || val.zones;
+                      if (zones) {
+                        const zonesStr = Array.isArray(zones) ? zones.join(', ') : zones;
+                        if (zonesStr) parts.push(<div key="zones" className="flex gap-1"><span className="font-bold text-indigo-600 dark:text-indigo-400 text-[10px] uppercase">Zones:</span><span className="text-xs font-semibold">{zonesStr}</span></div>);
+                      }
+                      if (val.remark) parts.push(<div key="remark" className="flex gap-1 mt-0.5"><span className="font-bold text-gray-500 text-[10px] uppercase">Remark:</span><span className="text-xs italic text-gray-600 dark:text-gray-400">📝 {val.remark}</span></div>);
+                      if (val.evidenceUrl) {
+                        parts.push(
+                          <div key="evidence" className="mt-1">
+                            {isImageUrl(val.evidenceUrl) ? <ImageLink text={val.evidenceUrl} /> : <a href={val.evidenceUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 underline font-bold uppercase tracking-tighter">View Evidence</a>}
+                          </div>
+                        );
+                      }
+
+                      return <div className="flex flex-col gap-0.5 py-1">{parts}</div>;
+                    }
+
+                    return (
+                      <div className="flex flex-col gap-1">
+                        {Object.entries(val).map(([k, v], i) => (
+                          <div key={i} className="flex gap-1">
+                            <span className="font-semibold text-gray-500 text-xs">{k}:</span>
+                            <span className="text-xs">{renderSimpleAnswer(v)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  }
+                  return <span className="text-sm">{String(val)}</span>;
+                };
+
+                allRows.sort((a, b) => {
+                  if (a.sectionTitle !== b.sectionTitle) return a.sectionTitle.localeCompare(b.sectionTitle);
+                  return a.id.localeCompare(b.id);
+                });
+
+                const isChassisType = (val: any): boolean =>
+                  val && typeof val === 'object' && ('chassisNumber' in val || 'status' in val || 'zone' in val || 'zones' in val || 'zonesData' in val);
+
+                // Check if ANY row has zone/chassis data
+                const hasAnyZoneData = allRows.some(r => isChassisType(r.answer));
+
+                // Check if Category and Defects columns are actually needed
+                const showCategoryCol = allRows.some(r => {
+                  const val = r.answer;
+                  if (!val || typeof val !== 'object') return false;
+                  if (val.zonesData) {
+                    return Object.values(val.zonesData).some((z: any) => z.categories && z.categories.length > 0);
+                  }
+                  return val.category || val.categoryName;
+                });
+
+                const showDefectsCol = allRows.some(r => {
+                  const val = r.answer;
+                  if (!val || typeof val !== 'object') return false;
+                  if (val.zonesData) {
+                    return Object.values(val.zonesData).some((z: any) =>
+                      z.categories?.some((c: any) => c.defects && c.defects.length > 0)
+                    );
+                  }
+                  return (val.defects && val.defects.length > 0) || val.defect || val.defects;
+                });
+
+                const columnCount = 4 + (hasAnyZoneData ? (5 + (showCategoryCol ? 1 : 0) + (showDefectsCol ? 1 : 0)) : 1) + 1;
+
+                const rows: JSX.Element[] = [];
+                let currentSection = '';
+                let rowIndex = 0;
+
+                allRows.forEach((row) => {
+                  if (currentSection !== row.sectionTitle) {
+                    currentSection = row.sectionTitle;
+                    rows.push(
+                      <tr key={`section-${currentSection}`} className="bg-gradient-to-r from-blue-100 to-indigo-100 dark:from-blue-900/40 dark:to-indigo-900/40">
+                        <td
+                          colSpan={columnCount}
+                          className="px-4 py-2 text-[10px] font-bold text-blue-900 dark:text-blue-200 border border-gray-200 dark:border-gray-600 uppercase tracking-widest"
+                        >
+                          Section: {currentSection}
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  const isEven = rowIndex % 2 === 0;
+                  rowIndex++;
+
+                  if (isZoneStructured(row.answer)) {
+                    const val = row.answer;
+                    const status = val?.status || '-';
+                    const zones = val?.zone || val?.zones;
+                    const zonesData = val?.zonesData || {};
+
+                    type ZoneEntry = {
+                      zone: string;
+                      category: string;
+                      defects: string;
+                      remark: string;
+                      file: string;
+                      zoneRowSpan?: number;
+                      categoryRowSpan?: number;
+                      showZone?: boolean;
+                      showCategory?: boolean;
+                    };
+
+                    const zoneEntries: ZoneEntry[] = [];
+
+                    if (zonesData && typeof zonesData === 'object') {
+                      Object.entries(zonesData).forEach(([zoneName, zoneVal]: [string, any]) => {
+                        const categories = zoneVal?.categories;
+                        const zoneStartIndex = zoneEntries.length;
+
+                        if (Array.isArray(categories) && categories.length > 0) {
+                          categories.forEach((cat: any) => {
+                            const catName = typeof cat === 'string' ? cat : (cat?.name || cat?.category || '-');
+                            const defects = cat?.defects;
+                            const catStartIndex = zoneEntries.length;
+
+                            if (Array.isArray(defects) && defects.length > 0) {
+                              defects.forEach((defect: any) => {
+                                const defectName = typeof defect === 'string'
+                                  ? defect
+                                  : (defect?.name || defect?.defect || defect?.title || '-');
+                                const details = typeof defect === 'object' ? (defect?.details || {}) : {};
+                                const remark = typeof defect === 'object'
+                                  ? (details?.remark || details?.remarks || defect?.remark || defect?.remarks || defect?.comment || '-')
+                                  : '-';
+                                const file = typeof defect === 'object'
+                                  ? (details?.fileUrl || details?.file || defect?.fileUrl || defect?.file || defect?.imageUrl || defect?.photo || defect?.image || defect?.url || '')
+                                  : '';
+                                zoneEntries.push({
+                                  zone: zoneName,
+                                  category: catName,
+                                  defects: defectName,
+                                  remark: remark || '-',
+                                  file: file || '',
+                                  showZone: false,
+                                  showCategory: false,
+                                });
+                              });
+                            } else {
+                              const details = typeof cat === 'object' ? (cat?.details || {}) : {};
+                              const remark = typeof cat === 'object' ? (details?.remark || cat?.remark || '-') : '-';
+                              const file = typeof cat === 'object' ? (details?.fileUrl || details?.file || cat?.fileUrl || cat?.file || '') : '';
+                              zoneEntries.push({
+                                zone: zoneName,
+                                category: catName,
+                                defects: '-',
+                                remark: remark || '-',
+                                file: file || '',
+                                showZone: false,
+                                showCategory: false,
+                              });
+                            }
+
+                            const catCount = zoneEntries.length - catStartIndex;
+                            if (catCount > 0) {
+                              zoneEntries[catStartIndex].showCategory = true;
+                              zoneEntries[catStartIndex].categoryRowSpan = catCount;
+                            }
+                          });
+                        } else {
+                          zoneEntries.push({
+                            zone: zoneName,
+                            category: '-',
+                            defects: '-',
+                            remark: '-',
+                            file: '',
+                            showZone: false,
+                            showCategory: true,
+                            categoryRowSpan: 1,
+                          });
+                        }
+
+                        const zoneCount = zoneEntries.length - zoneStartIndex;
+                        if (zoneCount > 0) {
+                          zoneEntries[zoneStartIndex].showZone = true;
+                          zoneEntries[zoneStartIndex].zoneRowSpan = zoneCount;
+                        }
+                      });
+                    }
+
+                    if (zoneEntries.length === 0) {
+                      const zonesStr = Array.isArray(zones) ? zones.join(', ') : (zones || '-');
+                      const defectsStr = Array.isArray(val?.defects)
+                        ? val.defects.map((d: any) => typeof d === 'string' ? d : (d?.name || d?.defect || '-')).join(', ')
+                        : (val?.defect || val?.defects || '-');
+
+                      zoneEntries.push({
+                        zone: zonesStr,
+                        category: val?.category || val?.categoryName || '-',
+                        defects: defectsStr,
+                        remark: val?.remark || val?.remarks || val?.comment || val?.comments || '-',
+                        file: val?.evidenceUrl || val?.fileUrl || val?.file || val?.imageUrl || '',
+                        showZone: true,
+                        showCategory: true,
+                        zoneRowSpan: 1,
+                        categoryRowSpan: 1,
+                      });
+                    }
+
+                    const totalRowSpan = zoneEntries.length;
+                    const entry0 = zoneEntries[0];
+
+                    rows.push(
+                      <tr key={`${row.id}-0`} className={`${isEven ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/50 dark:bg-gray-800/30'} hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors`}>
+                        <td rowSpan={totalRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-600 dark:text-gray-400 align-top">
+                          {row.sectionTitle}
+                        </td>
+                        <td rowSpan={totalRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-800 dark:text-gray-200 align-top max-w-[200px]">
+                          {row.questionText}
+                        </td>
+                        <td rowSpan={totalRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-[10px] text-blue-700 dark:text-blue-300 align-top">
+                          {row.subParam1 || '-'}
+                        </td>
+                        <td rowSpan={totalRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-[10px] text-emerald-700 dark:text-emerald-300 align-top">
+                          {row.subParam2 || '-'}
+                        </td>
+                        <td rowSpan={totalRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 align-middle text-center w-[90px]">
+                          <span className="inline-block bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 px-2 py-1 rounded-full text-[10px] font-bold border border-orange-200 dark:border-orange-700 whitespace-nowrap">
+                            {status}
+                          </span>
+                        </td>
+                        <td rowSpan={totalRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 align-middle w-[100px]">
+                          <div className="flex flex-col gap-1">
+                            {(Array.isArray(zones) ? zones : [zones]).filter(Boolean).map((z: string, i: number) => (
+                              <span key={i} className="inline-block bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 px-1.5 py-0.5 rounded text-[10px] font-semibold border border-blue-200 dark:border-blue-700 whitespace-nowrap">
+                                {z}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td rowSpan={entry0.zoneRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-800 dark:text-gray-200 align-middle bg-blue-50/30 dark:bg-blue-900/10">
+                          {entry0.zone}
+                        </td>
+                        {entry0.showCategory && showCategoryCol && (
+                          <td rowSpan={entry0.categoryRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300 align-middle">
+                            {entry0.category}
+                          </td>
+                        )}
+                        {showDefectsCol && (
+                          <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300">
+                            {entry0.defects}
+                          </td>
+                        )}
+                        <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400 italic">
+                          {entry0.remark !== '-' ? <span className="flex items-center gap-1">📝 {entry0.remark}</span> : '-'}
+                        </td>
+                        <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs">
+                          {entry0.file ? (
+                            isImageUrl(entry0.file)
+                              ? <ImageLink text={entry0.file} />
+                              : <a href={entry0.file} target={"_blank"} rel={"noopener noreferrer"} className="text-blue-600 dark:text-blue-400 underline text-[10px] font-bold">View</a>
+                          ) : '-'}
+                        </td>
+                        <td rowSpan={totalRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-bold text-center align-middle">
+                          {response?.responseRanks?.[row.id] ? `#${response.responseRanks[row.id]}` : '-'}
+                        </td>
+                      </tr>
+                    );
+
+                    zoneEntries.slice(1).forEach((entry, idx) => {
+                      rows.push(
+                        <tr key={`${row.id}-${idx + 1}`} className={`${isEven ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/50 dark:bg-gray-800/30'} hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors`}>
+                          {entry.showZone && (
+                            <td rowSpan={entry.zoneRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-800 dark:text-gray-200 align-middle bg-blue-50/30 dark:bg-blue-900/10">
+                              {entry.zone}
+                            </td>
+                          )}
+                          {entry.showCategory && showCategoryCol && (
+                            <td rowSpan={entry.categoryRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300 align-middle">
+                              {entry.category}
+                            </td>
+                          )}
+                          {showDefectsCol && (
+                            <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300">
+                              {entry.defects}
+                            </td>
+                          )}
+                          <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400 italic">
+                            {entry.remark !== '-' ? <span className="flex items-center gap-1">📝 {entry.remark}</span> : '-'}
+                          </td>
+                          <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs">
+                            {entry.file ? (
+                              isImageUrl(entry.file)
+                                ? <ImageLink text={entry.file} />
+                                : <a href={entry.file} target={"_blank"} rel={"noopener noreferrer"} className="text-blue-600 dark:text-blue-400 underline text-[10px] font-bold">View</a>
+                            ) : '-'}
+                          </td>
+                        </tr>
+                      );
+                    });
+                  } else {
+                    const val = row.answer;
+                    const isChassisRow = isChassisType(val);
+
+                    if (hasAnyZoneData && isChassisRow) {
+                      const status = val.status || '-';
+                      const zones = val.zone || val.zones;
+                      const chassis = val.chassisNumber || '-';
+                      const remark = val.remark || '-';
+                      const file = val.evidenceUrl || '';
+
+                      rows.push(
+                        <tr key={row.id} className={`${isEven ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/50 dark:bg-gray-800/30'} hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors`}>
+                          <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-600 dark:text-gray-400 align-top">
+                            {row.sectionTitle}
+                          </td>
+                          <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-800 dark:text-gray-200 align-top max-w-[200px]">
+                            {row.questionText}
+                          </td>
+                          <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-[10px] text-blue-700 dark:text-blue-300 align-top">
+                            {row.subParam1 || '-'}
+                          </td>
+                          <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-[10px] text-emerald-700 dark:text-emerald-300 align-top">
+                            {row.subParam2 || '-'}
+                          </td>
+                          <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 align-middle text-center w-[90px]">
+                            <span className="inline-block bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 px-2 py-1 rounded-full text-[10px] font-bold border border-orange-200 dark:border-orange-700 whitespace-nowrap">
+                              {status}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 align-middle w-[100px]">
+                            <div className="flex flex-wrap gap-1">
+                              {(Array.isArray(zones) ? zones : [zones]).filter(Boolean).map((z: string, i: number) => (
+                                <span key={i} className="inline-block bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 px-1.5 py-0.5 rounded text-[10px] font-semibold border border-blue-200 dark:border-blue-700 whitespace-nowrap">
+                                  {z}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-800 dark:text-gray-200 align-middle bg-blue-50/30 dark:bg-blue-900/10">
+                            {chassis}
+                          </td>
+                          {showCategoryCol && (
+                            <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300 align-middle text-center">
+                              -
+                            </td>
+                          )}
+                          {showDefectsCol && (
+                            <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300 text-center">
+                              -
+                            </td>
+                          )}
+                          <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400 italic">
+                            {remark !== '-' ? <span className="flex items-center gap-1">📝 {remark}</span> : '-'}
+                          </td>
+                          <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-center">
+                            {file ? (
+                              isImageUrl(file)
+                                ? <ImageLink text={file} />
+                                : <a href={file} target={"_blank"} rel={"noopener noreferrer"} className="text-blue-600 dark:text-blue-400 underline font-bold uppercase tracking-tighter text-[10px]">View</a>
+                            ) : '-'}
+                          </td>
+                          <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-bold text-center align-top">
+                            {response?.responseRanks?.[row.id] ? `#${response.responseRanks[row.id]}` : '-'}
+                          </td>
+                        </tr>
+                      );
+                    } else {
+                      // Normal non-zone row
+                      rows.push(
+                        <tr key={row.id} className={`${isEven ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/50 dark:bg-gray-800/30'} hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors`}>
+                          <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-600 dark:text-gray-400 align-top">
+                            {row.sectionTitle}
+                          </td>
+                          <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-800 dark:text-gray-200 align-top max-w-[200px]">
+                            {row.questionText}
+                          </td>
+                          <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-[10px] text-blue-700 dark:text-blue-300 align-top">
+                            {row.subParam1 || '-'}
+                          </td>
+                          <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-[10px] text-emerald-700 dark:text-emerald-300 align-top">
+                            {row.subParam2 || '-'}
+                          </td>
+                          <td colSpan={hasAnyZoneData ? (5 + (showCategoryCol ? 1 : 0) + (showDefectsCol ? 1 : 0)) : 1} className="px-3 py-2 border border-gray-200 dark:border-gray-700 align-top">
+                            {renderSimpleAnswer(row.answer)}
+                          </td>
+                          <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-bold text-center align-top">
+                            {response?.responseRanks?.[row.id] ? `#${response.responseRanks[row.id]}` : '-'}
+                          </td>
+                        </tr>
+                      );
+                    }
+                  }
+                });
+
+                if (rows.length === 0) {
+                  return (
+                    <table className="w-full border-collapse">
+                      <tbody>
+                        <tr>
+                          <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                            No responses found
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  );
                 }
 
-                const catCount = zoneEntries.length - catStartIndex;
-                if (catCount > 0) {
-                  zoneEntries[catStartIndex].showCategory = true;
-                  zoneEntries[catStartIndex].categoryRowSpan = catCount;
-                }
-              });
-            } else {
-              zoneEntries.push({
-                zone: zoneName,
-                category: '-',
-                defects: '-',
-                remark: '-',
-                file: '',
-                showZone: false,
-                showCategory: true,
-                categoryRowSpan: 1,
-              });
-            }
+                return (
+                  <table className="w-full border-collapse text-sm">
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700">
+                        <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
+                          Section
+                        </th>
+                        <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600 min-w-[150px]">
+                          Question
+                        </th>
+                        <th className="px-3 py-3 text-left text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
+                          Main Parameter
+                        </th>
+                        <th className="px-3 py-3 text-left text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
+                          Sub Parameter
+                        </th>
 
-            const zoneCount = zoneEntries.length - zoneStartIndex;
-            if (zoneCount > 0) {
-              zoneEntries[zoneStartIndex].showZone = true;
-              zoneEntries[zoneStartIndex].zoneRowSpan = zoneCount;
-            }
-          });
-        }
-
-        if (zoneEntries.length === 0) {
-          const zonesStr = Array.isArray(zones) ? zones.join(', ') : (zones || '-');
-          const defectsStr = Array.isArray(val?.defects) 
-            ? val.defects.map((d: any) => typeof d === 'string' ? d : (d?.name || d?.defect || '-')).join(', ') 
-            : (val?.defect || val?.defects || '-');
-          
-          zoneEntries.push({
-            zone: zonesStr,
-            category: val?.category || val?.categoryName || '-',
-            defects: defectsStr,
-            remark: val?.remark || val?.remarks || val?.comment || val?.comments || '-',
-            file: val?.evidenceUrl || val?.fileUrl || val?.file || val?.imageUrl || '',
-            showZone: true,
-            showCategory: true,
-            zoneRowSpan: 1,
-            categoryRowSpan: 1,
-          });
-        }
-
-        const totalRowSpan = zoneEntries.length;
-        const entry0 = zoneEntries[0];
-
-        rows.push(
-          <tr key={`${row.id}-0`} className={`${isEven ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/50 dark:bg-gray-800/30'} hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors`}>
-            <td rowSpan={totalRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-600 dark:text-gray-400 align-top">
-              {row.sectionTitle}
-            </td>
-            <td rowSpan={totalRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-800 dark:text-gray-200 align-top max-w-[200px]">
-              {row.questionText}
-            </td>
-            <td rowSpan={totalRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-[10px] text-blue-700 dark:text-blue-300 align-top">
-              {row.subParam1 || '-'}
-            </td>
-            <td rowSpan={totalRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-[10px] text-emerald-700 dark:text-emerald-300 align-top">
-              {row.subParam2 || '-'}
-            </td>
-            <td rowSpan={totalRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 align-middle text-center w-[90px]">
-              <span className="inline-block bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 px-2 py-1 rounded-full text-[10px] font-bold border border-orange-200 dark:border-orange-700 whitespace-nowrap">
-                {status}
-              </span>
-            </td>
-            <td rowSpan={totalRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 align-middle w-[100px]">
-              <div className="flex flex-col gap-1">
-                {(Array.isArray(zones) ? zones : [zones]).filter(Boolean).map((z: string, i: number) => (
-                  <span key={i} className="inline-block bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 px-1.5 py-0.5 rounded text-[10px] font-semibold border border-blue-200 dark:border-blue-700 whitespace-nowrap">
-                    {z}
-                  </span>
-                ))}
-              </div>
-            </td>
-            <td rowSpan={entry0.zoneRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-800 dark:text-gray-200 align-middle bg-blue-50/30 dark:bg-blue-900/10">
-              {entry0.zone}
-            </td>
-            {entry0.showCategory && showCategoryCol && (
-              <td rowSpan={entry0.categoryRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300 align-middle">
-                {entry0.category}
-              </td>
-            )}
-            {showDefectsCol && (
-              <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300">
-                {entry0.defects}
-              </td>
-            )}
-            <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400 italic">
-              {entry0.remark !== '-' ? <span className="flex items-center gap-1">📝 {entry0.remark}</span> : '-'}
-            </td>
-            <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs">
-              {entry0.file ? (
-                isImageUrl(entry0.file)
-                  ? <ImageLink text={entry0.file} />
-                  : <a href={entry0.file} target={"_blank"} rel={"noopener noreferrer"} className="text-blue-600 dark:text-blue-400 underline text-[10px] font-bold">View</a>
-              ) : '-'}
-            </td>
-            <td rowSpan={totalRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-bold text-center align-middle">
-              {response?.responseRanks?.[row.id] ? `#${response.responseRanks[row.id]}` : '-'}
-            </td>
-          </tr>
-        );
-
-        zoneEntries.slice(1).forEach((entry, idx) => {
-          rows.push(
-            <tr key={`${row.id}-${idx + 1}`} className={`${isEven ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/50 dark:bg-gray-800/30'} hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors`}>
-              {entry.showZone && (
-                <td rowSpan={entry.zoneRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-800 dark:text-gray-200 align-middle bg-blue-50/30 dark:bg-blue-900/10">
-                  {entry.zone}
-                </td>
-              )}
-              {entry.showCategory && showCategoryCol && (
-                <td rowSpan={entry.categoryRowSpan} className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300 align-middle">
-                  {entry.category}
-                </td>
-              )}
-              {showDefectsCol && (
-                <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300">
-                  {entry.defects}
-                </td>
-              )}
-              <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400 italic">
-                {entry.remark !== '-' ? <span className="flex items-center gap-1">📝 {entry.remark}</span> : '-'}
-              </td>
-              <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs">
-                {entry.file ? (
-                  isImageUrl(entry.file)
-                    ? <ImageLink text={entry.file} />
-                    : <a href={entry.file} target={"_blank"} rel={"noopener noreferrer"} className="text-blue-600 dark:text-blue-400 underline text-[10px] font-bold">View</a>
-                ) : '-'}
-              </td>
-            </tr>
-          );
-        });
-      } else {
-        const val = row.answer;
-        const isChassisRow = isChassisType(val);
-
-        if (hasAnyZoneData && isChassisRow) {
-          const status = val.status || '-';
-          const zones = val.zone || val.zones;
-          const chassis = val.chassisNumber || '-';
-          const remark = val.remark || '-';
-          const file = val.evidenceUrl || '';
-
-          rows.push(
-            <tr key={row.id} className={`${isEven ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/50 dark:bg-gray-800/30'} hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors`}>
-              <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-600 dark:text-gray-400 align-top">
-                {row.sectionTitle}
-              </td>
-              <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-800 dark:text-gray-200 align-top max-w-[200px]">
-                {row.questionText}
-              </td>
-              <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-[10px] text-blue-700 dark:text-blue-300 align-top">
-                {row.subParam1 || '-'}
-              </td>
-              <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-[10px] text-emerald-700 dark:text-emerald-300 align-top">
-                {row.subParam2 || '-'}
-              </td>
-              <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 align-middle text-center w-[90px]">
-                <span className="inline-block bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 px-2 py-1 rounded-full text-[10px] font-bold border border-orange-200 dark:border-orange-700 whitespace-nowrap">
-                  {status}
-                </span>
-              </td>
-              <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 align-middle w-[100px]">
-                <div className="flex flex-wrap gap-1">
-                  {(Array.isArray(zones) ? zones : [zones]).filter(Boolean).map((z: string, i: number) => (
-                    <span key={i} className="inline-block bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 px-1.5 py-0.5 rounded text-[10px] font-semibold border border-blue-200 dark:border-blue-700 whitespace-nowrap">
-                      {z}
-                    </span>
-                  ))}
-                </div>
-              </td>
-              <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-800 dark:text-gray-200 align-middle bg-blue-50/30 dark:bg-blue-900/10">
-                {chassis}
-              </td>
-              {showCategoryCol && (
-                <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300 align-middle text-center">
-                  -
-                </td>
-              )}
-              {showDefectsCol && (
-                <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300 text-center">
-                  -
-                </td>
-              )}
-              <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400 italic">
-                {remark !== '-' ? <span className="flex items-center gap-1">📝 {remark}</span> : '-'}
-              </td>
-              <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs text-center">
-                {file ? (
-                  isImageUrl(file)
-                    ? <ImageLink text={file} />
-                    : <a href={file} target={"_blank"} rel={"noopener noreferrer"} className="text-blue-600 dark:text-blue-400 underline font-bold uppercase tracking-tighter text-[10px]">View</a>
-                ) : '-'}
-              </td>
-              <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-bold text-center align-top">
-                {response?.responseRanks?.[row.id] ? `#${response.responseRanks[row.id]}` : '-'}
-              </td>
-            </tr>
-          );
-        } else {
-          // Normal non-zone row
-          rows.push(
-            <tr key={row.id} className={`${isEven ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/50 dark:bg-gray-800/30'} hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors`}>
-              <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-600 dark:text-gray-400 align-top">
-                {row.sectionTitle}
-              </td>
-              <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-800 dark:text-gray-200 align-top max-w-[200px]">
-                {row.questionText}
-              </td>
-              <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-[10px] text-blue-700 dark:text-blue-300 align-top">
-                {row.subParam1 || '-'}
-              </td>
-              <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-[10px] text-emerald-700 dark:text-emerald-300 align-top">
-                {row.subParam2 || '-'}
-              </td>
-              <td colSpan={hasAnyZoneData ? (5 + (showCategoryCol ? 1 : 0) + (showDefectsCol ? 1 : 0)) : 1} className="px-3 py-2 border border-gray-200 dark:border-gray-700 align-top">
-                {renderSimpleAnswer(row.answer)}
-              </td>
-              <td className="px-3 py-2 border border-gray-200 dark:border-gray-700 text-xs font-bold text-center align-top">
-                {response?.responseRanks?.[row.id] ? `#${response.responseRanks[row.id]}` : '-'}
-              </td>
-            </tr>
-          );
-        }
-      }
-    });
-
-    if (rows.length === 0) {
-      return (
-        <table className="w-full border-collapse">
-          <tbody>
-            <tr>
-              <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                No responses found
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      );
-    }
-
-    return (
-      <table className="w-full border-collapse text-sm">
-        <thead className="sticky top-0 z-10">
-          <tr className="bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700">
-            <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
-              Section
-            </th>
-            <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600 min-w-[150px]">
-              Question
-            </th>
-            <th className="px-3 py-3 text-left text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
-              Main Parameter
-            </th>
-            <th className="px-3 py-3 text-left text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
-              Sub Parameter
-            </th>
-            
-            {hasAnyZoneData ? (
-              <>
-                <th className="px-3 py-3 text-left text-[10px] font-bold text-orange-700 dark:text-orange-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
-                  Status
-                </th>
-                <th className="px-3 py-3 text-left text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
-                  Zones
-                </th>
-                <th className="px-3 py-3 text-left text-[10px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
-                  Zone / Chassis
-                </th>
-                {showCategoryCol && (
-                  <th className="px-3 py-3 text-left text-[10px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
-                    Category
-                  </th>
-                )}
-                {showDefectsCol && (
-                  <th className="px-3 py-3 text-left text-[10px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
-                    Defects
-                  </th>
-                )}
-                <th className="px-3 py-3 text-left text-[10px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
-                  Remark
-                </th>
-                <th className="px-3 py-3 text-left text-[10px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
-                  File
-                </th>
-              </>
-            ) : (
-              <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
-                Answer / Response
-              </th>
-            )}
-            <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
-              Rank
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows}
-        </tbody>
-      </table>
-    );
-  })()}
-</div>
-  </div>
-)}
+                        {hasAnyZoneData ? (
+                          <>
+                            <th className="px-3 py-3 text-left text-[10px] font-bold text-orange-700 dark:text-orange-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
+                              Status
+                            </th>
+                            <th className="px-3 py-3 text-left text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
+                              Zones
+                            </th>
+                            <th className="px-3 py-3 text-left text-[10px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
+                              Zone / Chassis
+                            </th>
+                            {showCategoryCol && (
+                              <th className="px-3 py-3 text-left text-[10px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
+                                Category
+                              </th>
+                            )}
+                            {showDefectsCol && (
+                              <th className="px-3 py-3 text-left text-[10px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
+                                Defects
+                              </th>
+                            )}
+                            <th className="px-3 py-3 text-left text-[10px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
+                              Remark
+                            </th>
+                            <th className="px-3 py-3 text-left text-[10px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
+                              File
+                            </th>
+                          </>
+                        ) : (
+                          <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
+                            Answer / Response
+                          </th>
+                        )}
+                        <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-600">
+                          Rank
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows}
+                    </tbody>
+                  </table>
+                );
+              })()}
+            </div>
+          </div>
+        )}
       </div>
 
       {editingResponse && editingFormLoading && (
@@ -4330,20 +5015,19 @@ const handleBulkDownloadZip = async () => {
                 <FileText className="w-8 h-8 text-blue-600 dark:text-blue-400" />
               </div>
               <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-                {pdfProgress.stage === 'generating' ? 'Generating PDFs' : 
-                 pdfProgress.stage === 'downloading' ? 'Downloading' :
-                 pdfProgress.stage === 'complete' ? 'Complete!' :
-                 pdfProgress.stage === 'error' ? 'Error' : 'Processing'}
+                {pdfProgress.stage === 'generating' ? 'Generating PDFs' :
+                  pdfProgress.stage === 'downloading' ? 'Downloading' :
+                    pdfProgress.stage === 'complete' ? 'Complete!' :
+                      pdfProgress.stage === 'error' ? 'Error' : 'Processing'}
               </h3>
               <p className="text-gray-600 dark:text-gray-400 mb-6">
                 {pdfProgress.message || 'Please wait while we prepare your files...'}
               </p>
-              
+
               <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 mb-2 overflow-hidden">
-                <div 
-                  className={`h-full transition-all duration-300 rounded-full ${
-                    pdfProgress.stage === 'error' ? 'bg-red-500' : 'bg-blue-600'
-                  }`}
+                <div
+                  className={`h-full transition-all duration-300 rounded-full ${pdfProgress.stage === 'error' ? 'bg-red-500' : 'bg-blue-600'
+                    }`}
                   style={{ width: `${pdfProgress.percentage}%` }}
                 />
               </div>
@@ -4378,4 +5062,5 @@ const handleBulkDownloadZip = async () => {
       )}
     </div>
   );
+
 }

@@ -2,10 +2,16 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import CameraCapture from "../forms/CameraCapture";
+import { exportResponsesToOPSExcel, setToastFunction } from "../../utils/opsExcelExporter";
+import { exportResponsesToOPSPDF } from "../../utils/opsPDFgenerator";
 import {
   exportDashboardToPDF,
   exportFormAnalyticsToPDF,
 } from "../../utils/formanalyticsexport";
+import {
+  OpsFormImages,
+  downloadFormImportTemplate
+} from "../../utils/exportUtils";
 import {
   Users,
   CheckCircle,
@@ -30,12 +36,15 @@ import {
   MessageCircle,
   Info,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Filter,
   Reply,
   Upload,
-  ChevronDown,
   Camera,
-  Loader2
+  Loader2,
+  Maximize,
+  UsersIcon
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Pie, Doughnut, Radar } from "react-chartjs-2";
@@ -58,7 +67,6 @@ import ChartDataLabels from "chartjs-plugin-datalabels";
 import { apiClient } from "../../api/client";
 import ResponseQuestion from "./ResponseQuestion";
 import SectionAnalytics from "./SectionAnalytics";
-import LocationHeatmap from "./LocationHeatmap";
 import CascadingFilterModal from "./CascadingFilterModal";
 import * as XLSX from "xlsx-js-style";
 import { isImageUrl } from "../../utils/answerTemplateUtils";
@@ -118,6 +126,12 @@ interface Response {
   createdBy?: string;
   isDispatched?: boolean;
   dispatchedAt?: string;
+  tenantId?: string;
+  submittedBy?: string;
+  timeSpent?: number;
+  submitterContact?: {
+    email?: string;
+  };
 }
 
 // Helper function to get the timestamp from response (handles both timestamp and createdAt)
@@ -888,6 +902,8 @@ const computeSectionPerformanceStats = (
   return stats.filter((stat): stat is SectionPerformanceStat => Boolean(stat));
 };
 
+
+
 const computeQuestionPerformanceStats = (
   form: Form | null,
   responses: Response[],
@@ -1240,8 +1256,9 @@ const computeDirectAcceptedDailyStats = (
   rejectedCount: number;
   total: number;
   questionReworkCount: number;
+  reworkCompletedCount: number;
 }[] => {
-  const dailyMap = new Map<string, { total: number; direct: number; rework: number; rejected: number }>();
+  const dailyMap = new Map<string, { total: number; direct: number; rework: number; rejected: number; questionRework: number; reworkCompleted: number }>();
 
   let start: Date | null = null;
   let end: Date | null = null;
@@ -1269,7 +1286,7 @@ const computeDirectAcceptedDailyStats = (
 
     while (curr <= last) {
       const dKey = curr.toISOString().split("T")[0];
-      dailyMap.set(dKey, { total: 0, direct: 0, rework: 0, rejected: 0 });
+      dailyMap.set(dKey, { total: 0, direct: 0, rework: 0, rejected: 0, questionRework: 0, reworkCompleted: 0 });
       curr.setDate(curr.getDate() + 1);
     }
   }
@@ -1280,12 +1297,12 @@ const computeDirectAcceptedDailyStats = (
 
     const dateKey = new Date(timestamp).toISOString().split("T")[0];
     if (!dailyMap.has(dateKey)) {
-      dailyMap.set(dateKey, { total: 0, direct: 0, rework: 0, rejected: 0 });
+      dailyMap.set(dateKey, { total: 0, direct: 0, rework: 0, rejected: 0, questionRework: 0, reworkCompleted: 0 });
     }
 
     const dayStats = dailyMap.get(dateKey)!;
     dayStats.total += 1;
-    
+
     // Calculate rework count based on individual questions
     let formReworkQuestionsCount = 0;
     if (response.answers) {
@@ -1308,6 +1325,8 @@ const computeDirectAcceptedDailyStats = (
     const status = statuses[response.id];
     if (status === "Direct Ok" || status === "Accepted") {
       dayStats.direct += 1;
+    } else if (status && (status.startsWith("Rework Accepted") || status.startsWith("Rework Completed"))) {
+      dayStats.reworkCompleted += 1;
     } else if (status && status.startsWith("Rework")) {
       dayStats.rework += 1;
     } else if (status === "Rejected") {
@@ -1329,6 +1348,8 @@ const computeDirectAcceptedDailyStats = (
         reworkCount: stats.rework,
         rejectedCount: stats.rejected,
         total: stats.total,
+        questionReworkCount: stats.questionRework,
+        reworkCompletedCount: stats.reworkCompleted,
       };
     })
     .sort((a, b) => (a.dateKey > b.dateKey ? 1 : -1));
@@ -1651,14 +1672,14 @@ const QuestionSuggestionRenderer = ({
   };
 
   // Render the current answer as read-only context
-  
+
 
   return (
     <div className="space-y-3 mt-2" onClick={e => e.stopPropagation()}>
 
 
-      
-      
+
+
 
       {/* Remark */}
       <div
@@ -1826,6 +1847,129 @@ const renderMessageWithImages = (message: string) => {
 
 export default function FormAnalyticsDashboard() {
   const [selectedForm, setSelectedForm] = useState<Form | null>(null);
+
+  const generateTableBarChart = (
+    yesPercent: number,
+    noPercent: number,
+    naPercent: number,
+  ) => {
+    const totalWidth = 160;
+    const yesWidth = (yesPercent / 100) * totalWidth;
+    const noWidth = (noPercent / 100) * totalWidth;
+    const naWidth = (naPercent / 100) * totalWidth;
+
+    return (
+      <div
+        className="relative"
+        style={{
+          width: `${totalWidth}px`,
+          height: "20px",
+        }}
+      >
+        <div className="absolute inset-0 bg-gray-100 dark:bg-gray-700 rounded-sm border border-gray-300 dark:border-gray-600"></div>
+
+        {yesPercent > 0 && (
+          <div
+            className="absolute left-0 h-full bg-green-500"
+            style={{ width: `${yesWidth}px` }}
+          >
+            {yesPercent >= 10 && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span
+                  className="text-xs font-bold text-white"
+                  style={{
+                    textShadow: "0 0 2px rgba(0,0,0,0.5)",
+                  }}
+                >
+                  {yesPercent.toFixed(0)}%
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {noPercent > 0 && (
+          <div
+            className="absolute h-full bg-red-500"
+            style={{
+              left: `${yesWidth}px`,
+              width: `${noWidth}px`,
+            }}
+          >
+            {noPercent >= 10 && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span
+                  className="text-xs font-bold text-white"
+                  style={{
+                    textShadow: "0 0 2px rgba(0,0,0,0.5)",
+                  }}
+                >
+                  {noPercent.toFixed(0)}%
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {naPercent > 0 && (
+          <div
+            className="absolute h-full bg-gray-400"
+            style={{
+              left: `${yesWidth + noWidth}px`,
+              width: `${naWidth}px`,
+            }}
+          >
+            {naPercent >= 10 && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span
+                  className="text-xs font-bold text-white"
+                  style={{
+                    textShadow: "0 0 2px rgba(0,0,0,0.5)",
+                  }}
+                >
+                  {naPercent.toFixed(0)}%
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {yesPercent > 0 && yesPercent < 10 && (
+          <div className="absolute" style={{ left: "2px", top: "1px" }}>
+            <span className="text-[9px] font-bold text-green-700 bg-white/80 px-0.5 rounded">
+              {yesPercent.toFixed(0)}%
+            </span>
+          </div>
+        )}
+        {noPercent > 0 && noPercent < 10 && (
+          <div
+            className="absolute"
+            style={{
+              left: `${yesWidth + 2}px`,
+              top: "1px",
+            }}
+          >
+            <span className="text-[9px] font-bold text-red-700 bg-white/80 px-0.5 rounded">
+              {noPercent.toFixed(0)}%
+            </span>
+          </div>
+        )}
+        {naPercent > 0 && naPercent < 10 && (
+          <div
+            className="absolute"
+            style={{
+              left: `${yesWidth + noWidth + 2}px`,
+              top: "1px",
+            }}
+          >
+            <span className="text-[9px] font-bold text-gray-700 bg-white/80 px-0.5 rounded">
+              {naPercent.toFixed(0)}%
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  };
   const [selectedQuestionIndex, setSelectedQuestionIndex] = useState<number | null>(null);
   const { darkMode } = useTheme();
   const { user } = useAuth();
@@ -1972,26 +2116,28 @@ export default function FormAnalyticsDashboard() {
 
   const handleShareAnalytics = () => {
     if (id) {
-      setShareAnalyticsModal({ 
-        open: true, 
-        formId: id, 
-        formTitle: form?.title || "Form Analytics" 
+      setShareAnalyticsModal({
+        open: true,
+        formId: id,
+        formTitle: form?.title || "Form Analytics"
       });
     }
   };
 
   const handleAutoSendSetup = () => {
     if (id) {
-      setAutoSendModal({ 
-        open: true, 
-        formId: id, 
-        formTitle: form?.title || "Form Analytics" 
+      setAutoSendModal({
+        open: true,
+        formId: id,
+        formTitle: form?.title || "Form Analytics"
       });
     }
   };
 
   const [responses, setResponses] = useState<Response[]>([]);
+
   const [form, setForm] = useState<Form | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2000,7 +2146,7 @@ export default function FormAnalyticsDashboard() {
   );
   const [analyticsView, setAnalyticsView] = useState<
     "question" | "section" | "table" | "responses" | "dashboard" | "comparison"
-  >(isGuest ? "dashboard" : user?.role === "inspector" ? "responses" : "section");
+  >(isGuest ? "dashboard" : user?.role === "inspector" ? "responses" : "dashboard");
   const [tableViewType, setTableViewType] = useState<"question" | "section">(
     "question",
   );
@@ -2010,7 +2156,6 @@ export default function FormAnalyticsDashboard() {
   const [selectedQuestion, setSelectedQuestion] = useState<any>(null);
   const [filterValues, setFilterValues] = useState<string[]>([]);
   const [selectedAnswers, setSelectedAnswers] = useState<string[]>([]);
-  const [showTableActions, setShowTableActions] = useState(false);
 
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showSectionSelector, setShowSectionSelector] = useState(false);
@@ -2064,6 +2209,7 @@ export default function FormAnalyticsDashboard() {
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [selectedInspectorForTrend, setSelectedInspectorForTrend] = useState<string>("Overall");
   const [dateFilter, setDateFilter] = useState<{
     type: "all" | "single" | "range";
     startDate: string;
@@ -2095,6 +2241,71 @@ export default function FormAnalyticsDashboard() {
 
   // Performance scoring system
   const [performanceScores, setPerformanceScores] = useState<Record<string, number>>({});
+
+  const [performanceTableData, setPerformanceTableData] = useState<any[]>([]);
+  const [performanceTableLoading, setPerformanceTableLoading] = useState(false);
+  const [performancePage, setPerformancePage] = useState(1);
+  const [performancePageSize, setPerformancePageSize] = useState(10);
+  const [defectStartDate, setDefectStartDate] = useState<string>("");
+  const [defectEndDate, setDefectEndDate] = useState<string>("");
+  const [trendStartDate, setTrendStartDate] = useState<string>("");
+  const [trendEndDate, setTrendEndDate] = useState<string>("");
+  const [qualityStartDate, setQualityStartDate] = useState<string>("");
+  const [qualityEndDate, setQualityEndDate] = useState<string>("");
+  const [sectionStartDate, setSectionStartDate] = useState<string>("");
+  const [sectionEndDate, setSectionEndDate] = useState<string>("");
+  const [directAcceptedStartDate, setDirectAcceptedStartDate] = useState<string>("");
+  const [directAcceptedEndDate, setDirectAcceptedEndDate] = useState<string>("");
+  const allQuestionsWithSections = useMemo(() => {
+    if (!form?.sections) return [];
+    const questionsWithSections: Array<{
+      id: string;
+      text: string;
+      type?: string;
+      sectionId: string;
+      sectionTitle: string;
+    }> = [];
+    form.sections.forEach((section) => {
+      (section.questions || []).forEach((q: any) => {
+        // Only include main questions (not follow-ups) for filtering
+        if (!q.parentId && !q.showWhen?.questionId) {
+          questionsWithSections.push({
+            id: q.id,
+            text: q.text || "Unnamed Question",
+            type: q.type,
+            sectionId: section.id,
+            sectionTitle: section.title || "Untitled Section"
+          });
+        }
+      });
+    });
+
+    return questionsWithSections;
+  }, [form]);
+  // Fetch performance table data
+  useEffect(() => {
+    const fetchPerformanceTable = async () => {
+      if (!id || (user?.role !== 'admin' && user?.role !== 'superadmin')) return;
+
+      setPerformanceTableLoading(true);
+      try {
+        const response = await apiClient.getPerformanceTable({
+          startDate: dateFilter.startDate,
+          endDate: dateFilter.endDate,
+          formId: id
+        });
+        if (response.success) {
+          setPerformanceTableData(response.data || []);
+        }
+      } catch (error) {
+        console.error("Error fetching performance table:", error);
+      } finally {
+        setPerformanceTableLoading(false);
+      }
+    };
+
+    fetchPerformanceTable();
+  }, [id, dateFilter.startDate, dateFilter.endDate, user?.role]);
 
   // Load performance scores from API
   useEffect(() => {
@@ -2134,7 +2345,7 @@ export default function FormAnalyticsDashboard() {
       return {};
     }
   });
-  const [reviewedBy, setReviewedBy] = useState<Record<string, {id: string, name: string, email: string} | null>>(() => {
+  const [reviewedBy, setReviewedBy] = useState<Record<string, { id: string, name: string, email: string } | null>>(() => {
     try {
       const saved = localStorage.getItem('reviewedBy');
       return saved ? JSON.parse(saved) : {};
@@ -2192,123 +2403,124 @@ export default function FormAnalyticsDashboard() {
   }, [reviewSubmitted]);
 
   const tenantId = useMemo(() => {
-  // Get from form
-  if (form?.tenantId) {
-    return typeof form.tenantId === 'object' ? form.tenantId._id : form.tenantId;
-  }
-  // Or from user
-  if (user?.tenantId) {
-    return typeof user.tenantId === 'object' ? user.tenantId._id : user.tenantId;
-  }
-  return null;
-}, [form, user]);
-const handleReviewSubmit = async (responseId: string, reviewOption: string) => {
-  console.log('=== HANDLE REVIEW SUBMIT START ===');
-  console.log('responseId:', responseId);
-  console.log('reviewOption:', reviewOption);
-  
-  // Get reviewerId properly
-  let reviewerId = user?._id || user?.id;
-  if (!reviewerId) {
-    try {
-      const token = localStorage.getItem('auth_token');
-      if (token) {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        reviewerId = payload.userId || payload.id;
+    // Get from form
+    if (form?.tenantId) {
+      return typeof form.tenantId === 'object' ? form.tenantId._id : form.tenantId;
+    }
+    // Or from user
+    if (user?.tenantId) {
+      return typeof user.tenantId === 'object' ? user.tenantId._id : user.tenantId;
+    }
+    return null;
+  }, [form, user]);
+  const handleReviewSubmit = async (responseId: string, reviewOption: string) => {
+    console.log('=== HANDLE REVIEW SUBMIT START ===');
+    console.log('responseId:', responseId);
+    console.log('reviewOption:', reviewOption);
+
+    // Get reviewerId properly
+    let reviewerId = user?._id || user?.id;
+    if (!reviewerId) {
+      try {
+        const token = localStorage.getItem('auth_token');
+        if (token) {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          reviewerId = payload.userId || payload.id;
+        }
+      } catch (e) {
+        console.error('Failed to parse token:', e);
       }
-    } catch (e) {
-      console.error('Failed to parse token:', e);
     }
-  }
-  
-  if (!reviewerId) {
-    showToast("Cannot submit review. User ID not found.", "error");
-    return;
-  }
-  
-  if (!chatResponse) return;
 
-  let submitterId = (chatResponse as any).submittedBy;
-  
-  if (!submitterId && chatResponse.createdBy) {
-    if (typeof chatResponse.createdBy === 'object') {
-      submitterId = (chatResponse.createdBy as any)._id || (chatResponse.createdBy as any).id;
-    } else {
-      submitterId = chatResponse.createdBy;
+    if (!reviewerId) {
+      showToast("Cannot submit review. User ID not found.", "error");
+      return;
     }
-  }
 
-  if (!submitterId) {
-    showToast("Cannot submit review. Missing submitter information.", "error");
-    return;
-  }
+    if (!chatResponse) return;
 
-  // Don't allow self-review
-  if (submitterId && reviewerId === submitterId) {
-    showToast("You cannot review your own submissions", "error");
-    return;
-  }
+    let submitterId = (chatResponse as any).submittedBy;
 
-  // Only allow reviews for "Direct Ok" responses
-  const responseStatus = responseStatuses[responseId];
-  if (responseStatus !== "Direct Ok") {
-    showToast("Only Direct Ok responses can be reviewed", "error");
-    return;
-  }
-
-  try {
-    setPendingReviewOption(null);
-
-    const reviewData = {
-      responseId,
-      reviewerId: reviewerId,
-      submitterId: submitterId,
-      reviewOption,
-      tenantId: tenantId
-    };
-    
-    console.log('📤 Submitting review with data:', reviewData);
-    
-    const result = await apiClient.submitReview(reviewData);
-    
-    console.log('📥 Review API response:', result);
-    
-    // ✅ Check if successful
-    if (result && result.success) {
-      console.log('✅ Review submitted successfully!');
-      
-      // Clear local state to force refresh from API
-      setSelectedReviewOptions(prev => {
-        const newState = { ...prev };
-        delete newState[responseId];
-        return newState;
-      });
-      setReviewedBy(prev => {
-        const newState = { ...prev };
-        delete newState[responseId];
-        return newState;
-      });
-      setReviewSubmitted(prev => {
-        const newState = { ...prev };
-        delete newState[`${reviewerId}-${responseId}`];
-        return newState;
-      });
-      
-      // Refresh chat history to get the new review
-      await fetchChatHistory(responseId);
-      setForceUpdate(prev => prev + 1);
-      
-      showToast(result.message || `Review submitted: ${reviewOption}`, "success");
-    } else {
-      console.error('❌ Review submission failed:', result);
-      showToast(result?.message || "Failed to submit review", "error");
+    if (!submitterId && chatResponse.createdBy) {
+      if (typeof chatResponse.createdBy === 'object') {
+        submitterId = (chatResponse.createdBy as any)._id || (chatResponse.createdBy as any).id;
+      } else {
+        submitterId = chatResponse.createdBy;
+      }
     }
-    
-  } catch (error: any) {
-    console.error('❌ Review submission error:', error);
-    showToast(error.message || "Failed to submit review", "error");
-  }
-};
+
+    if (!submitterId) {
+      showToast("Cannot submit review. Missing submitter information.", "error");
+      return;
+    }
+
+    // Don't allow self-review
+    if (submitterId && reviewerId === submitterId) {
+      showToast("You cannot review your own submissions", "error");
+      return;
+    }
+
+    // Only allow reviews for valid response statuses
+    const responseStatus = responseStatuses[responseId];
+    const validStatusesForReview = ["Direct Ok", "Rework Accepted", "Accepted", "Pending Review", "Rework Completed"];
+    if (!validStatusesForReview.includes(responseStatus)) {
+      showToast("This response status cannot be reviewed", "error");
+      return;
+    }
+
+    try {
+      setPendingReviewOption(null);
+
+      const reviewData = {
+        responseId,
+        reviewerId: reviewerId,
+        submitterId: submitterId,
+        reviewOption,
+        tenantId: tenantId
+      };
+
+      console.log('📤 Submitting review with data:', reviewData);
+
+      const result = await apiClient.submitReview(reviewData);
+
+      console.log('📥 Review API response:', result);
+
+      // ✅ Check if successful
+      if (result && result.success) {
+        console.log('✅ Review submitted successfully!');
+
+        // Clear local state to force refresh from API
+        setSelectedReviewOptions(prev => {
+          const newState = { ...prev };
+          delete newState[responseId];
+          return newState;
+        });
+        setReviewedBy(prev => {
+          const newState = { ...prev };
+          delete newState[responseId];
+          return newState;
+        });
+        setReviewSubmitted(prev => {
+          const newState = { ...prev };
+          delete newState[`${reviewerId}-${responseId}`];
+          return newState;
+        });
+
+        // Refresh chat history to get the new review
+        await fetchChatHistory(responseId);
+        setForceUpdate(prev => prev + 1);
+
+        showToast(result.message || `Review submitted: ${reviewOption}`, "success");
+      } else {
+        console.error('❌ Review submission failed:', result);
+        showToast(result?.message || "Failed to submit review", "error");
+      }
+
+    } catch (error: any) {
+      console.error('❌ Review submission error:', error);
+      showToast(error.message || "Failed to submit review", "error");
+    }
+  };
 
   const [toast, setToast] = useState<{
     message: string;
@@ -2327,18 +2539,10 @@ const handleReviewSubmit = async (responseId: string, reviewOption: string) => {
   >("dashboard");
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [inspectorSummary, setInspectorSummary] = useState<any[]>([]);
+  const [expandedInspectorForms, setExpandedInspectorForms] = useState<Set<string>>(new Set());
+  const [allInspectors, setAllInspectors] = useState<any[]>([]);
   const [summaryStatuses, setSummaryStatuses] = useState<string[]>([]);
   const [summaryLoading, setSummaryLoading] = useState(false);
-  const [defectStartDate, setDefectStartDate] = useState<string>("");
-  const [defectEndDate, setDefectEndDate] = useState<string>("");
-  const [trendStartDate, setTrendStartDate] = useState<string>("");
-  const [trendEndDate, setTrendEndDate] = useState<string>("");
-  const [qualityStartDate, setQualityStartDate] = useState<string>("");
-  const [qualityEndDate, setQualityEndDate] = useState<string>("");
-  const [sectionStartDate, setSectionStartDate] = useState<string>("");
-  const [sectionEndDate, setSectionEndDate] = useState<string>("");
-  const [directAcceptedStartDate, setDirectAcceptedStartDate] = useState<string>("");
-  const [directAcceptedEndDate, setDirectAcceptedEndDate] = useState<string>("");
   const [chartOrientation, setChartOrientation] = useState<"v" | "h">("v");
   const [timeSeriesView, setTimeSeriesView] = useState<"daily" | "monthly">("daily");
   const [chartSortOrder, setChartSortOrder] = useState<"default" | "percentage">("percentage");
@@ -2502,13 +2706,26 @@ const handleReviewSubmit = async (responseId: string, reviewOption: string) => {
     const fetchSummary = async () => {
       setSummaryLoading(true);
       try {
-        const response = await apiClient.get<any>("/analytics/inspector-summary");
-        if (response.data) {
-          setInspectorSummary(response.data.summary || []);
-          setSummaryStatuses(response.data.allStatuses || []);
+        let url = "/analytics/inspector-summary";
+        if (id) {
+          url += `?formId=${id}`;
+        }
+
+        const [summaryRes, hierarchyRes] = await Promise.all([
+          apiClient.get<any>(url),
+          apiClient.getUsersHierarchy({ role: "Inspector" })
+        ]);
+
+        if (summaryRes.data) {
+          setInspectorSummary(summaryRes.data.summary || []);
+          setSummaryStatuses(summaryRes.data.allStatuses || []);
+        }
+
+        if (hierarchyRes.users) {
+          setAllInspectors(hierarchyRes.users);
         }
       } catch (error) {
-        console.error("Error fetching inspector summary:", error);
+        console.error("Error fetching inspector data:", error);
       } finally {
         setSummaryLoading(false);
       }
@@ -2517,7 +2734,29 @@ const handleReviewSubmit = async (responseId: string, reviewOption: string) => {
     if (user) {
       fetchSummary();
     }
-  }, [user]);
+  }, [user, id]);
+
+  const groupedInspectorSummary = useMemo(() => {
+    const groups: Record<string, any> = {};
+    inspectorSummary.forEach(item => {
+      const title = item.formTitle || "N/A";
+      if (!groups[title]) {
+        groups[title] = {
+          formTitle: title,
+          tenantName: item.tenantName,
+          totalInspection: 0,
+          statusCounts: {},
+          subItems: []
+        };
+      }
+      groups[title].totalInspection += item.totalInspection;
+      Object.entries(item.statusCounts || {}).forEach(([status, count]) => {
+        groups[title].statusCounts[status] = (groups[title].statusCounts[status] || 0) + (count as number);
+      });
+      groups[title].subItems.push(item);
+    });
+    return Object.values(groups);
+  }, [inspectorSummary]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -2669,32 +2908,7 @@ const handleReviewSubmit = async (responseId: string, reviewOption: string) => {
   const baseFilteredResponses = useMemo(() => {
     let result = responses;
 
-    // 0. Role-based Filter (Inspector sees their own responses only)
-    if (user?.role === "inspector") {
-      const userId = user._id || user.id;
-      const userIdStr = String(userId);
-      const userEmail = user.email || "";
-      const userUsername = user.username || "";
-
-      result = result.filter((r) => {
-        const creatorId =
-          typeof r.createdBy === "object"
-            ? (r.createdBy as any)?._id || (r.createdBy as any)?.id
-            : r.createdBy;
-        const creatorIdStr = creatorId ? String(creatorId) : null;
-        const submittedBy = r.submittedBy || "";
-        const submitterEmail = r.submitterContact?.email || "";
-
-        return (
-          creatorIdStr === userIdStr ||
-          (submittedBy !== "Anonymous" &&
-            submittedBy !== "" &&
-            (submittedBy === userEmail ||
-              submittedBy === userUsername ||
-              submitterEmail === userEmail))
-        );
-      });
-    }
+    // 0. Role-based Filter (LIFTED: Inspectors can now view and review other tenant/user responses)
 
     // 2. Location Filter
     if (locationFilter.length > 0) {
@@ -2750,56 +2964,56 @@ const handleReviewSubmit = async (responseId: string, reviewOption: string) => {
     return result;
   }, [responses, user, locationFilter, cascadingFilters, columnFilters]);
 
-const fetchChatHistory = async (responseId: string) => {
-  try {
-    console.log('[ChatModal] Fetching chat history for response:', responseId);
-    
-    // Fetch messages
-    const response = await apiClient.get<any[]>(`/messages/response/${responseId}`);
-    const messages = Array.isArray(response.data) ? response.data : [];
-    setChatMessages(messages);
-
-    // Fetch reviews from API
+  const fetchChatHistory = async (responseId: string) => {
     try {
-      const reviewsResponse = await apiClient.getReviewsForResponse(responseId);
-      console.log('[ChatModal] Reviews API response:', reviewsResponse);
-      
-      if (reviewsResponse && reviewsResponse.reviews && reviewsResponse.reviews.length > 0) {
-        const latestReview = reviewsResponse.reviews[0];
-        console.log('[ChatModal] Latest review from API:', latestReview);
-        
-        // Update state from API
-        setSelectedReviewOptions(prev => ({ 
-          ...prev, 
-          [responseId]: latestReview.option 
-        }));
-        
-        setReviewedBy(prev => ({
-          ...prev,
-          [responseId]: latestReview.reviewer ? {
-            id: latestReview.reviewer.id,
-            name: latestReview.reviewer.name || 'Reviewer',
-            email: latestReview.reviewer.email || ''
-          } : null
-        }));
-        
-        // Also update chatResponse
-        setChatResponse(prev => prev ? {
-          ...prev,
-          review: latestReview
-        } : null);
-        
-        console.log('[ChatModal] Review state updated from API');
-      } else {
-        console.log('[ChatModal] No reviews found');
+      console.log('[ChatModal] Fetching chat history for response:', responseId);
+
+      // Fetch messages
+      const response = await apiClient.get<any[]>(`/messages/response/${responseId}`);
+      const messages = Array.isArray(response.data) ? response.data : [];
+      setChatMessages(messages);
+
+      // Fetch reviews from API
+      try {
+        const reviewsResponse = await apiClient.getReviewsForResponse(responseId);
+        console.log('[ChatModal] Reviews API response:', reviewsResponse);
+
+        if (reviewsResponse && reviewsResponse.reviews && reviewsResponse.reviews.length > 0) {
+          const latestReview = reviewsResponse.reviews[0];
+          console.log('[ChatModal] Latest review from API:', latestReview);
+
+          // Update state from API
+          setSelectedReviewOptions(prev => ({
+            ...prev,
+            [responseId]: latestReview.option
+          }));
+
+          setReviewedBy(prev => ({
+            ...prev,
+            [responseId]: latestReview.reviewer ? {
+              id: latestReview.reviewer.id,
+              name: latestReview.reviewer.name || 'Reviewer',
+              email: latestReview.reviewer.email || ''
+            } : null
+          }));
+
+          // Also update chatResponse
+          setChatResponse(prev => prev ? {
+            ...prev,
+            review: latestReview
+          } : null);
+
+          console.log('[ChatModal] Review state updated from API');
+        } else {
+          console.log('[ChatModal] No reviews found');
+        }
+      } catch (reviewError) {
+        console.error("[ChatModal] Error fetching reviews:", reviewError);
       }
-    } catch (reviewError) {
-      console.error("[ChatModal] Error fetching reviews:", reviewError);
+    } catch (err) {
+      console.error("[ChatModal] Error fetching chat history:", err);
     }
-  } catch (err) {
-    console.error("[ChatModal] Error fetching chat history:", err);
-  }
-};
+  };
   useEffect(() => {
     if (showChatModal && chatResponse) {
       fetchChatHistory(chatResponse.id);
@@ -3200,43 +3414,43 @@ const fetchChatHistory = async (responseId: string) => {
 
   const qualityChartResponses = useMemo(() => {
     let result = [...filteredResponses];
-    if (qualityStartDate || qualityEndDate) {
+    if (dateFilter.startDate || dateFilter.endDate) {
       result = result.filter((response) => {
         const timestamp = getResponseTimestamp(response);
         if (!timestamp) return false;
         const responseDate = new Date(timestamp).toISOString().split("T")[0];
-        if (qualityStartDate && qualityEndDate) {
-          return responseDate >= qualityStartDate && responseDate <= qualityEndDate;
-        } else if (qualityStartDate) {
-          return responseDate >= qualityStartDate;
-        } else if (qualityEndDate) {
-          return responseDate <= qualityEndDate;
+        if (dateFilter.startDate && dateFilter.endDate) {
+          return responseDate >= dateFilter.startDate && responseDate <= dateFilter.endDate;
+        } else if (dateFilter.startDate) {
+          return responseDate >= dateFilter.startDate;
+        } else if (dateFilter.endDate) {
+          return responseDate <= dateFilter.endDate;
         }
         return true;
       });
     }
     return result;
-  }, [filteredResponses, qualityStartDate, qualityEndDate]);
+  }, [filteredResponses, dateFilter.startDate, dateFilter.endDate]);
 
   const sectionChartResponses = useMemo(() => {
     let result = [...filteredResponses];
-    if (sectionStartDate || sectionEndDate) {
+    if (dateFilter.startDate || dateFilter.endDate) {
       result = result.filter((response) => {
         const timestamp = getResponseTimestamp(response);
         if (!timestamp) return false;
         const responseDate = new Date(timestamp).toISOString().split("T")[0];
-        if (sectionStartDate && sectionEndDate) {
-          return responseDate >= sectionStartDate && responseDate <= sectionEndDate;
-        } else if (sectionStartDate) {
-          return responseDate >= sectionStartDate;
-        } else if (sectionEndDate) {
-          return responseDate <= sectionEndDate;
+        if (dateFilter.startDate && dateFilter.endDate) {
+          return responseDate >= dateFilter.startDate && responseDate <= dateFilter.endDate;
+        } else if (dateFilter.startDate) {
+          return responseDate >= dateFilter.startDate;
+        } else if (dateFilter.endDate) {
+          return responseDate <= dateFilter.endDate;
         }
         return true;
       });
     }
     return result;
-  }, [filteredResponses, sectionStartDate, sectionEndDate]);
+  }, [filteredResponses, dateFilter.startDate, dateFilter.endDate]);
 
   const qualitySectionPerformanceStats = useMemo(
     () => computeSectionPerformanceStats(form, qualityChartResponses),
@@ -4152,43 +4366,96 @@ const fetchChatHistory = async (responseId: string) => {
     [qualitySectionPerformanceStats],
   );
 
+  const uniqueInspectors = useMemo(() => {
+    // Combine inspectors from responses, inspectorSummary, and allInspectors (Role-based)
+    const inspectors = new Set<string>();
+
+    // From Responses
+    filteredResponses.forEach((r) => {
+      if (r.submittedBy) inspectors.add(r.submittedBy);
+    });
+
+    // From Admin/System Summary
+    inspectorSummary.forEach((s) => {
+      if (s.qcInspector) inspectors.add(s.qcInspector);
+    });
+
+    // From Role-based fetch (All users with Inspector role)
+    allInspectors.forEach((i) => {
+      if (i.name) inspectors.add(i.name);
+      if (i.email) inspectors.add(i.email);
+    });
+
+    return Array.from(inspectors).sort();
+  }, [filteredResponses, inspectorSummary, allInspectors]);
+
+  const inspectionStats = useMemo(() => {
+    let accepted = 0;
+    let rejected = 0;
+    let reworked = 0;
+    let reworkCompleted = 0;
+
+    filteredResponses.forEach((response) => {
+      // If an inspector is selected, ensure the response matches that inspector
+      if (selectedInspectorForTrend !== "Overall") {
+        const inspectorName = response.submittedBy;
+        if (inspectorName !== selectedInspectorForTrend) {
+          return;
+        }
+      }
+
+      const status = responseStatuses[response.id];
+      if (status === "Direct Ok" || status === "Accepted") {
+        accepted++;
+      } else if (status === "Rework Accepted") {
+        reworkCompleted++;
+      } else if (status && status.startsWith("Rework")) {
+        reworked++;
+      } else if (status === "Rejected") {
+        rejected++;
+      }
+    });
+
+    return { accepted, rejected, reworked, reworkCompleted };
+  }, [filteredResponses, responseStatuses, selectedInspectorForTrend]);
+
   const totalPieChartData = useMemo(() => {
-    if (qualitySectionSummaryRows.length === 0) {
+    const directOk = inspectionStats.accepted;
+    const reworkCompleted = inspectionStats.reworkCompleted;
+    const totalNo = inspectionStats.rejected;
+    const totalNA = inspectionStats.reworked;
+
+    const total = directOk + reworkCompleted + totalNo + totalNA;
+
+    if (total === 0) {
       return {
-        yes: 0,
+        directOk: 0,
+        reworkCompleted: 0,
         no: 0,
         na: 0,
-        counts: { yes: 0, no: 0, na: 0, total: 0 },
+        counts: { directOk: 0, reworkCompleted: 0, no: 0, na: 0, total: 0 },
       };
     }
 
-    let totalYes = 0;
-    let totalNo = 0;
-    let totalNA = 0;
-
-    qualitySectionSummaryRows.forEach((row) => {
-      totalYes += row.yesCount;
-      totalNo += row.noCount;
-      totalNA += row.naCount;
-    });
-
-    const total = totalYes + totalNo + totalNA;
-    const yesPercent = total > 0 ? (totalYes / total) * 100 : 0;
-    const noPercent = total > 0 ? (totalNo / total) * 100 : 0;
-    const naPercent = total > 0 ? (totalNA / total) * 100 : 0;
+    const directOkPercent = (directOk / total) * 100;
+    const reworkCompletedPercent = (reworkCompleted / total) * 100;
+    const noPercent = (totalNo / total) * 100;
+    const naPercent = (totalNA / total) * 100;
 
     return {
-      yes: Number(yesPercent.toFixed(1)),
+      directOk: Number(directOkPercent.toFixed(1)),
+      reworkCompleted: Number(reworkCompletedPercent.toFixed(1)),
       no: Number(noPercent.toFixed(1)),
       na: Number(naPercent.toFixed(1)),
       counts: {
-        yes: totalYes,
+        directOk: directOk,
+        reworkCompleted: reworkCompleted,
         no: totalNo,
         na: totalNA,
         total: total,
       },
     };
-  }, [qualitySectionSummaryRows]);
+  }, [inspectionStats]);
 
   const questionPerformanceStats = useMemo(
     () => computeQuestionPerformanceStats(form, filteredResponses),
@@ -4198,18 +4465,18 @@ const fetchChatHistory = async (responseId: string) => {
   const defectChartResponses = useMemo(() => {
     let result = [...filteredResponses];
 
-    if (defectStartDate || defectEndDate) {
+    if (dateFilter.startDate || dateFilter.endDate) {
       result = result.filter((response) => {
         const timestamp = getResponseTimestamp(response);
         if (!timestamp) return false;
         const responseDate = new Date(timestamp).toISOString().split("T")[0];
 
-        if (defectStartDate && defectEndDate) {
-          return responseDate >= defectStartDate && responseDate <= defectEndDate;
-        } else if (defectStartDate) {
-          return responseDate >= defectStartDate;
-        } else if (defectEndDate) {
-          return responseDate <= defectEndDate;
+        if (dateFilter.startDate && dateFilter.endDate) {
+          return responseDate >= dateFilter.startDate && responseDate <= dateFilter.endDate;
+        } else if (dateFilter.startDate) {
+          return responseDate >= dateFilter.startDate;
+        } else if (dateFilter.endDate) {
+          return responseDate <= dateFilter.endDate;
         }
         return true;
       });
@@ -4221,28 +4488,28 @@ const fetchChatHistory = async (responseId: string) => {
       return dateB - dateA;
     });
 
-    if (!defectStartDate && !defectEndDate) {
+    if (!dateFilter.startDate && !dateFilter.endDate) {
       return result.slice(0, 20);
     }
 
     return result;
-  }, [filteredResponses, defectStartDate, defectEndDate]);
+  }, [filteredResponses, dateFilter.startDate, dateFilter.endDate]);
 
   const trendChartResponses = useMemo(() => {
     let result = [...filteredResponses];
 
-    if (trendStartDate || trendEndDate) {
+    if (dateFilter.startDate || dateFilter.endDate) {
       result = result.filter((response) => {
         const timestamp = getResponseTimestamp(response);
         if (!timestamp) return false;
         const responseDate = new Date(timestamp).toISOString().split("T")[0];
 
-        if (trendStartDate && trendEndDate) {
-          return responseDate >= trendStartDate && responseDate <= trendEndDate;
-        } else if (trendStartDate) {
-          return responseDate >= trendStartDate;
-        } else if (trendEndDate) {
-          return responseDate <= trendEndDate;
+        if (dateFilter.startDate && dateFilter.endDate) {
+          return responseDate >= dateFilter.startDate && responseDate <= dateFilter.endDate;
+        } else if (dateFilter.startDate) {
+          return responseDate >= dateFilter.startDate;
+        } else if (dateFilter.endDate) {
+          return responseDate <= dateFilter.endDate;
         }
         return true;
       });
@@ -4255,7 +4522,7 @@ const fetchChatHistory = async (responseId: string) => {
     });
 
     return result;
-  }, [filteredResponses, trendStartDate, trendEndDate]);
+  }, [filteredResponses, dateFilter.startDate, dateFilter.endDate]);
 
   const chartQuestionPerformanceStats = useMemo(() => {
     return computeQuestionPerformanceStats(form, defectChartResponses);
@@ -4284,26 +4551,30 @@ const fetchChatHistory = async (responseId: string) => {
   const OverallQualityPieChart = () => {
     const data = {
       labels: [
-        complianceLabels.yes,
-        complianceLabels.no,
-        complianceLabels.na,
+        "Direct Ok",
+        "Rework Completed",
+        "Rejected",
+        "Ongoing Rework",
       ],
       datasets: [
         {
           data: [
-            totalPieChartData.yes,
+            totalPieChartData.directOk,
+            totalPieChartData.reworkCompleted,
             totalPieChartData.no,
             totalPieChartData.na,
           ],
           backgroundColor: [
-            "rgba(34, 197, 94)", // Green for Yes
-            "rgba(239, 68, 68, 0.8)", // Red for No
-            "rgba(156, 163, 175, 0.8)", // Gray for N/A
+            "rgba(34, 197, 94, 0.85)", // Green for Direct Ok
+            "rgba(59, 130, 246, 0.85)", // Blue for Rework Completed
+            "rgba(239, 68, 68, 0.85)", // Red for Rejected
+            "rgba(234, 179, 8, 0.85)", // Yellow for Ongoing Rework
           ],
           borderColor: [
             "rgb(34, 197, 94)",
+            "rgb(59, 130, 246)",
             "rgb(239, 68, 68)",
-            "rgb(156, 163, 175)",
+            "rgb(234, 179, 8)",
           ],
           borderWidth: 2,
           hoverOffset: 15,
@@ -4317,42 +4588,39 @@ const fetchChatHistory = async (responseId: string) => {
       plugins: {
         datalabels: {
           color: "white",
+          font: { weight: "bold" as const, size: 10 },
+          formatter: (value: number) => value > 0 ? `${value}%` : "",
         },
         legend: {
-          position: "bottom",
-
+          position: "bottom" as const,
           labels: {
             color: document.documentElement.classList.contains("dark")
               ? "#e5e7eb"
               : "#374151",
-            font: {
-              size: 10,
-            },
-            padding: 10,
+            font: { size: 9, weight: "bold" as const },
+            padding: 8,
+            usePointStyle: true,
           },
         },
         tooltip: {
           callbacks: {
-            label: function (context) {
+            label: function (context: any) {
               const label = context.label || "";
               const value = context.raw || 0;
               const index = context.dataIndex;
-              const total = context.dataset.data.reduce((a, b) => a + b, 0);
-              const percentage =
-                total > 0 ? ((value / total) * 100).toFixed(1) : 0;
 
               let count = 0;
-              if (index === 0) count = totalPieChartData.counts.yes;
-              else if (index === 1) count = totalPieChartData.counts.no;
-              else if (index === 2) count = totalPieChartData.counts.na;
+              if (index === 0) count = totalPieChartData.counts.directOk;
+              else if (index === 1) count = totalPieChartData.counts.reworkCompleted;
+              else if (index === 2) count = totalPieChartData.counts.no;
+              else if (index === 3) count = totalPieChartData.counts.na;
 
               return `${label}: ${value}% (${count} responses)`;
             },
           },
         },
       },
-      // DONUT CHART SPECIFIC OPTIONS
-      cutout: "60%", // This creates the donut hole - adjust percentage for thicker/thinner donut
+      cutout: "60%",
       interaction: {
         mode: "nearest" as const,
         intersect: true,
@@ -4369,34 +4637,30 @@ const fetchChatHistory = async (responseId: string) => {
               </div>
               <div>
                 <h2 className="text-base sm:text-lg font-bold text-primary-900 dark:text-white">
-                  Overall Response Quality
+                  Overall Inspection Trend
                 </h2>
                 <p className="text-[10px] sm:text-xs text-primary-500 dark:text-primary-400">
-                  {complianceLabels.yes}/{complianceLabels.no}/{complianceLabels.na} Distribution
+                  {selectedInspectorForTrend === "Overall" ? "Accepted/Rejected/Rework Distribution" : `Inspector: ${selectedInspectorForTrend}`}
                 </p>
               </div>
             </div>
-          </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] font-bold text-slate-400 uppercase">From:</span>
-              <input
-                type="date"
-                value={qualityStartDate}
-                onChange={(e) => setQualityStartDate(e.target.value)}
-                className="text-[10px] bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-purple-500 text-slate-700 dark:text-slate-200"
-              />
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] font-bold text-slate-400 uppercase">To:</span>
-              <input
-                type="date"
-                value={qualityEndDate}
-                onChange={(e) => setQualityEndDate(e.target.value)}
-                className="text-[10px] bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-purple-500 text-slate-700 dark:text-slate-200"
-              />
-            </div>
+            {uniqueInspectors.length > 0 && (
+              <select
+                value={selectedInspectorForTrend}
+                onChange={(e) => setSelectedInspectorForTrend(e.target.value)}
+                className="text-[10px] font-bold bg-white dark:bg-gray-900 text-primary-700 dark:text-primary-300 border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-purple-500/50 shadow-sm"
+              >
+                <option value="Overall">Overall View</option>
+                <optgroup label="By Inspector">
+                  {uniqueInspectors.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            )}
           </div>
         </div>
 
@@ -4406,10 +4670,10 @@ const fetchChatHistory = async (responseId: string) => {
               <div className="text-center p-4">
                 <PieChart className="w-10 h-10 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
                 <p className="text-primary-500 dark:text-primary-400 font-medium text-sm">
-                  No quality data available
+                  No inspection data available
                 </p>
                 <p className="text-[10px] text-primary-400 dark:text-primary-500 mt-1">
-                  Will appear when sections have {complianceLabels.yes}/{complianceLabels.no}/{complianceLabels.na} questions
+                  Will appear when inspection responses are recorded
                 </p>
               </div>
             </div>
@@ -4421,42 +4685,55 @@ const fetchChatHistory = async (responseId: string) => {
               </div>
 
               {/* Stats summary */}
-              <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-4">
-                {/* Yes */}
+              <div className="mt-4 grid grid-cols-4 gap-1 sm:gap-2">
+                {/* Direct Ok */}
                 <div className="text-center p-1 bg-green-50/50 dark:bg-green-900/10 rounded-lg">
-                  <div className="text-xs sm:text-sm font-bold text-green-600 dark:text-green-400">
-                    {totalPieChartData.yes}%
+                  <div className="text-[10px] sm:text-xs font-bold text-green-600 dark:text-green-400">
+                    {totalPieChartData.directOk}%
                   </div>
-                  <div className="text-[10px] font-medium text-gray-700 dark:text-gray-300 truncate">
-                    {complianceLabels.yes}
+                  <div className="text-[9px] font-medium text-gray-700 dark:text-gray-300 truncate">
+                    Direct Ok
                   </div>
-                  <div className="text-[10px] text-gray-600 dark:text-gray-500">
-                    ({totalPieChartData.counts.yes})
+                  <div className="text-[8px] text-gray-600 dark:text-gray-500">
+                    ({totalPieChartData.counts.directOk})
                   </div>
                 </div>
 
-                {/* No */}
+                {/* Rework Completed */}
+                <div className="text-center p-1 bg-blue-50/50 dark:bg-blue-900/10 rounded-lg">
+                  <div className="text-[10px] sm:text-xs font-bold text-blue-600 dark:text-blue-400">
+                    {totalPieChartData.reworkCompleted}%
+                  </div>
+                  <div className="text-[9px] font-medium text-gray-700 dark:text-gray-300 truncate">
+                    Rework Comp
+                  </div>
+                  <div className="text-[8px] text-gray-600 dark:text-gray-500">
+                    ({totalPieChartData.counts.reworkCompleted})
+                  </div>
+                </div>
+
+                {/* Rejected */}
                 <div className="text-center p-1 bg-red-50/50 dark:bg-red-900/10 rounded-lg">
-                  <div className="text-xs sm:text-sm font-bold text-red-600 dark:text-red-400">
+                  <div className="text-[10px] sm:text-xs font-bold text-red-600 dark:text-red-400">
                     {totalPieChartData.no}%
                   </div>
-                  <div className="text-[10px] font-medium text-gray-700 dark:text-gray-300 truncate">
-                    {complianceLabels.no}
+                  <div className="text-[9px] font-medium text-gray-700 dark:text-gray-300 truncate">
+                    Rejected
                   </div>
-                  <div className="text-[10px] text-gray-600 dark:text-gray-500">
+                  <div className="text-[8px] text-gray-600 dark:text-gray-500">
                     ({totalPieChartData.counts.no})
                   </div>
                 </div>
 
-                {/* N/A */}
-                <div className="text-center p-1 bg-gray-50/50 dark:bg-gray-900/10 rounded-lg">
-                  <div className="text-xs sm:text-sm font-bold text-gray-600 dark:text-gray-400">
+                {/* Ongoing Rework */}
+                <div className="text-center p-1 bg-amber-50/50 dark:bg-amber-900/10 rounded-lg">
+                  <div className="text-[10px] sm:text-xs font-bold text-amber-600 dark:text-amber-400">
                     {totalPieChartData.na}%
                   </div>
-                  <div className="text-[10px] font-medium text-gray-700 dark:text-gray-300 truncate">
-                    {complianceLabels.na}
+                  <div className="text-[9px] font-medium text-gray-700 dark:text-gray-300 truncate">
+                    Rework
                   </div>
-                  <div className="text-[10px] text-gray-600 dark:text-gray-500">
+                  <div className="text-[8px] text-gray-600 dark:text-gray-500">
                     ({totalPieChartData.counts.na})
                   </div>
                 </div>
@@ -4496,7 +4773,7 @@ const fetchChatHistory = async (responseId: string) => {
       return `${format(minDate)} - ${format(maxDate)}`;
     }, [defectChartResponses]);
 
-    if (!processedQuestions.length && !defectStartDate && !defectEndDate) return null;
+    if (!processedQuestions.length && !dateFilter.startDate && !dateFilter.endDate) return null;
 
     const data = {
       labels: processedQuestions.map((q) =>
@@ -4613,8 +4890,8 @@ const fetchChatHistory = async (responseId: string) => {
       : { height: "450px", position: "relative" as const };
 
     return (
-      <div className="p-4 sm:p-6 bg-gradient-to-br from-white to-slate-50 dark:from-gray-800 dark:to-gray-900 flex flex-col h-full rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-xl transition-shadow">
-        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-6">
+      <div id="defect-distribution-chart" className="p-4 sm:p-6 bg-gradient-to-br from-white to-slate-50 dark:from-gray-800 dark:to-gray-900 flex flex-col h-full rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-xl transition-shadow">
+        <div data-pdf-hide="true" className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-6">
           <div className="flex items-center">
             <div className="p-2 bg-gradient-to-br from-red-600 to-slate-700 rounded-lg mr-2">
               <BarChart3 className="w-4 h-4 text-white" />
@@ -4697,26 +4974,6 @@ const fetchChatHistory = async (responseId: string) => {
                 </span>
               )}
             </button>
-
-            <div className="flex items-center gap-1">
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">From:</span>
-              <input
-                type="date"
-                value={defectStartDate}
-                onChange={(e) => setDefectStartDate(e.target.value)}
-                className="text-[10px] bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-blue-500 text-slate-700 dark:text-slate-200"
-              />
-            </div>
-
-            <div className="flex items-center gap-1">
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">To:</span>
-              <input
-                type="date"
-                value={defectEndDate}
-                onChange={(e) => setDefectEndDate(e.target.value)}
-                className="text-[10px] bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-blue-500 text-slate-700 dark:text-slate-200"
-              />
-            </div>
           </div>
         </div>
 
@@ -4732,7 +4989,7 @@ const fetchChatHistory = async (responseId: string) => {
           </div>
         ) : (
           <div className={chartOrientation === "h" ? "overflow-y-auto" : "w-full"}>
-            <div style={containerStyle}>
+            <div style={containerStyle} id="issue-percentage-chart">
               <Bar data={data} options={options} />
             </div>
           </div>
@@ -4747,17 +5004,17 @@ const fetchChatHistory = async (responseId: string) => {
         return computeMonthlyPerformanceStats(
           trendChartResponses,
           responseStatuses,
-          trendStartDate,
-          trendEndDate,
+          dateFilter.startDate,
+          dateFilter.endDate,
         );
       }
       return computeDailyPerformanceStats(
         trendChartResponses,
         responseStatuses,
-        trendStartDate,
-        trendEndDate,
+        dateFilter.startDate,
+        dateFilter.endDate,
       );
-    }, [trendChartResponses, responseStatuses, timeSeriesView, trendStartDate, trendEndDate]);
+    }, [trendChartResponses, responseStatuses, timeSeriesView, dateFilter.startDate, dateFilter.endDate]);
 
     if (timeData.length === 0) return null;
 
@@ -4861,8 +5118,8 @@ const fetchChatHistory = async (responseId: string) => {
     };
 
     return (
-      <div className="p-6 bg-gradient-to-br from-white to-slate-50 dark:from-gray-800 dark:to-gray-900 flex flex-col h-full rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-xl transition-shadow w-full mt-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div id="performance-trend-chart" className="p-6 bg-gradient-to-br from-white to-slate-50 dark:from-gray-800 dark:to-gray-900 flex flex-col h-full rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-xl transition-shadow w-full mt-6">
+        <div data-pdf-hide="true" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div className="flex items-center">
             <div className="p-2 bg-gradient-to-br from-slate-700 to-red-600 rounded-lg mr-2">
               <TrendingUp className="w-4 h-4 text-white" />
@@ -4897,28 +5154,6 @@ const fetchChatHistory = async (responseId: string) => {
               >
                 MONTHLY
               </button>
-            </div>
-
-            <div className="h-4 w-px bg-gray-200 dark:bg-gray-700 mx-1"></div>
-
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">From:</span>
-              <input
-                type="date"
-                value={trendStartDate}
-                onChange={(e) => setTrendStartDate(e.target.value)}
-                className="text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-blue-500 text-slate-700 dark:text-slate-200"
-              />
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">To:</span>
-              <input
-                type="date"
-                value={trendEndDate}
-                onChange={(e) => setTrendEndDate(e.target.value)}
-                className="text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-blue-500 text-slate-700 dark:text-slate-200"
-              />
             </div>
           </div>
         </div>
@@ -5010,10 +5245,10 @@ const fetchChatHistory = async (responseId: string) => {
       return computeDirectAcceptedDailyStats(
         baseFilteredResponses,
         responseStatuses,
-        directAcceptedStartDate,
-        directAcceptedEndDate,
+        dateFilter.startDate,
+        dateFilter.endDate,
       );
-    }, [baseFilteredResponses, responseStatuses, directAcceptedStartDate, directAcceptedEndDate]);
+    }, [baseFilteredResponses, responseStatuses, dateFilter.startDate, dateFilter.endDate]);
 
     if (timeData.length === 0) return null;
 
@@ -5033,6 +5268,14 @@ const fetchChatHistory = async (responseId: string) => {
           data: timeData.map((s) => s.reworkCount),
           backgroundColor: "rgba(234, 179, 8, 0.7)", // Yellow-500
           borderColor: "rgb(161, 98, 7)", // Yellow-700
+          borderWidth: 1,
+          stack: "stack1",
+        },
+        {
+          label: "Rework Completed",
+          data: timeData.map((s) => s.reworkCompletedCount),
+          backgroundColor: "rgba(59, 130, 246, 0.7)", // Blue-500
+          borderColor: "rgb(29, 78, 216)", // Blue-700
           borderWidth: 1,
           stack: "stack1",
         },
@@ -5110,8 +5353,8 @@ const fetchChatHistory = async (responseId: string) => {
     };
 
     return (
-      <div id="direct-accepted-chart" className="p-6 bg-gradient-to-br from-white to-slate-50 dark:from-gray-800 dark:to-gray-900 flex flex-col h-full rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-xl transition-shadow w-full mt-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div id="inspection-status-distribution-chart" className="p-6 bg-gradient-to-br from-white to-slate-50 dark:from-gray-800 dark:to-gray-900 flex flex-col h-full rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-xl transition-shadow w-full mt-6">
+        <div data-pdf-hide="true" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div className="flex items-center">
             <div className={`p-2 bg-gradient-to-br from-blue-600 to-indigo-800 rounded-lg mr-2`}>
               <BarChart3 className="w-4 h-4 text-white" />
@@ -5123,28 +5366,6 @@ const fetchChatHistory = async (responseId: string) => {
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 Daily distribution of inspection outcomes (counts)
               </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">From:</span>
-              <input
-                type="date"
-                value={directAcceptedStartDate}
-                onChange={(e) => setDirectAcceptedStartDate(e.target.value)}
-                className="text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-blue-500 text-slate-700 dark:text-slate-200"
-              />
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">To:</span>
-              <input
-                type="date"
-                value={directAcceptedEndDate}
-                onChange={(e) => setDirectAcceptedEndDate(e.target.value)}
-                className="text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-blue-500 text-slate-700 dark:text-slate-200"
-              />
             </div>
           </div>
         </div>
@@ -5160,10 +5381,10 @@ const fetchChatHistory = async (responseId: string) => {
       return computeDailyReworkVolumeStats(
         form,
         baseFilteredResponses,
-        directAcceptedStartDate,
-        directAcceptedEndDate,
+        dateFilter.startDate,
+        dateFilter.endDate,
       );
-    }, [form, baseFilteredResponses, directAcceptedStartDate, directAcceptedEndDate]);
+    }, [form, baseFilteredResponses, dateFilter.startDate, dateFilter.endDate]);
 
     if (timeData.length === 0) return null;
 
@@ -5224,8 +5445,8 @@ const fetchChatHistory = async (responseId: string) => {
     };
 
     return (
-      <div id="inspection-status-line-chart" className="p-6 bg-gradient-to-br from-white to-slate-50 dark:from-gray-800 dark:to-gray-900 flex flex-col h-full rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-xl transition-shadow w-full mt-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div id="status-trends-rework-chart" className="p-6 bg-gradient-to-br from-white to-slate-50 dark:from-gray-800 dark:to-gray-900 flex flex-col h-full rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-xl transition-shadow w-full mt-6">
+        <div data-pdf-hide="true" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div className="flex items-center">
             <div className={`p-2 bg-gradient-to-br from-purple-600 to-indigo-800 rounded-lg mr-2`}>
               <TrendingUp className="w-4 h-4 text-white" />
@@ -5237,28 +5458,6 @@ const fetchChatHistory = async (responseId: string) => {
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 Daily Rework Volume (Sum of question-level reworks)
               </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">From:</span>
-              <input
-                type="date"
-                value={directAcceptedStartDate}
-                onChange={(e) => setDirectAcceptedStartDate(e.target.value)}
-                className="text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-blue-500 text-slate-700 dark:text-slate-200"
-              />
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">To:</span>
-              <input
-                type="date"
-                value={directAcceptedEndDate}
-                onChange={(e) => setDirectAcceptedEndDate(e.target.value)}
-                className="text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-blue-500 text-slate-700 dark:text-slate-200"
-              />
             </div>
           </div>
         </div>
@@ -5315,44 +5514,6 @@ const fetchChatHistory = async (responseId: string) => {
       .filter((section) => section.stats.questionsDetail.length > 0); // Only include sections with questions
   };
 
-  const inspectionStats = useMemo(() => {
-    let accepted = 0;
-    let rejected = 0;
-    let reworked = 0;
-
-    filteredResponses.forEach((response) => {
-      // Find the inspection status from answers
-      if (!response.answers) return;
-
-      Object.values(response.answers).forEach((val) => {
-        if (val && typeof val === "object" && val.status) {
-          const status = String(val.status).toLowerCase().trim();
-          if (
-            status === "accepted" ||
-            status === "verified" ||
-            status === "direct ok" ||
-            status === "rework accepted" ||
-            status === "rework completed" ||
-            status === "ok" ||
-            status === "pass" ||
-            status === "yes" ||
-            status === "verified ok"
-          )
-            accepted++;
-          else if (status === "rejected" || status === "fail" || status === "no") rejected++;
-          else if (
-            status === "rework" ||
-            status === "reworked" ||
-            status.includes("re-rework")
-          )
-            reworked++;
-        }
-      });
-    });
-
-    return { accepted, rejected, reworked };
-  }, [filteredResponses]);
-
   const fullAnalyticsData = useMemo(() => {
     return {
       total: analytics.total,
@@ -5365,11 +5526,104 @@ const fetchChatHistory = async (responseId: string) => {
       sectionAnalyticsData: getSectionAnalyticsData(),
       inspectorSummary: inspectorSummary,
       summaryStatuses: summaryStatuses,
-      defectStartDate,
-      defectEndDate
+      performanceTableData: performanceTableData,
+      defectStartDate: dateFilter.startDate,
+      defectEndDate: dateFilter.endDate
     };
   }, [analytics, inspectionStats, sectionSummaryRows, totalPieChartData, inspectorSummary, summaryStatuses, defectStartDate, defectEndDate, form, responses]);
 
+  const showToast = (
+    message: string,
+    type: "success" | "error" | "info" = "success",
+  ) => {
+    const id = Date.now().toString();
+    setToast({ message, type, id });
+    setTimeout(() => {
+      setToast(null);
+    }, 3000);
+  };
+  useEffect(() => {
+    // Pass the toast function to opsExcelExporter
+    setToastFunction(showToast);
+  }, [showToast]);
+
+  const handleExportToPDF_OPS = async () => {
+    try {
+      if (!form) {
+        showToast("Form data not available.", "error");
+        return;
+      }
+
+      if (filteredResponses.length === 0) {
+        showToast("No responses to export.", "error");
+        return;
+      }
+
+      setIsExporting(true);
+      showToast("Generating PDF...", "info");
+
+      const sectionMapping = {
+        headerSectionId: form.sections?.[0]?.id || "",
+        generalInstructionsSectionId: form.sections?.[1]?.id || "",
+        pastProblemsSectionId: form.sections?.[2]?.id || "",
+        processStepsSectionId: form.sections?.[3]?.id || "",
+        associateSignSectionId: form.sections?.[4]?.id || "",
+      };
+
+      await exportResponsesToOPSPDF(
+        form,
+        filteredResponses,
+        sectionMapping,
+        form.title,
+        (message) => showToast(message, "info")
+      );
+
+    } catch (error) {
+      console.error("Error exporting OPS PDF:", error);
+      showToast("Failed to export. Please try again.", "error");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportOPSToExcel = async () => {
+    try {
+      if (!form) {
+        showToast("Form data not available.", "error");
+        return;
+      }
+
+      if (filteredResponses.length === 0) {
+        showToast("No responses to export.", "error");
+        return;
+      }
+
+      setIsExporting(true);
+      showToast("Generating PDF...", "info");
+
+      const sectionMapping = {
+        headerSectionId: form.sections?.[0]?.id || "",
+        generalInstructionsSectionId: form.sections?.[1]?.id || "",
+        pastProblemsSectionId: form.sections?.[2]?.id || "",
+        processStepsSectionId: form.sections?.[3]?.id || "",
+        associateSignSectionId: form.sections?.[4]?.id || "",
+      };
+
+      await exportResponsesToOPSExcel(
+        form,
+        filteredResponses,
+        sectionMapping,
+        form.title,
+        (message) => showToast(message, "info")
+      );
+
+    } catch (error) {
+      console.error("Error exporting OPS PDF:", error);
+      showToast("Failed to export. Please try again.", "error");
+    } finally {
+      setIsExporting(false);
+    }
+  };
   const handleExportToPDF = async () => {
     try {
       setIsExporting(true);
@@ -5691,11 +5945,11 @@ const fetchChatHistory = async (responseId: string) => {
         responses.map((r) =>
           r.id === editingResponseId
             ? {
-                ...r,
-                answers: editFormData,
-                status: editFormStatus,
-                notes: editFormNotes,
-              }
+              ...r,
+              answers: editFormData,
+              status: editFormStatus,
+              notes: editFormNotes,
+            }
             : r,
         ),
       );
@@ -5720,16 +5974,7 @@ const fetchChatHistory = async (responseId: string) => {
     setEditFormNotes("");
   };
 
-  const showToast = (
-    message: string,
-    type: "success" | "error" | "info" = "success",
-  ) => {
-    const id = Date.now().toString();
-    setToast({ message, type, id });
-    setTimeout(() => {
-      setToast(null);
-    }, 3000);
-  };
+
 
   const handleDeleteResponse = async () => {
     if (!deletingResponseId) return;
@@ -5779,6 +6024,332 @@ const fetchChatHistory = async (responseId: string) => {
   };
 
 
+
+  const toggleFormExpansion = (formTitle: string) => {
+    setExpandedInspectorForms(prev => {
+      const next = new Set(prev);
+      if (next.has(formTitle)) {
+        next.delete(formTitle);
+      } else {
+        next.add(formTitle);
+      }
+      return next;
+    });
+  };
+
+  const renderSummaryTable = () => {
+    if (summaryLoading) {
+      return (
+        <div className="text-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
+          <p className="text-gray-500 text-sm">Loading summary...</p>
+        </div>
+      );
+    }
+
+    if (groupedInspectorSummary.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="mt-8 pt-8 border-t border-gray-100 dark:border-gray-700">
+        <div className="flex items-center gap-4 mb-6">
+          <div className="w-2 h-8 bg-blue-600 rounded-full shadow-sm shadow-blue-500/20"></div>
+          <div>
+            <h3 className="text-xl font-black text-gray-900 dark:text-white leading-none mb-1">
+              Inspection Summary
+            </h3>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Real-time inspection data</p>
+          </div>
+        </div>
+
+        <div className="relative bg-white dark:bg-gray-800 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-xl shadow-gray-200/50 dark:shadow-none overflow-hidden">
+          <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700">
+            <table className="w-full text-sm text-left border-collapse">
+              <thead className="bg-gray-50/80 dark:bg-gray-700/80 backdrop-blur-md sticky top-0 z-10 text-gray-500 dark:text-gray-400 uppercase text-[10px] font-black tracking-[0.15em]">
+                <tr>
+                  <th className="px-4 sm:px-6 py-5 border-b border-gray-100 dark:border-gray-700 whitespace-nowrap">Date</th>
+                  <th className="px-4 sm:px-6 py-5 border-b border-gray-100 dark:border-gray-700 whitespace-nowrap">Shift</th>
+                  <th className="px-4 sm:px-6 py-5 border-b border-gray-100 dark:border-gray-700 whitespace-nowrap">QC Inspector</th>
+                  <th className="px-4 sm:px-6 py-5 border-b border-gray-100 dark:border-gray-700 whitespace-nowrap text-center">Total</th>
+                  {/* Dynamic Status Columns */}
+                  {summaryStatuses.map((status) => (
+                    <th
+                      key={status}
+                      className="px-4 sm:px-6 py-5 border-b border-gray-100 dark:border-gray-700 whitespace-nowrap text-center"
+                    >
+                      {status}
+                    </th>
+                  ))}
+                  <th className="px-4 sm:px-6 py-5 border-b border-gray-100 dark:border-gray-700 whitespace-nowrap text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
+                {groupedInspectorSummary.map((group, groupIdx) => {
+                  const isExpanded = expandedInspectorForms.has(group.formTitle);
+                  // Collect all inspectors for this form
+                  const inspectors = Array.from(new Set(group.subItems.map((i: any) => i.qcInspector)));
+
+                  return (
+                    <React.Fragment key={groupIdx}>
+                      {/* Main Group Row */}
+                      <tr
+                        className={`transition-colors cursor-pointer ${isExpanded ? 'bg-blue-50/50 dark:bg-blue-900/20' : 'hover:bg-blue-50/30 dark:hover:bg-blue-900/10'}`}
+                        onClick={() => toggleFormExpansion(group.formTitle)}
+                      >
+                        <td className="px-4 sm:px-6 py-5 text-gray-400 whitespace-nowrap text-xs">
+                          {isExpanded ? '—' : (
+                            group.subItems.length > 1
+                              ? `${new Date(Math.min(...group.subItems.map((i: any) => new Date(i.date).getTime()))).toLocaleDateString()} - ...`
+                              : new Date(group.subItems[0].date).toLocaleDateString()
+                          )}
+                        </td>
+                        <td className="px-4 sm:px-6 py-5 whitespace-nowrap">
+                          {!isExpanded && (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                              {Array.from(new Set(group.subItems.map((i: any) => i.shift || "N/A"))).join(', ')}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 sm:px-6 py-5 whitespace-nowrap">
+                          <div className="flex items-center -space-x-2">
+                            {inspectors.slice(0, 3).map((inspector: any, i) => (
+                              <div
+                                key={i}
+                                className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 border-2 border-white dark:border-gray-800 flex items-center justify-center text-blue-700 dark:text-blue-300 font-black text-[10px] z-[i]"
+                                title={inspector}
+                              >
+                                {inspector?.split(' ').map((n: string) => n[0]).join('')}
+                              </div>
+                            ))}
+                            {inspectors.length > 3 && (
+                              <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 border-2 border-white dark:border-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-400 font-bold text-[10px] z-10">
+                                +{inspectors.length - 3}
+                              </div>
+                            )}
+                            {inspectors.length <= 1 && inspectors[0] && (
+                              <span className="ml-3 font-bold text-gray-700 dark:text-gray-200 text-xs">{inspectors[0]}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 sm:px-6 py-5 text-center">
+                          <span className="text-base font-black text-gray-900 dark:text-white tabular-nums">
+                            {group.totalInspection}
+                          </span>
+                        </td>
+                        {/* Dynamic Status Cells */}
+                        {summaryStatuses.map((status) => {
+                          const count = group.statusCounts?.[status] || 0;
+                          const isZero = count === 0;
+                          return (
+                            <td
+                              key={status}
+                              className={`px-4 sm:px-6 py-5 text-center font-black tabular-nums transition-opacity ${isZero ? 'opacity-20 text-gray-400' :
+                                status === 'Direct Ok' || status === 'Rework Accepted' ? 'text-emerald-600 dark:text-emerald-400' :
+                                  status.startsWith('Rework') ? 'text-amber-600 dark:text-amber-400' :
+                                    status === 'Rejected' ? 'text-rose-600 dark:text-rose-400' : 'text-blue-600 dark:text-blue-400'
+                                }`}
+                            >
+                              {count}
+                            </td>
+                          );
+                        })}
+                        <td className="px-4 sm:px-6 py-5 text-center">
+                          <button className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-full transition-colors">
+                            {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                          </button>
+                        </td>
+                      </tr>
+
+                      {/* Sub Items (QC Inspectors for this Form) */}
+                      {isExpanded && group.subItems.map((row: any, subIdx: number) => (
+                        <tr key={`${groupIdx}-${subIdx}`} className="bg-gray-50/30 dark:bg-gray-900/20 border-l-4 border-l-blue-500">
+                          <td className="px-4 sm:px-6 py-4 text-gray-600 dark:text-gray-400 whitespace-nowrap tabular-nums font-medium text-xs italic">
+                            {new Date(row.date).toLocaleDateString()}
+                          </td>
+                          <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-gray-200/50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-400">
+                              {row.shift || "N/A"}
+                            </span>
+                          </td>
+                          <td className="px-4 sm:px-6 py-4 whitespace-nowrap pl-10">
+                            <div className="flex items-center gap-3">
+                              <div className="w-6 h-6 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600 dark:text-blue-400 font-black text-[8px]">
+                                {row.qcInspector?.split(' ').map((n: string) => n[0]).join('')}
+                              </div>
+                              <span className="font-bold text-gray-600 dark:text-gray-300 text-xs">{row.qcInspector}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 sm:px-6 py-4 text-center">
+                            <span className="text-sm font-bold text-gray-700 dark:text-gray-200 tabular-nums">
+                              {row.totalInspection}
+                            </span>
+                          </td>
+                          {summaryStatuses.map((status) => {
+                            const count = row.statusCounts?.[status] || 0;
+                            const isZero = count === 0;
+                            return (
+                              <td
+                                key={status}
+                                className={`px-4 sm:px-6 py-4 text-center font-bold text-xs tabular-nums ${isZero ? 'opacity-10 text-gray-400' : 'opacity-70'}`}
+                              >
+                                {count}
+                              </td>
+                            );
+                          })}
+                          <td></td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderPerformanceTable = () => {
+    if (user?.role !== 'admin' && user?.role !== 'superadmin') return null;
+
+    if (performanceTableLoading) {
+      return (
+        <div className="mt-12 text-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
+          <p className="text-gray-500 text-sm">Loading performance data...</p>
+        </div>
+      );
+    }
+
+    if (performanceTableData.length === 0) return null;
+
+    // Pagination logic
+    const totalPerformanceItems = performanceTableData.length;
+    const totalPerformancePages = Math.ceil(totalPerformanceItems / performancePageSize);
+    const startIndex = (performancePage - 1) * performancePageSize;
+    const endIndex = startIndex + performancePageSize;
+    const paginatedPerformance = performanceTableData.slice(startIndex, endIndex);
+
+    return (
+      <div className="mt-12 border-t border-gray-100 dark:border-gray-700 pt-8">
+        <div className="flex items-center gap-4 mb-6">
+          <div className="w-2 h-8 bg-purple-600 rounded-full shadow-sm shadow-purple-500/20"></div>
+          <div>
+            <h3 className="text-xl font-black text-gray-900 dark:text-white leading-none mb-1">
+              Performance Table
+            </h3>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Form-specific inspector performance</p>
+          </div>
+        </div>
+
+        <div className="relative bg-white dark:bg-gray-800 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-xl shadow-gray-200/50 dark:shadow-none overflow-hidden">
+          <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700">
+            <table className="w-full text-sm text-left border-collapse">
+              <thead className="bg-gray-50/80 dark:bg-gray-700/80 backdrop-blur-md sticky top-0 z-10 text-gray-500 dark:text-gray-400 uppercase text-[10px] font-black tracking-[0.15em]">
+                <tr>
+                  <th className="px-4 sm:px-6 py-5 border-b border-gray-100 dark:border-gray-700 whitespace-nowrap">User Name</th>
+                  <th className="px-4 sm:px-6 py-5 border-b border-gray-100 dark:border-gray-700 whitespace-nowrap text-center">Total Submitted</th>
+                  <th className="px-4 sm:px-6 py-5 border-b border-gray-100 dark:border-gray-700 whitespace-nowrap text-center text-blue-600">Dispatched</th>
+                  <th className="px-4 sm:px-6 py-5 border-b border-gray-100 dark:border-gray-700 whitespace-nowrap text-center">Total Reviewed</th>
+                  <th className="px-4 sm:px-6 py-5 border-b border-gray-100 dark:border-gray-700 whitespace-nowrap text-center text-green-600">Accepted</th>
+                  <th className="px-4 sm:px-6 py-5 border-b border-gray-100 dark:border-gray-700 whitespace-nowrap text-center text-red-600">Rejected</th>
+                  <th className="px-4 sm:px-6 py-5 border-b border-gray-100 dark:border-gray-700 whitespace-nowrap text-center text-orange-600">Reworked</th>
+                  <th className="px-4 sm:px-6 py-5 border-b border-gray-100 dark:border-gray-700 whitespace-nowrap text-center">Performance Score</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
+                {paginatedPerformance.map((row, idx) => (
+                  <tr key={idx} className="hover:bg-purple-50/30 dark:hover:bg-purple-900/10 transition-colors">
+                    <td className="px-4 sm:px-6 py-5 font-bold text-gray-900 dark:text-white whitespace-nowrap">{row.name}</td>
+                    <td className="px-4 sm:px-6 py-5 font-black text-center tabular-nums">{row.totalSubmitted}</td>
+                    <td className="px-4 sm:px-6 py-5 font-black text-center text-blue-600 dark:text-blue-400 tabular-nums">{row.dispatched || 0}</td>
+                    <td className="px-4 sm:px-6 py-5 font-black text-center tabular-nums">{row.totalReviewed}</td>
+                    <td className="px-4 sm:px-6 py-5 font-black text-center text-green-600 tabular-nums">{row.accepted}</td>
+                    <td className="px-4 sm:px-6 py-5 font-black text-center text-red-600 tabular-nums">{row.rejected}</td>
+                    <td className="px-4 sm:px-6 py-5 font-black text-center text-orange-600 tabular-nums">{row.rework}</td>
+                    <td className="px-4 sm:px-6 py-5 text-center">
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-black tabular-nums shadow-sm ${row.performanceScore >= 80 ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' :
+                        row.performanceScore >= 50 ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400' :
+                          'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'
+                        }`}>
+                        {row.performanceScore}%
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {totalPerformancePages > 1 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-6 bg-gray-50/50 dark:bg-gray-900/50 border-t border-gray-50 dark:border-gray-700">
+              <div className="flex items-center gap-3">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Show</label>
+                <select
+                  value={performancePageSize}
+                  onChange={(e) => { setPerformancePageSize(Number(e.target.value)); setPerformancePage(1); }}
+                  className="px-3 py-1.5 text-xs font-bold border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500/20 transition-all shadow-sm"
+                >
+                  {[5, 10, 20, 50].map(size => (
+                    <option key={size} value={size}>{size}</option>
+                  ))}
+                </select>
+                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                  {startIndex + 1}-{Math.min(endIndex, totalPerformanceItems)} of {totalPerformanceItems}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPerformancePage(prev => Math.max(1, prev - 1))}
+                  disabled={performancePage === 1}
+                  className="p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl disabled:opacity-30 transition-all hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: totalPerformancePages }, (_, i) => i + 1)
+                    .filter(num =>
+                      totalPerformancePages <= 5 ||
+                      Math.abs(num - performancePage) <= 1 ||
+                      num === 1 ||
+                      num === totalPerformancePages
+                    )
+                    .map((pageNum, idx, arr) => (
+                      <React.Fragment key={pageNum}>
+                        {idx > 0 && arr[idx - 1] !== pageNum - 1 && (
+                          <span className="text-gray-300 mx-1">...</span>
+                        )}
+                        <button
+                          onClick={() => setPerformancePage(pageNum)}
+                          className={`min-w-[32px] h-8 text-[10px] font-black rounded-xl transition-all ${performancePage === pageNum
+                            ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/30'
+                            : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700 hover:bg-gray-50'
+                            }`}
+                        >
+                          {pageNum}
+                        </button>
+                      </React.Fragment>
+                    ))}
+                </div>
+
+                <button
+                  onClick={() => setPerformancePage(prev => Math.min(totalPerformancePages, prev + 1))}
+                  disabled={performancePage === totalPerformancePages}
+                  className="p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl disabled:opacity-30 transition-all hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   if (loading) {
     return (
@@ -5833,39 +6404,39 @@ const fetchChatHistory = async (responseId: string) => {
 
           {/* Tabs - Center */}
           <div className="flex items-center gap-1 overflow-x-auto pb-1 lg:pb-0 max-w-full no-scrollbar">
-            
-              <>
-                <button
-                  onClick={() => setAnalyticsView("dashboard")}
-                  className={`px-3 py-2.5 font-semibold transition-all duration-200 flex items-center gap-2 border-b-2 whitespace-nowrap text-sm ${analyticsView === "dashboard"
-                    ? "text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400"
-                    : "text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200"
-                    }`}
-                >
-                  <BarChart3 className="w-4 h-4" />
-                  Dashboard
-                </button>
-                <button
-                  onClick={() => setAnalyticsView("question")}
-                  className={`px-3 py-2.5 font-semibold transition-all duration-200 flex items-center gap-2 border-b-2 whitespace-nowrap text-sm ${analyticsView === "question"
-                    ? "text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400"
-                    : "text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200"
-                    }`}
-                >
-                  <BarChart3 className="w-4 h-4" />
-                  Questions
-                </button>
-                <button
-                  onClick={() => setAnalyticsView("section")}
-                  className={`px-3 py-2.5 font-semibold transition-all duration-200 flex items-center gap-2 border-b-2 whitespace-nowrap text-sm ${analyticsView === "section"
-                    ? "text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400"
-                    : "text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200"
-                    }`}
-                >
-                  <FileText className="w-4 h-4" />
-                  Sections
-                </button>
-                {/* <button
+
+            <>
+              <button
+                onClick={() => setAnalyticsView("dashboard")}
+                className={`px-3 py-2.5 font-semibold transition-all duration-200 flex items-center gap-2 border-b-2 whitespace-nowrap text-sm ${analyticsView === "dashboard"
+                  ? "text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400"
+                  : "text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200"
+                  }`}
+              >
+                <BarChart3 className="w-4 h-4" />
+                Dashboard
+              </button>
+              <button
+                onClick={() => setAnalyticsView("question")}
+                className={`px-3 py-2.5 font-semibold transition-all duration-200 flex items-center gap-2 border-b-2 whitespace-nowrap text-sm ${analyticsView === "question"
+                  ? "text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400"
+                  : "text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200"
+                  }`}
+              >
+                <BarChart3 className="w-4 h-4" />
+                Questions
+              </button>
+              <button
+                onClick={() => setAnalyticsView("section")}
+                className={`px-3 py-2.5 font-semibold transition-all duration-200 flex items-center gap-2 border-b-2 whitespace-nowrap text-sm ${analyticsView === "section"
+                  ? "text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400"
+                  : "text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200"
+                  }`}
+              >
+                <FileText className="w-4 h-4" />
+                Sections
+              </button>
+              {/* <button
                   onClick={() => setAnalyticsView("table")}
                   className={`px-3 py-2.5 font-semibold transition-all duration-200 flex items-center gap-2 border-b-2 whitespace-nowrap text-sm ${
                     analyticsView === "table"
@@ -5876,8 +6447,8 @@ const fetchChatHistory = async (responseId: string) => {
                   <Table className="w-4 h-4" />
                   Table
                 </button> */}
-              </>
-          
+            </>
+
             <button
               onClick={() => setAnalyticsView("responses")}
               className={`px-3 py-2.5 font-semibold transition-all duration-200 flex items-center gap-2 border-b-2 whitespace-nowrap text-sm ${analyticsView === "responses"
@@ -5885,7 +6456,7 @@ const fetchChatHistory = async (responseId: string) => {
                 : "text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200"
                 }`}
             >
-              <Users className="w-4 h-4" />
+              <UsersIcon className="w-4 h-4" />
               Responses
             </button>
             {/* {!isInspector && !isGuest && (
@@ -5897,7 +6468,7 @@ const fetchChatHistory = async (responseId: string) => {
                     : "text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200"
                 }`}
               >
-                <Users className="w-4 h-4" />
+                <UsersIcon className="w-4 h-4" />
                 Comparison
               </button>
             )} */}
@@ -5906,7 +6477,7 @@ const fetchChatHistory = async (responseId: string) => {
           {/* Right Side - Count and Actions */}
           <div className="flex items-center gap-2 sm:gap-3 whitespace-nowrap w-full lg:w-auto justify-between lg:justify-end">
             <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-              <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600 dark:text-blue-400" />
+              <UsersIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600 dark:text-blue-400" />
               <div className="text-right">
                 <div className="text-sm sm:text-base font-bold text-gray-900 dark:text-white">
                   {analytics.total}
@@ -5983,14 +6554,14 @@ const fetchChatHistory = async (responseId: string) => {
         </div>
       )}
 
-      {/* Dashboard View */}
-      {analyticsView === "dashboard" && (
-        <div className="space-y-6">
+      {/* Dashboard View - Always render for PDF export capability, but hide if not active */}
+      {(analyticsView === "dashboard" || isExporting) && (
+        <div className={analyticsView === "dashboard" ? "space-y-6" : "absolute -left-[9999px] top-0 w-full opacity-0 pointer-events-none"} aria-hidden={analyticsView !== "dashboard"}>
           <div
             className="w-full"
             id="summary-cards"
           >
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 w-full">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full">
               {/* Response Trend Chart - COMPACT */}
               <div className="p-6 bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-xl transition-shadow">
                 <div className="flex items-center justify-between mb-4">
@@ -6120,28 +6691,22 @@ const fetchChatHistory = async (responseId: string) => {
                 )}
               </div>
 
-              {/* Location Heatmap - Self-contained component */}
-              <LocationHeatmap
-                responses={filteredResponses}
-                title="Response Locations Heatmap"
-                id="location-heatmap"
-              />
-
               {/* Pie Chart - COMPACT */}
               <OverallQualityPieChart />
             </div>
           </div>
 
           {/* Question Distribution Chart */}
-          {questionPerformanceStats.length > 0 && (
+          {(questionPerformanceStats.length > 0 || trendChartResponses.length > 0) && (
             <div className="w-full" id="question-distribution-card">
               <div className="w-full space-y-6">
                 <InspectionStatusLineChart />
                 <QuestionStatusDistributionChart />
                 <TimeBasedPerformanceGraph />
                 <DirectAcceptedPerformanceGraph />
+                {renderSummaryTable()}
+                {renderPerformanceTable()}
                 <InspectorPerformanceChart />
-
               </div>
             </div>
           )}
@@ -6168,128 +6733,103 @@ const fetchChatHistory = async (responseId: string) => {
                 <>
                   <div className="card p-3 sm:p-4 space-y-3">
                     {/* Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                        <PieChart className="w-5 h-5 text-indigo-600" />
-                        Section Summary
-                      </h3>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {/* Section Date Filters */}
-                        <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-800 p-1 rounded border border-gray-200 dark:border-gray-700">
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">From:</span>
-                            <input
-                              type="date"
-                              value={sectionStartDate}
-                              onChange={(e) => setSectionStartDate(e.target.value)}
-                              className="text-[10px] bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-indigo-500 text-slate-700 dark:text-slate-200"
-                            />
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">To:</span>
-                            <input
-                              type="date"
-                              value={sectionEndDate}
-                              onChange={(e) => setSectionEndDate(e.target.value)}
-                              className="text-[10px] bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-indigo-500 text-slate-700 dark:text-slate-200"
-                            />
-                          </div>
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-gray-50/50 dark:bg-gray-800/30 p-4 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-900/40 rounded-lg">
+                          <PieChart className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                         </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-gray-900 dark:text-white tracking-tight">
+                            Section Summary
+                          </h3>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">Section-wise performance breakdown</p>
+                        </div>
+                      </div>
 
+                      <div className="flex flex-wrap items-center gap-3">
                         {/* Section Selection Dropdown */}
                         <div className="relative">
                           <button
                             onClick={() =>
                               setShowSectionSelector(!showSectionSelector)
                             }
-                            className="flex items-center gap-2 px-3 py-1.5 text-xs sm:text-sm font-medium bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded border border-indigo-200 dark:border-indigo-700 transition-colors"
+                            className="flex items-center gap-2 px-4 py-2 text-xs font-bold bg-white dark:bg-gray-900 text-indigo-600 dark:text-indigo-400 rounded-lg border-2 border-indigo-100 dark:border-indigo-900/50 hover:border-indigo-500 transition-all shadow-sm"
                           >
-                            <svg
-                              className="w-3.5 h-3.5"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M19 13l-7 7-7-7m0-6l7-7 7 7"
-                              />
-                            </svg>
+                            <Filter className="w-3.5 h-3.5" />
                             Sections ({selectedSectionIds.length})
+                            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showSectionSelector ? 'rotate-180' : ''}`} />
                           </button>
 
                           {showSectionSelector && (
-                            <div className="absolute top-full right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg z-10 min-w-[200px] max-h-64 overflow-y-auto">
-                              {/* Select All Option */}
-                              <label className="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-200 dark:border-gray-700">
-                                <input
-                                  type="checkbox"
-                                  checked={
-                                    selectedSectionIds.length ===
-                                    filteredSectionStats.length &&
-                                    filteredSectionStats.length > 0
-                                  }
-                                  onChange={handleSelectAllSections}
-                                  className="w-4 h-4 rounded border-gray-300 text-indigo-600 cursor-pointer"
-                                />
-                                <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                                  Select All
-                                </span>
-                              </label>
+                            <div className="absolute top-full right-0 mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-[60] min-w-[240px] max-h-80 overflow-y-auto animate-in slide-in-from-top-2 duration-200">
+                              <div className="sticky top-0 bg-gray-50 dark:bg-gray-900 p-2 border-b border-gray-100 dark:border-gray-800 z-10">
+                                <label className="flex items-center gap-3 px-3 py-2 hover:bg-white dark:hover:bg-gray-800 rounded-lg cursor-pointer transition-colors">
+                                  <input
+                                    type="checkbox"
+                                    checked={
+                                      selectedSectionIds.length ===
+                                      filteredSectionStats.length &&
+                                      filteredSectionStats.length > 0
+                                    }
+                                    onChange={handleSelectAllSections}
+                                    className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                  />
+                                  <span className="text-sm font-bold text-gray-900 dark:text-white">
+                                    Select All Sections
+                                  </span>
+                                </label>
+                              </div>
 
-                              {/* Section Checkboxes */}
-                              {filteredSectionStats.map((stat) => {
-                                const selected = selectedSectionIds.includes(
-                                  stat.id,
-                                );
-                                return (
-                                  <label
-                                    key={stat.id}
-                                    className="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-200 dark:border-gray-700 last:border-0 text-sm"
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={selected}
-                                      onChange={() =>
-                                        toggleSectionSelection(stat.id)
-                                      }
-                                      className="w-4 h-4 rounded border-gray-300 text-indigo-600 cursor-pointer"
-                                    />
-                                    <span className="text-gray-900 dark:text-gray-300 truncate">
-                                      {stat.title}
-                                    </span>
-                                  </label>
-                                );
-                              })}
+                              <div className="p-1">
+                                {filteredSectionStats.map((stat) => {
+                                  const selected = selectedSectionIds.includes(
+                                    stat.id,
+                                  );
+                                  return (
+                                    <label
+                                      key={stat.id}
+                                      className={`flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg cursor-pointer transition-colors ${selected ? 'bg-indigo-50/30 dark:bg-indigo-900/10' : ''}`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={selected}
+                                        onChange={() =>
+                                          toggleSectionSelection(stat.id)
+                                        }
+                                        className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                      />
+                                      <span className={`text-sm ${selected ? 'font-bold text-indigo-600 dark:text-indigo-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                                        {stat.title}
+                                      </span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
                             </div>
                           )}
                         </div>
                       </div>
                     </div>
 
-                    {/* Color Legend with Controls */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-gray-50 dark:bg-gray-800/50 rounded border border-gray-200 dark:border-gray-700">
-                      <div className="flex items-center gap-3 text-[10px] sm:text-xs">
-                        <div className="flex items-center gap-1">
-                          <div className="w-2 h-2 bg-green-500 rounded"></div>
-                          <span className="text-gray-600 dark:text-gray-400">
-                            {complianceLabels.yes}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <div className="w-2 h-2 bg-red-500 rounded"></div>
-                          <span className="text-gray-600 dark:text-gray-400">
-                            {complianceLabels.no}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <div className="w-2 h-2 bg-gray-400 rounded"></div>
-                          <span className="text-gray-600 dark:text-gray-400">
-                            {complianceLabels.na}
-                          </span>
-                        </div>
+                    {/* Color Legend */}
+                    <div className="flex flex-wrap items-center gap-6 px-4 py-2 border-b border-gray-100 dark:border-gray-800">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 bg-green-500 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.4)]"></div>
+                        <span className="text-[11px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                          {complianceLabels.yes}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.4)]"></div>
+                        <span className="text-[11px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                          {complianceLabels.no}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 bg-gray-400 rounded-full shadow-[0_0_8px_rgba(156,163,175,0.4)]"></div>
+                        <span className="text-[11px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                          {complianceLabels.na}
+                        </span>
                       </div>
                     </div>
 
@@ -6298,320 +6838,219 @@ const fetchChatHistory = async (responseId: string) => {
                       {/* Table Container - Always shrinks for radar chart */}
                       <div className="flex-1 min-w-0">
                         <div className="overflow-x-auto no-scrollbar rounded-lg border border-gray-200 dark:border-gray-700">
-                          <table className="min-w-full text-xs sm:text-sm">
-                            <thead className="uppercase tracking-wider text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 sticky top-0">
-                              <tr>
-                                <th className="text-left px-3 sm:px-4 py-3">Section</th>
-                                <th className="text-center px-2 sm:px-3 py-3">Total</th>
-                                <th className="text-center px-2 sm:px-3 py-3">
+                          <table className="min-w-full text-xs sm:text-sm border-collapse">
+                            <thead className="uppercase tracking-wider text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 z-20">
+                              <tr className="bg-gray-200 dark:bg-gray-800">
+                                <th rowSpan={2} className="text-left px-4 py-3 border border-gray-300 dark:border-gray-600 min-w-[250px] font-bold">Section Summary</th>
+                                <th rowSpan={2} className="text-center px-3 py-3 border border-gray-300 dark:border-gray-600 font-bold">Total</th>
+                                <th colSpan={3} className="text-center px-3 py-2 border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 font-bold">
+                                  Section Performance Breakdown
+                                </th>
+                                <th rowSpan={2} className="text-center px-4 py-3 border border-gray-300 dark:border-gray-600 font-bold">Visualization</th>
+                              </tr>
+                              <tr className="bg-gray-100 dark:bg-gray-700/50">
+                                <th className="text-center px-3 py-2 border border-gray-300 dark:border-gray-600 text-green-700 dark:text-green-400 font-bold">
                                   {complianceLabels.yes}
                                 </th>
-                                <th className="text-center px-2 sm:px-3 py-3">
+                                <th className="text-center px-3 py-2 border border-gray-300 dark:border-gray-600 text-red-700 dark:text-red-400 font-bold">
                                   {complianceLabels.no}
                                 </th>
-                                <th className="text-center px-2 sm:px-3 py-3">
+                                <th className="text-center px-3 py-2 border border-gray-300 dark:border-gray-600 text-slate-700 dark:text-slate-400 font-bold">
                                   {complianceLabels.na}
                                 </th>
                               </tr>
                             </thead>
                             <tbody>
-                              {sectionSummaryRows.map((row, index) => {
-                                const rowBgColor =
-                                  index % 2 === 0
-                                    ? "bg-white dark:bg-gray-900"
-                                    : "bg-gray-50 dark:bg-gray-800/50";
-
-                                const generateTableBarChart = (
-                                  yesPercent: number,
-                                  noPercent: number,
-                                  naPercent: number,
-                                ) => {
-                                  const totalWidth = 160;
-                                  const yesWidth =
-                                    (yesPercent / 100) * totalWidth;
-                                  const noWidth =
-                                    (noPercent / 100) * totalWidth;
-                                  const naWidth =
-                                    (naPercent / 100) * totalWidth;
-
-                                  return (
-                                    <div
-                                      className="relative"
-                                      style={{
-                                        width: `${totalWidth}px`,
-                                        height: "20px",
-                                      }}
-                                    >
-                                      {/* Background bar */}
-                                      <div className="absolute inset-0 bg-gray-100 dark:bg-gray-700 rounded-sm border border-gray-300 dark:border-gray-600"></div>
-
-                                      {/* Yes segment */}
-                                      {yesPercent > 0 && (
-                                        <div
-                                          className="absolute left-0 h-full bg-green-500"
-                                          style={{ width: `${yesWidth}px` }}
-                                        >
-                                          {yesPercent >= 10 && (
-                                            <div className="absolute inset-0 flex items-center justify-center">
-                                              <span
-                                                className="text-xs font-bold text-white"
-                                                style={{
-                                                  textShadow:
-                                                    "0 0 2px rgba(0,0,0,0.5)",
-                                                }}
-                                              >
-                                                {yesPercent.toFixed(0)}%
-                                              </span>
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-
-                                      {/* No segment */}
-                                      {noPercent > 0 && (
-                                        <div
-                                          className="absolute h-full bg-red-500"
-                                          style={{
-                                            left: `${yesWidth}px`,
-                                            width: `${noWidth}px`,
-                                          }}
-                                        >
-                                          {noPercent >= 10 && (
-                                            <div className="absolute inset-0 flex items-center justify-center">
-                                              <span
-                                                className="text-xs font-bold text-white"
-                                                style={{
-                                                  textShadow:
-                                                    "0 0 2px rgba(0,0,0,0.5)",
-                                                }}
-                                              >
-                                                {noPercent.toFixed(0)}%
-                                              </span>
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-
-                                      {/* N/A segment */}
-                                      {naPercent > 0 && (
-                                        <div
-                                          className="absolute h-full bg-gray-400"
-                                          style={{
-                                            left: `${yesWidth + noWidth}px`,
-                                            width: `${naWidth}px`,
-                                          }}
-                                        >
-                                          {naPercent >= 10 && (
-                                            <div className="absolute inset-0 flex items-center justify-center">
-                                              <span
-                                                className="text-xs font-bold text-white"
-                                                style={{
-                                                  textShadow:
-                                                    "0 0 2px rgba(0,0,0,0.5)",
-                                                }}
-                                              >
-                                                {naPercent.toFixed(0)}%
-                                              </span>
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-
-                                      {/* Fallback labels for small segments */}
-                                      {yesPercent > 0 && yesPercent < 10 && (
-                                        <div
-                                          className="absolute"
-                                          style={{ left: "2px", top: "1px" }}
-                                        >
-                                          <span className="text-[9px] font-bold text-green-700 bg-white/80 px-0.5 rounded">
-                                            {yesPercent.toFixed(0)}%
-                                          </span>
-                                        </div>
-                                      )}
-                                      {noPercent > 0 && noPercent < 10 && (
-                                        <div
-                                          className="absolute"
-                                          style={{
-                                            left: `${yesWidth + 2}px`,
-                                            top: "1px",
-                                          }}
-                                        >
-                                          <span className="text-[9px] font-bold text-red-700 bg-white/80 px-0.5 rounded">
-                                            {noPercent.toFixed(0)}%
-                                          </span>
-                                        </div>
-                                      )}
-                                      {naPercent > 0 && naPercent < 10 && (
-                                        <div
-                                          className="absolute"
-                                          style={{
-                                            left: `${yesWidth + noWidth + 2}px`,
-                                            top: "1px",
-                                          }}
-                                        >
-                                          <span className="text-[9px] font-bold text-gray-700 bg-white/80 px-0.5 rounded">
-                                            {naPercent.toFixed(0)}%
-                                          </span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                };
-
+                              {(() => {
                                 return (
-                                  <tr
-                                    key={row.id}
-                                    onClick={() => {
-                                      setAutoOpenSectionId(null);
-                                      setTimeout(
-                                        () => setAutoOpenSectionId(row.id),
-                                        10,
+                                  <>
+                                    {sectionSummaryRows.map((row, index) => {
+                                      const rowBgColor =
+                                        index % 2 === 0
+                                          ? "bg-white dark:bg-gray-900"
+                                          : "bg-gray-50 dark:bg-gray-800/50";
+
+                                      return (
+                                        <tr
+                                          key={row.id}
+                                          onClick={() => {
+                                            setAutoOpenSectionId(null);
+                                            setTimeout(
+                                              () => setAutoOpenSectionId(row.id),
+                                              10,
+                                            );
+                                          }}
+                                          className={`border-b border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer ${rowBgColor}`}
+                                        >
+                                          {/* Section Column */}
+                                          <td className="px-4 py-3 cursor-pointer border border-gray-300 dark:border-gray-600">
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setAutoOpenSectionId(null);
+                                                setTimeout(
+                                                  () =>
+                                                    setAutoOpenSectionId(row.id),
+                                                  10,
+                                                );
+                                              }}
+                                              className="font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm transition-colors text-left"
+                                            >
+                                              {row.title}
+                                            </button>
+                                          </td>
+
+                                          {/* Total Column */}
+                                          <td className="text-center px-3 py-3 border border-gray-300 dark:border-gray-600">
+                                            <div className="font-bold text-gray-900 dark:text-white text-sm">
+                                              {row.total}
+                                            </div>
+                                          </td>
+
+                                          {/* Yes Column */}
+                                          <td className="text-center px-3 py-3 border border-gray-300 dark:border-gray-600">
+                                            <div className="font-bold text-green-700 dark:text-green-400 text-sm">
+                                              {row.yesCount}{" "}
+                                              <span className="text-gray-500 dark:text-gray-400 font-medium">
+                                                (
+                                                {Number.isFinite(row.yesPercent)
+                                                  ? row.yesPercent.toFixed(0)
+                                                  : "0"}
+                                                %)
+                                              </span>
+                                            </div>
+                                          </td>
+
+                                          {/* No Column */}
+                                          <td className="text-center px-3 py-3 border-x border-gray-300 dark:border-gray-600">
+                                            <div className="font-bold text-red-700 dark:text-red-400 text-sm">
+                                              {row.noCount}{" "}
+                                              <span className="text-gray-500 dark:text-gray-400 font-medium">
+                                                (
+                                                {Number.isFinite(row.noPercent)
+                                                  ? row.noPercent.toFixed(0)
+                                                  : "0"}
+                                                %)
+                                              </span>
+                                            </div>
+                                          </td>
+
+                                          {/* N/A Column */}
+                                          <td className="text-center px-3 py-3 border-x border-gray-300 dark:border-gray-600">
+                                            <div className="font-bold text-slate-700 dark:text-slate-400 text-sm">
+                                              {row.naCount}{" "}
+                                              <span className="text-gray-500 dark:text-gray-400 font-medium">
+                                                (
+                                                {Number.isFinite(row.naPercent)
+                                                  ? row.naPercent.toFixed(0)
+                                                  : "0"}
+                                                %)
+                                              </span>
+                                            </div>
+                                          </td>
+
+                                          {/* Visualization Column */}
+                                          <td className="px-3 py-3 border-x border-gray-300 dark:border-gray-600">
+                                            <div className="flex justify-center">
+                                              {generateTableBarChart(
+                                                row.yesPercent,
+                                                row.noPercent,
+                                                row.naPercent,
+                                              )}
+                                            </div>
+                                          </td>
+                                        </tr>
                                       );
-                                    }}
-                                    className={`border-t border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer ${rowBgColor}`}
-                                  >
-                                    {/* Section Column */}
-                                    <td className="px-4 py-2.5 cursor-pointer">
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setAutoOpenSectionId(null);
-                                          setTimeout(
-                                            () =>
-                                              setAutoOpenSectionId(row.id),
-                                            10,
-                                          );
-                                        }}
-                                        className="font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm truncate max-w-[150px] transition-colors text-left"
-                                      >
-                                        {row.title}
-                                      </button>
-                                    </td>
+                                    })}
 
-                                    {/* Total Column */}
-                                    <td className="text-center px-3 py-2.5">
-                                      <div className="font-semibold text-blue-600 dark:text-blue-400 text-sm">
-                                        {row.total}
-                                      </div>
-                                    </td>
-
-                                    {/* Yes Column */}
-                                    <td className="text-center px-3 py-2.5">
-                                      <div className="font-semibold text-green-600 dark:text-green-400 text-sm">
-                                        {row.yesCount}{" "}
-                                        <span className="text-gray-600 dark:text-gray-400">
-                                          (
-                                          {Number.isFinite(row.yesPercent)
-                                            ? row.yesPercent.toFixed(0)
-                                            : "0"}
-                                          %)
-                                        </span>
-                                      </div>
-                                    </td>
-
-                                    {/* No Column */}
-                                    <td className="text-center px-3 py-2.5">
-                                      <div className="font-semibold text-red-600 dark:text-red-400 text-sm">
-                                        {row.noCount}{" "}
-                                        <span className="text-gray-600 dark:text-gray-400">
-                                          (
-                                          {Number.isFinite(row.noPercent)
-                                            ? row.noPercent.toFixed(0)
-                                            : "0"}
-                                          %)
-                                        </span>
-                                      </div>
-                                    </td>
-
-                                    {/* N/A Column */}
-                                    <td className="text-center px-3 py-2.5">
-                                      <div className="font-semibold text-slate-600 dark:text-slate-400 text-sm">
-                                        {row.naCount}{" "}
-                                        <span className="text-gray-600 dark:text-gray-400">
-                                          (
-                                          {Number.isFinite(row.naPercent)
-                                            ? row.naPercent.toFixed(0)
-                                            : "0"}
-                                          %)
-                                        </span>
-                                      </div>
-                                    </td>
-
-                                  </tr>
+                                    {/* Comprehensive Total Row */}
+                                    <tr className="bg-gray-100 dark:bg-gray-800 font-extrabold border-t-2 border-gray-400 dark:border-gray-500">
+                                      <td className="px-4 py-3 text-gray-900 dark:text-gray-100 border-x border-gray-300 dark:border-gray-600">
+                                        <div className="flex items-center">
+                                          <div className="w-3 h-3 bg-indigo-600 rounded-full mr-3"></div>
+                                          <span>TOTAL</span>
+                                        </div>
+                                      </td>
+                                      <td className="text-center px-3 py-3 text-gray-900 dark:text-gray-100 border-x border-gray-300 dark:border-gray-600">
+                                        {summaryTotals?.total || 0}
+                                      </td>
+                                      <td className="text-center px-3 py-3 text-green-700 dark:text-green-400 border-x border-gray-300 dark:border-gray-600">
+                                        {summaryTotals?.yesCount || 0} (
+                                        {summaryTotals?.total > 0
+                                          ? (
+                                            (summaryTotals.yesCount /
+                                              summaryTotals.total) *
+                                            100
+                                          ).toFixed(0)
+                                          : 0}
+                                        %)
+                                      </td>
+                                      <td className="text-center px-3 py-3 text-red-700 dark:text-red-400 border-x border-gray-300 dark:border-gray-600">
+                                        {summaryTotals?.noCount || 0} (
+                                        {summaryTotals?.total > 0
+                                          ? (
+                                            (summaryTotals.noCount /
+                                              summaryTotals.total) *
+                                            100
+                                          ).toFixed(0)
+                                          : 0}
+                                        %)
+                                      </td>
+                                      <td className="text-center px-3 py-3 text-slate-700 dark:text-slate-400 border-x border-gray-300 dark:border-gray-600">
+                                        {summaryTotals?.naCount || 0} (
+                                        {summaryTotals?.total > 0
+                                          ? (
+                                            (summaryTotals.naCount /
+                                              summaryTotals.total) *
+                                            100
+                                          ).toFixed(0)
+                                          : 0}
+                                        %)
+                                      </td>
+                                      <td className="px-3 py-3 border-x border-gray-300 dark:border-gray-600">
+                                        <div className="flex justify-center">
+                                          {generateTableBarChart(
+                                            summaryTotals.total > 0 ? (summaryTotals.yesCount / summaryTotals.total) * 100 : 0,
+                                            summaryTotals.total > 0 ? (summaryTotals.noCount / summaryTotals.total) * 100 : 0,
+                                            summaryTotals.total > 0 ? (summaryTotals.naCount / summaryTotals.total) * 100 : 0
+                                          )}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  </>
                                 );
-                              })}
-
-                              {/* Comprehensive Total Row */}
-                              <tr className="bg-gray-100 dark:bg-gray-800 font-bold border-t-2 border-gray-300 dark:border-gray-600">
-                                <td className="px-4 py-3 font-bold text-gray-900 dark:text-gray-100 flex items-center">
-                                  <div className="w-3 h-3 bg-indigo-600 rounded-full mr-3"></div>
-                                  <span>TOTAL</span>
-                                </td>
-                                <td className="text-center px-3 py-2.5 text-gray-900 dark:text-gray-100 font-bold">
-                                  {summaryTotals?.total || 0}
-                                </td>
-                                <td className="text-center px-3 py-2.5 text-green-600 dark:text-green-400 font-bold">
-                                  {summaryTotals?.yesCount || 0} (
-                                  {summaryTotals?.total > 0
-                                    ? (
-                                      (summaryTotals.yesCount /
-                                        summaryTotals.total) *
-                                      100
-                                    ).toFixed(0)
-                                    : 0}
-                                  %)
-                                </td>
-                                <td className="text-center px-3 py-2.5 text-red-600 dark:text-red-400 font-bold">
-                                  {summaryTotals?.noCount || 0} (
-                                  {summaryTotals?.total > 0
-                                    ? (
-                                      (summaryTotals.noCount /
-                                        summaryTotals.total) *
-                                      100
-                                    ).toFixed(0)
-                                    : 0}
-                                  %)
-                                </td>
-                                <td className="text-center px-3 py-2.5 text-slate-600 dark:text-slate-400 font-bold">
-                                  {summaryTotals?.naCount || 0} (
-                                  {summaryTotals?.total > 0
-                                    ? (
-                                      (summaryTotals.naCount /
-                                        summaryTotals.total) *
-                                      100
-                                    ).toFixed(0)
-                                    : 0}
-                                  %)
-                                </td>
-                              </tr>
+                              })()}
                             </tbody>
                           </table>
                         </div>
                       </div>
 
                       {/* Radar Chart - Always displayed on right side */}
-                      <div className="w-full lg:w-96 flex-shrink-0">
-                        <div className="card p-4 sm:p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-lg h-full">
+                      <div className="w-full lg:w-[450px] flex-shrink-0">
+                        <div className="bg-white dark:bg-gray-800/40 p-4 sm:p-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-md h-full">
                           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-6 gap-2">
-                            <h4 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">
-                              Performance Radar
-                            </h4>
+                            <div>
+                              <h4 className="text-base font-bold text-gray-900 dark:text-white uppercase tracking-tight">
+                                Performance Radar
+                              </h4>
+                              <p className="text-[10px] text-gray-500 font-medium">Comparative section analysis</p>
+                            </div>
                             <div className="flex flex-wrap items-center gap-2">
                               <div className="flex items-center gap-1">
-                                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                                <span className="text-[10px] text-gray-600 dark:text-gray-400">
+                                <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
+                                <span className="text-[9px] font-bold text-gray-500 uppercase">
                                   {complianceLabels.yes}
                                 </span>
                               </div>
                               <div className="flex items-center gap-1">
-                                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                                <span className="text-[10px] text-gray-600 dark:text-gray-400">
+                                <div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>
+                                <span className="text-[9px] font-bold text-gray-500 uppercase">
                                   {complianceLabels.no}
                                 </span>
                               </div>
                               <div className="flex items-center gap-1">
-                                <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
-                                <span className="text-[10px] text-gray-600 dark:text-gray-400">
+                                <div className="w-1.5 h-1.5 bg-gray-400 rounded-full"></div>
+                                <span className="text-[9px] font-bold text-gray-500 uppercase">
                                   {complianceLabels.na}
                                 </span>
                               </div>
@@ -7347,6 +7786,29 @@ const fetchChatHistory = async (responseId: string) => {
                       <Download className="w-4 h-4" />
                       <span className="hidden xs:inline">Export</span>
                     </button>
+                    <button
+                      onClick={() => handleExportOPSToExcel()}
+                      disabled={selectedResponsesSectionIds.length === 0}
+                      className="px-3 sm:px-4 py-2 bg-indigo-700 hover:bg-indigo-800 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg text-xs sm:text-sm font-semibold transition-colors flex items-center gap-2"
+                      title="Export responses as OPS Excel — questions as columns with answers below"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>OPS responses as excel</span>
+                    </button>
+                    <button
+                      onClick={handleExportToPDF_OPS}
+                      disabled={isExporting}
+                      className="p-1.5 sm:p-2 text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50"
+                      title="Export to OPS PDF (A3)"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>OPS responses as PDF</span>
+                      {isExporting ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-red-500" />
+                      ) : (
+                        <FileText className="w-4 h-4" />
+                      )}
+                    </button>
                     {selectedResponseIds.length > 0 && !isGuest && (
                       <button
                         onClick={() => setShowBulkDeleteConfirm(true)}
@@ -7511,33 +7973,9 @@ const fetchChatHistory = async (responseId: string) => {
 
                     <div className="overflow-x-auto no-scrollbar rounded-xl border border-gray-200 dark:border-gray-700">
                       <table className="text-xs border-collapse w-full">
-                        <thead className="sticky top-0 z-10">
+                        <thead className="sticky top-18 z-30">
                           <tr className="bg-gray-100 dark:bg-gray-800">
-                            <th className="hidden sm:table-cell px-3 py-3 border-b border-r border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800"></th>
-                            <th colSpan={8} className="px-6 py-3 text-center font-bold text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">
-                              METADATA
-                            </th>
-                            {form?.sections?.map((section: Section) => {
-                              const sectionQuestionsCount =
-                                section.questions?.length || 0;
-                              return (
-                                selectedResponsesSectionIds.includes(
-                                  section.id,
-                                ) && (
-                                  <td
-                                    key={`header-${section.id}`}
-                                    colSpan={sectionQuestionsCount}
-                                    className="px-6 py-3 text-center font-bold text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700"
-                                  >
-                                    {section.title}
-                                  </td>
-                                )
-                              );
-                            })}
-                          </tr>
-
-                          <tr className="bg-gray-100 dark:bg-gray-800">
-                            <th className="hidden sm:table-cell sticky left-0 z-20 text-center px-3 py-3 font-semibold text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">
+                            <th className="hidden sm:table-cell sticky left-0 z-30 text-center px-3 py-3 font-semibold text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">
                               <input
                                 type="checkbox"
                                 checked={
@@ -7557,37 +7995,28 @@ const fetchChatHistory = async (responseId: string) => {
                                 className="w-4 h-4 text-indigo-600 border-gray-300 dark:border-gray-600 rounded cursor-pointer accent-indigo-600"
                               />
                             </th>
-                            <th className={`sticky left-0 sm:left-12 z-20 text-center px-4 py-3 font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-700 whitespace-nowrap bg-gray-100 dark:bg-gray-800 transition-all duration-300 ${showTableActions ? "min-w-[100px]" : "min-w-[50px] w-[50px]"}`}>
-                              <div className="flex items-center justify-center gap-2">
-                                {showTableActions && <span>Actions</span>}
-                                <button 
-                                  onClick={() => setShowTableActions(!showTableActions)}
-                                  className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
-                                  title={showTableActions ? "Collapse" : "Expand"}
-                                >
-                                  {showTableActions ? <ChevronDown className="w-4 h-4 rotate-90" /> : <MoreHorizontal className="w-4 h-4" />}
-                                </button>
-                              </div>
+                            <th className="sticky left-0 sm:left-12 z-30 text-center px-4 py-3 font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-700 whitespace-nowrap bg-gray-100 dark:bg-gray-800 min-w-[120px]">
+                              <span>Actions</span>
                             </th>
                             <th className="text-center px-6 py-3 font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-700 min-w-24 whitespace-nowrap bg-gray-100 dark:bg-gray-800">
                               Dispatch
                             </th>
-                            <th className="text-left px-6 py-3 font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-700 min-w-48 whitespace-nowrap bg-gray-50 dark:bg-gray-800/50">
+                            <th className="text-left px-6 py-3 font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-700 min-w-48 whitespace-nowrap bg-gray-50 dark:bg-gray-800">
                               Submitted by
                             </th>
-                            <th className="text-left px-6 py-3 font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-700 min-w-32 whitespace-nowrap bg-gray-50 dark:bg-gray-800/50">
+                            <th className="text-left px-6 py-3 font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-700 min-w-32 whitespace-nowrap bg-gray-50 dark:bg-gray-800">
                               Status
                             </th>
-                            <th className="text-left px-6 py-3 font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-700 min-w-40 whitespace-nowrap bg-gray-50 dark:bg-gray-800/50">
+                            <th className="text-left px-6 py-3 font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-700 min-w-40 whitespace-nowrap bg-gray-50 dark:bg-gray-800">
                               Selected Chassis
                             </th>
-                            <th className="text-left px-6 py-3 font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-700 min-w-48 whitespace-nowrap bg-gray-50 dark:bg-gray-800/50">
+                            <th className="text-left px-6 py-3 font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-700 min-w-48 whitespace-nowrap bg-gray-50 dark:bg-gray-800">
                               Review
                             </th>
                             <th className="text-left px-6 py-3 font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider border border-gray-200 dark:border-gray-700 min-w-40 whitespace-nowrap">
                               Timestamp
                             </th>
-                            <th className="text-center px-4 py-3 font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider border border-gray-200 dark:border-gray-700 whitespace-nowrap bg-gray-50 dark:bg-gray-800/50">
+                            <th className="text-center px-4 py-3 font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider border border-gray-200 dark:border-gray-700 whitespace-nowrap bg-gray-50 dark:bg-gray-800">
                               Time Taken
                             </th>
                             {form?.sections?.map(
@@ -7635,56 +8064,6 @@ const fetchChatHistory = async (responseId: string) => {
                                 }),
                             )}
                           </tr>
-
-                          {/* Common Answer Row */}
-                          <tr className="bg-amber-50 dark:bg-amber-900/20 border-b-2 border-amber-200 dark:border-amber-800">
-                            <td className="hidden sm:table-cell px-3 py-3 border border-gray-200 dark:border-gray-700 bg-amber-50/50 dark:bg-amber-900/10"></td>
-                            <td className={`px-4 py-3 border border-gray-200 dark:border-gray-700 sticky left-0 sm:left-12 z-20 bg-amber-50 dark:bg-amber-900/20 font-bold text-amber-800 dark:text-amber-200 text-xs uppercase transition-all duration-300 ${showTableActions ? "" : "invisible w-0 p-0 overflow-hidden"}`}>
-                              {showTableActions && "Actions"}
-                            </td>
-                            <td className="px-6 py-3 border border-gray-200 dark:border-gray-700 bg-amber-50 dark:bg-amber-900/20 font-bold text-amber-800 dark:text-amber-200 text-xs uppercase">
-                              Expected Answer
-                            </td>
-                            <td className="px-6 py-3 border border-gray-200 dark:border-gray-700 bg-amber-50/50 dark:bg-amber-900/10"></td>
-                            <td className="px-6 py-3 border border-gray-200 dark:border-gray-700 bg-amber-50/50 dark:bg-amber-900/10"></td>
-                            <td className="px-6 py-3 border border-gray-200 dark:border-gray-700 bg-amber-50/50 dark:bg-amber-900/10"></td>
-                            <td className="px-6 py-3 border border-gray-200 dark:border-gray-700 bg-amber-50/50 dark:bg-amber-900/10"></td>
-                            <td className="px-6 py-3 border border-gray-200 dark:border-gray-700 bg-amber-50/50 dark:bg-amber-900/10"></td>
-                            <td className="px-4 py-3 border border-gray-200 dark:border-gray-700 bg-amber-50/50 dark:bg-amber-900/10"></td>
-                            {form?.sections?.map(
-                              (section: Section) =>
-                                selectedResponsesSectionIds.includes(
-                                  section.id,
-                                ) &&
-                                section.questions?.map((q: any) => {
-                                  const isFollowUp =
-                                    q.parentId || q.showWhen?.questionId;
-                                  const hasCorrectAnswer =
-                                    q.correctAnswer !== undefined;
-                                  return (
-                                    <td
-                                      key={`correct-${q.id}`}
-                                      className={`px-4 py-3 text-xs font-bold border border-gray-200 dark:border-gray-700 ${isFollowUp ? "bg-purple-50 dark:bg-purple-900/10" : ""} ${hasCorrectAnswer ? "text-green-700 dark:text-green-400" : "text-gray-400 italic"}`}
-                                    >
-                                      {hasCorrectAnswer ? (
-                                        <div className="flex flex-col gap-1">
-                                          <span className="text-[10px] uppercase text-gray-500 opacity-70">
-                                            Expected Answer:
-                                          </span>
-                                          <span>
-                                            {Array.isArray(q.correctAnswer)
-                                              ? q.correctAnswer.join(", ")
-                                              : String(q.correctAnswer)}
-                                          </span>
-                                        </div>
-                                      ) : (
-                                        "-"
-                                      )}
-                                    </td>
-                                  );
-                                }),
-                            )}
-                          </tr>
                         </thead>
 
                         <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -7693,10 +8072,10 @@ const fetchChatHistory = async (responseId: string) => {
                               (response: Response, idx: number) => (
                                 <tr
                                   key={response.id}
-                                  className={`${editingResponseId === response.id ? "bg-blue-50 dark:bg-blue-900/20" : idx % 2 === 0 ? "bg-white dark:bg-gray-900" : "bg-gray-50 dark:bg-gray-800/50"}`}
+                                  className={`${editingResponseId === response.id ? "bg-blue-50 dark:bg-blue-900/20" : idx % 2 === 0 ? "bg-white dark:bg-gray-900" : "bg-gray-50 dark:bg-gray-800"}`}
                                 >
                                   <td
-                                    className={`hidden sm:table-cell px-3 py-3 text-center border border-gray-200 dark:border-gray-700 whitespace-nowrap sticky left-0 z-20 ${editingResponseId === response.id ? "bg-blue-50 dark:bg-blue-900/20" : idx % 2 === 0 ? "bg-white dark:bg-gray-900" : "bg-gray-50 dark:bg-gray-800/50"}`}
+                                    className={`hidden sm:table-cell  px-3 py-3 text-center border border-gray-200 dark:border-gray-700 whitespace-nowrap sticky left-0 z-20 ${editingResponseId === response.id ? "bg-blue-50 dark:bg-blue-900/20" : idx % 2 === 0 ? "bg-white dark:bg-gray-900" : "bg-gray-50 dark:bg-gray-800"}`}
                                   >
                                     <input
                                       type="checkbox"
@@ -7721,34 +8100,124 @@ const fetchChatHistory = async (responseId: string) => {
                                     />
                                   </td>
                                   <td
-                                    className={`px-4 py-3 text-center border border-gray-200 dark:border-gray-700 whitespace-nowrap sticky left-0 sm:left-12 z-20 transition-all duration-300 ${editingResponseId === response.id ? "bg-blue-50 dark:bg-blue-900/20" : idx % 2 === 0 ? "bg-white dark:bg-gray-900" : "bg-gray-50 dark:bg-gray-800/50"} ${showTableActions ? "" : "w-[50px]"}`}
+                                    className={`px-4 py-3 text-center border border-gray-200 dark:border-gray-700 whitespace-nowrap sticky left-0 sm:left-12 z-20 transition-all duration-300 ${editingResponseId === response.id ? "bg-blue-50 dark:bg-blue-900/20" : idx % 2 === 0 ? "bg-white dark:bg-gray-900" : "bg-gray-50 dark:bg-gray-800"}`}
                                   >
-                                    <button
-                                      onClick={() => {
-                                        setActionResponse(response);
-                                        setShowActionMenuModal(true);
-                                      }}
-                                      className="p-2 text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-full transition-all duration-200 shadow-sm border border-gray-200 dark:border-gray-700 active:scale-95"
-                                      title="Response Actions"
-                                    >
-                                      <MoreHorizontal className="w-5 h-5" />
-                                    </button>
+                                    <div className="flex items-center gap-1.5 justify-center">
+                                      {editingResponseId === response.id ? (
+                                        <>
+                                          <button
+                                            onClick={handleSaveEdit}
+                                            disabled={isSaving}
+                                            title="Save Response"
+                                            className="p-1 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30 rounded transition-colors disabled:opacity-50"
+                                          >
+                                            <CheckCircle className="w-4 h-4" />
+                                          </button>
+                                          <button
+                                            onClick={handleCancelEdit}
+                                            disabled={isSaving}
+                                            title="Cancel"
+                                            className="p-1 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors disabled:opacity-50"
+                                          >
+                                            <XCircle className="w-4 h-4" />
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <>
+                                          {/* Focus It */}
+                                          <button
+                                            onClick={() => handleOpenModal(response)}
+                                            className="p-1.5 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all"
+                                            title="Focus It"
+                                          >
+                                            <Maximize className="w-4 h-4" />
+                                          </button>
+
+                                          {(() => {
+                                            const responseTenantId = response.tenantId;
+                                            const currentUserTenantId = user?.tenantId;
+                                            const isActualOwnTenant = user?.role === 'superadmin' || !responseTenantId || (currentUserTenantId && responseTenantId.toString() === currentUserTenantId.toString());
+                                            const isOwnTenant = isActualOwnTenant;
+
+                                            return (
+                                              <>
+                                                {/* View Details */}
+                                                {isOwnTenant && (
+                                                  <button
+                                                    onClick={() => handleViewDetails(response)}
+                                                    className="p-1.5 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-all"
+                                                    title="View Full Details"
+                                                  >
+                                                    <Eye className="w-4 h-4" />
+                                                  </button>
+                                                )}
+
+                                                {/* Review & Discussion */}
+                                                {response.isDispatched && (
+                                                  <button
+                                                    onClick={() => {
+                                                      setChatResponse(response);
+                                                      setShowChatModal(true);
+                                                      setSelectedReviewOptions(prev => ({ ...prev, [response.id]: '' }));
+                                                      setReviewedBy(prev => ({ ...prev, [response.id]: null }));
+                                                    }}
+                                                    className="p-1.5 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all"
+                                                    title="Review & Discussion"
+                                                  >
+                                                    <MessageCircle className="w-4 h-4" />
+                                                  </button>
+                                                )}
+
+                                                {/* Edit & Delete - Admin only */}
+                                                {!isGuest && (user?.role === "superadmin" || user?.role === "admin") && isActualOwnTenant && (
+                                                  <>
+                                                    <button
+                                                      onClick={() => handleEditStart(response)}
+                                                      className="p-1.5 text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-all"
+                                                      title="Edit Response"
+                                                    >
+                                                      <Edit className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                      onClick={() => {
+                                                        setDeletingResponseId(response.id);
+                                                        setShowDeleteConfirm(true);
+                                                      }}
+                                                      className="p-1.5 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                                                      title="Delete Response"
+                                                    >
+                                                      <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                  </>
+                                                )}
+                                              </>
+                                            );
+                                          })()}
+                                        </>
+                                      )}
+                                    </div>
                                   </td>
                                   <td
-                                    className={`px-3 py-3 text-center border border-gray-200 dark:border-gray-700 whitespace-nowrap ${editingResponseId === response.id ? "bg-blue-50 dark:bg-blue-900/20" : idx % 2 === 0 ? "bg-white dark:bg-gray-900" : "bg-gray-50 dark:bg-gray-800/50"}`}
+                                    className={`px-3 py-3 text-center border border-gray-200 dark:border-gray-700 whitespace-nowrap ${editingResponseId === response.id ? "bg-blue-50 dark:bg-blue-900/20" : idx % 2 === 0 ? "bg-white dark:bg-gray-900" : "bg-gray-50 dark:bg-gray-800"}`}
                                   >
                                     {/* Dispatch cell content */}
                                     {(() => {
                                       const status = responseStatuses[response.id] || "";
-                                      const canShowDispatch = status === "Direct Ok" || status === "Rework Accepted" || status === "Rework Completed" || status ==="Accepted";
+                                      const canShowDispatch = status === "Direct Ok" || status === "Rework Accepted" || status === "Rework Completed" || status === "Accepted";
                                       // Check submitter based on email/username like other parts of the code
                                       const userEmail = user?.email || "";
                                       const userUsername = user?.username || "";
+                                      const userIdStr = user?._id ? String(user._id) : (user?.id ? String(user.id) : "");
+                                      const creatorId = typeof response.createdBy === 'object'
+                                        ? (response.createdBy as any)?._id || (response.createdBy as any)?.id
+                                        : response.createdBy;
+                                      const creatorIdStr = creatorId ? String(creatorId) : "";
+
                                       const isSubmitter = response.submittedBy === userEmail ||
                                         response.submittedBy === userUsername ||
                                         response.createdBy === userEmail ||
                                         response.createdBy === userUsername ||
-                                        response.submitterContact?.email === userEmail;
+                                        response.submitterContact?.email === userEmail || (creatorIdStr && creatorIdStr === userIdStr);
 
                                       // Debug: Uncomment to see what statuses are being checked
                                       console.log(`Dispatch check for response ${response.id}:`, {
@@ -7792,7 +8261,7 @@ const fetchChatHistory = async (responseId: string) => {
                                               try {
                                                 await apiClient.updateResponse(response.id, { isDispatched: true });
                                                 // Update local state to reflect change immediately
-                                                setResponses(prev => prev.map(r => 
+                                                setResponses(prev => prev.map(r =>
                                                   r.id === response.id ? { ...r, isDispatched: true, dispatchedAt: new Date().toISOString() } : r
                                                 ));
                                               } catch (error) {
@@ -7816,56 +8285,59 @@ const fetchChatHistory = async (responseId: string) => {
                                     <span
                                       className={`px-2 py-1 rounded-full text-xs ${responseStatuses[response.id] === "Rejected"
                                         ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
-                                        : responseStatuses[response.id]?.includes(
-                                          "Rework",
-                                        ) &&
-                                          responseStatuses[response.id] !==
-                                          "Rework Accepted"
+                                        : responseStatuses[response.id]?.includes("Rework") &&
+                                          responseStatuses[response.id] !== "Rework Accepted"
                                           ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300"
-                                          : responseStatuses[response.id] ===
-                                            "Direct Ok" ||
-                                            responseStatuses[response.id] ===
-                                            "Rework Accepted" ||
-                                            responseStatuses[response.id] ===
-                                            "Accepted"
+                                          : responseStatuses[response.id] === "Direct Ok" ||
+                                            responseStatuses[response.id] === "Rework Accepted" ||
+                                            responseStatuses[response.id] === "Accepted"
                                             ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300"
-                                            : "text-gray-500"
+                                            : responseStatuses[response.id] === "Pending Review"
+                                              ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300"
+                                              : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
                                         }`}
                                     >
-                                      {(responseStatuses[response.id] === "Direct Ok" || responseStatuses[response.id] === "Rework Accepted") ? responseStatuses[response.id] : "-"}
+                                      {responseStatuses[response.id] || "Pending Review"}
                                     </span>
                                   </td>
                                   <td className="px-6 py-3 text-sm text-gray-900 dark:text-white font-medium border border-gray-200 dark:border-gray-700 min-w-40 whitespace-nowrap bg-gray-50/50 dark:bg-gray-800/30">
                                     {response.answers?.chassis_number || "-"}
                                   </td>
                                   <td className="px-6 py-3 text-sm border border-gray-200 dark:border-gray-700 min-w-48 whitespace-nowrap bg-gray-50/50 dark:bg-gray-800/30">
-                                    {(response as any).review ? (
-                                      <div className="flex flex-col gap-1">
-                                        <div className="flex items-center gap-2">
-                                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                            (response as any).review.status === 'Accepted' ? 'bg-green-500/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800' :
-                                            (response as any).review.status === 'Rejected' ? 'bg-red-500/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800' :
-                                            'bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800'
-                                          }`}>
-                                            {(response as any).review.status}
-                                          </span>
-                                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                                            by <span className="font-semibold text-gray-700 dark:text-gray-300">{(response as any).review.reviewer}</span>
-                                          </span>
-                                        </div>
-                                        {(response as any).review.flaggedQuestions && (response as any).review.flaggedQuestions.length > 0 && (
-                                          <div className="mt-1 flex flex-wrap gap-1">
-                                            {(response as any).review.flaggedQuestions.map((q: any, i: number) => (
-                                              <span key={i} className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-[10px] text-gray-600 dark:text-gray-400 rounded border border-gray-200 dark:border-gray-700 line-clamp-1" title={q}>
-                                                {q}
-                                              </span>
-                                            ))}
+                                    {(() => {
+                                      const reviewObj = (response as any).review || (reviewedBy[response.id] ? {
+                                        status: reviewedBy[response.id]?.option || reviewedBy[response.id]?.status,
+                                        reviewer: reviewedBy[response.id]?.name || reviewedBy[response.id]?.reviewer || 'Reviewer',
+                                        flaggedQuestions: reviewedBy[response.id]?.flaggedQuestions || []
+                                      } : null);
+
+                                      return reviewObj ? (
+                                        <div className="flex flex-col gap-1">
+                                          <div className="flex items-center gap-2">
+                                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${String(reviewObj.status).toLowerCase().trim() === 'accepted' ? 'bg-green-500/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800' :
+                                              String(reviewObj.status).toLowerCase().trim() === 'rejected' ? 'bg-red-500/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800' :
+                                                'bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800'
+                                              }`}>
+                                              {reviewObj.status}
+                                            </span>
+                                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                                              by <span className="font-semibold text-gray-700 dark:text-gray-300">{reviewObj.reviewer}</span>
+                                            </span>
                                           </div>
-                                        )}
-                                      </div>
-                                    ) : (
-                                      <span className="text-gray-400 italic text-xs">No review yet</span>
-                                    )}
+                                          {reviewObj.flaggedQuestions && reviewObj.flaggedQuestions.length > 0 && (
+                                            <div className="mt-1 flex flex-wrap gap-1">
+                                              {reviewObj.flaggedQuestions.map((q: any, i: number) => (
+                                                <span key={i} className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-[10px] text-gray-600 dark:text-gray-400 rounded border border-gray-200 dark:border-gray-700 line-clamp-1" title={q}>
+                                                  {q}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <span className="text-gray-400 italic text-xs">No review yet</span>
+                                      );
+                                    })()}
                                   </td>
                                   <td className="px-6 py-3 text-sm text-gray-600 dark:text-gray-400 font-medium border border-gray-200 dark:border-gray-700 min-w-40 whitespace-nowrap">
                                     {getResponseTimestamp(response)
@@ -7945,34 +8417,34 @@ const fetchChatHistory = async (responseId: string) => {
                                                 : ""
                                               }`}
                                           >
-                                             {isEditing ? (
-                                               <input
-                                                 type="text"
-                                                 value={typeof editFormData[q.id] === 'object' && 'status' in editFormData[q.id] ? editFormData[q.id].status : (editFormData[q.id] ? (typeof editFormData[q.id] === 'string' ? editFormData[q.id] : JSON.stringify(editFormData[q.id], null, 2)) : "")}
-                                                 onChange={(e) => {
-                                                   const val = e.target.value;
-                                                   if (editFormData[q.id] && typeof editFormData[q.id] === 'object' && 'status' in editFormData[q.id]) {
-                                                     setEditFormData({
-                                                       ...editFormData,
-                                                       [q.id]: { ...editFormData[q.id], status: val },
-                                                     });
-                                                   } else {
-                                                     let parsed;
-                                                     try {
-                                                       parsed = JSON.parse(val);
-                                                     } catch {
-                                                       parsed = val;
-                                                     }
-                                                     setEditFormData({
-                                                       ...editFormData,
-                                                       [q.id]: parsed,
-                                                     });
-                                                   }
-                                                 }}
-                                                 className="w-full px-2 py-1 border border-blue-400 dark:border-blue-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                 placeholder="Enter answer"
-                                               />
-                                             ) : (
+                                            {isEditing ? (
+                                              <input
+                                                type="text"
+                                                value={typeof editFormData[q.id] === 'object' && 'status' in editFormData[q.id] ? editFormData[q.id].status : (editFormData[q.id] ? (typeof editFormData[q.id] === 'string' ? editFormData[q.id] : JSON.stringify(editFormData[q.id], null, 2)) : "")}
+                                                onChange={(e) => {
+                                                  const val = e.target.value;
+                                                  if (editFormData[q.id] && typeof editFormData[q.id] === 'object' && 'status' in editFormData[q.id]) {
+                                                    setEditFormData({
+                                                      ...editFormData,
+                                                      [q.id]: { ...editFormData[q.id], status: val },
+                                                    });
+                                                  } else {
+                                                    let parsed;
+                                                    try {
+                                                      parsed = JSON.parse(val);
+                                                    } catch {
+                                                      parsed = val;
+                                                    }
+                                                    setEditFormData({
+                                                      ...editFormData,
+                                                      [q.id]: parsed,
+                                                    });
+                                                  }
+                                                }}
+                                                className="w-full px-2 py-1 border border-blue-400 dark:border-blue-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                placeholder="Enter answer"
+                                              />
+                                            ) : (
                                               <div className="flex flex-col gap-1 max-w-[250px] overflow-auto max-h-[250px]">
                                                 {renderAnswerDisplay(answer, q)}
                                                 {q.trackResponseRank &&
@@ -8039,11 +8511,7 @@ const fetchChatHistory = async (responseId: string) => {
       <CascadingFilterModal
         isOpen={showFilterModal}
         onClose={() => setShowFilterModal(false)}
-        questions={
-          form?.sections?.[0]?.questions?.filter(
-            (q: any) => !q.parentId && !q.showWhen?.questionId,
-          ) || []
-        }
+        questions={allQuestionsWithSections}  // Pass all questions from all sections
         responses={responses}
         onApplyFilters={(filters) => {
           const { dates, locations, ...questionFilters } = filters as any;
@@ -8301,7 +8769,7 @@ const fetchChatHistory = async (responseId: string) => {
                   if (last5.length === 0) {
                     return (
                       <div className="col-span-full flex flex-col items-center justify-center min-h-64 py-12">
-                        <Users className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-4" />
+                        <UsersIcon className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-4" />
                         <p className="text-gray-600 dark:text-gray-400 font-medium">
                           No responses to compare
                         </p>
@@ -8649,7 +9117,7 @@ const fetchChatHistory = async (responseId: string) => {
               <div className="card p-6">
                 {filteredResponses.length === 0 ? (
                   <div className="flex flex-col items-center justify-center min-h-96 py-12">
-                    <Users className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-4" />
+                    <UsersIcon className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-4" />
                     <p className="text-gray-600 dark:text-gray-400 font-medium">
                       No responses to compare
                     </p>
@@ -8904,7 +9372,7 @@ const fetchChatHistory = async (responseId: string) => {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <div className="p-4 space-y-2">
               <div className="px-2 py-1 mb-2">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Selected Response</p>
@@ -8914,14 +9382,33 @@ const fetchChatHistory = async (responseId: string) => {
               </div>
 
               {(() => {
-                const responseTenantId = actionResponse.tenantId;
-                const currentUserTenantId = user?.tenantId;
-                const isOwnTenant = user?.role === 'superadmin' || 
-                  !responseTenantId || 
+                const isOwnTenant = user?.role === 'superadmin' ||
+                  user?.role === 'admin' ||
+                  user?.role === 'subadmin' ||
+                  user?.role === 'inspector' ||
+                  !responseTenantId ||
                   (currentUserTenantId && responseTenantId.toString() === currentUserTenantId.toString());
-                
+
+                const isActualOwnTenant = user?.role === 'superadmin' ||
+                  !responseTenantId ||
+                  (currentUserTenantId && responseTenantId.toString() === currentUserTenantId.toString());
+
                 return (
                   <>
+                    {/* Focus It */}
+                    <button
+                      onClick={() => {
+                        handleOpenModal(actionResponse);
+                        setShowActionMenuModal(false);
+                      }}
+                      className="w-full flex items-center gap-3 p-3.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-gray-700 dark:text-gray-200 rounded-xl transition-colors font-semibold text-sm"
+                    >
+                      <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg text-blue-600 dark:text-blue-400">
+                        <Maximize className="w-4 h-4" />
+                      </div>
+                      FOCUS IT
+                    </button>
+
                     {/* View Details */}
                     {isOwnTenant && (
                       <button
@@ -8958,7 +9445,7 @@ const fetchChatHistory = async (responseId: string) => {
                     )}
 
                     {/* Edit - Admin only */}
-                    {!isGuest && (user?.role === "superadmin" || user?.role === "admin") && isOwnTenant && (
+                    {!isGuest && (user?.role === "superadmin" || user?.role === "admin") && isActualOwnTenant && (
                       <button
                         onClick={() => {
                           handleEditStart(actionResponse);
@@ -8974,7 +9461,7 @@ const fetchChatHistory = async (responseId: string) => {
                     )}
 
                     {/* Delete - Admin only */}
-                    {!isGuest && (user?.role === "superadmin" || user?.role === "admin") && isOwnTenant && (
+                    {!isGuest && (user?.role === "superadmin" || user?.role === "admin") && isActualOwnTenant && (
                       <button
                         onClick={() => {
                           setDeletingResponseId(actionResponse.id);
@@ -8993,7 +9480,7 @@ const fetchChatHistory = async (responseId: string) => {
                 );
               })()}
             </div>
-            
+
             <div className="p-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-700 text-center">
               <button
                 onClick={() => {
@@ -9033,13 +9520,12 @@ const fetchChatHistory = async (responseId: string) => {
       {/* Toast Notification */}
       {toast && (
         <div
-          className={`fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg text-white font-medium z-50 animate-fadeIn ${
-            toast.type === "success"
-              ? "bg-green-500 dark:bg-green-600"
-              : toast.type === "info"
+          className={`fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg text-white font-medium z-50 animate-fadeIn ${toast.type === "success"
+            ? "bg-green-500 dark:bg-green-600"
+            : toast.type === "info"
               ? "bg-blue-500 dark:bg-blue-600"
               : "bg-red-500 dark:bg-red-600"
-          }`}
+            }`}
         >
           <div className="flex items-center gap-2">
             {toast.type === "success" ? (
@@ -9117,8 +9603,8 @@ const fetchChatHistory = async (responseId: string) => {
                     const badgeClass = isAccepted
                       ? 'bg-green-500/20 border-green-400 text-green-100'
                       : isRejected
-                      ? 'bg-red-500/20 border-red-400 text-red-100'
-                      : 'bg-yellow-500/20 border-yellow-400 text-yellow-100';
+                        ? 'bg-red-500/20 border-red-400 text-red-100'
+                        : 'bg-yellow-500/20 border-yellow-400 text-yellow-100';
 
                     const scoreVal = performanceScores[chatResponse?.submittedBy || ''] ??
                       performanceScores[(chatResponse?.createdBy as any)?._id || chatResponse?.createdBy as string || ''];
@@ -9129,7 +9615,7 @@ const fetchChatHistory = async (responseId: string) => {
                           <span className="font-bold">Status:</span>{' '}
                           {emoji} {reviewOption} by {reviewerName}
                         </span>
-                        
+
                       </div>
                     );
                   })()}
@@ -9137,67 +9623,83 @@ const fetchChatHistory = async (responseId: string) => {
                   {/* === BEFORE REVIEW: Show 3 buttons or "pending" state === */}
                   {!reviewSubmitted[`${String(user?._id)}-${String(chatResponse?.id)}`] &&
                     !reviewedBy[chatResponse?.id || ''] &&
-                    responseStatuses[chatResponse?.id] === "Direct Ok" &&
+                    (responseStatuses[chatResponse?.id] === "Direct Ok" ||
+                      responseStatuses[chatResponse?.id] === "Rework Accepted" ||
+                      responseStatuses[chatResponse?.id] === "Accepted" ||
+                      responseStatuses[chatResponse?.id] === "Pending Review" ||
+                      responseStatuses[chatResponse?.id] === "Rework Completed") &&
                     (() => {
                       const userEmail = user?.email || "";
                       const userUsername = user?.username || "";
+                      const userId = user?._id || user?.id;
+                      const userIdStr = userId ? String(userId) : "";
+                      const creatorId = typeof chatResponse?.createdBy === "object"
+                        ? (chatResponse.createdBy as any)?._id || (chatResponse.createdBy as any)?.id
+                        : chatResponse?.createdBy;
+                      const creatorIdStr = creatorId ? String(creatorId) : "";
+
                       const isSubmitter = chatResponse?.submittedBy === userEmail ||
                         chatResponse?.submittedBy === userUsername ||
-                        chatResponse?.submitterContact?.email === userEmail;
+                        chatResponse?.submitterContact?.email === userEmail ||
+                        (creatorIdStr && creatorIdStr === userIdStr);
                       return !isSubmitter;
                     })() && (
-                    pendingReviewOption ? (
-                      /* Pending state: show label + cancel */
-                      <div className="flex items-center gap-2">
-                        <span className={`px-3 py-1 text-xs font-bold rounded ${
-                          pendingReviewOption === 'Rejected' ? 'bg-red-500/30 text-red-100 border border-red-400' : 'bg-yellow-500/30 text-yellow-100 border border-yellow-400'
-                        }`}>
-                          {pendingReviewOption === 'Rejected' ? '❌' : '🔄'} {pendingReviewOption} — Select questions below
-                        </span>
-                        <button
-                          onClick={() => setPendingReviewOption(null)}
-                          className="px-2 py-1 text-xs font-bold rounded bg-white/10 text-white hover:bg-white/20 transition-all"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      /* Normal state: 3 review buttons - Only show if user is not the submitter */
-                      (() => {
-                        const userEmail = user?.email || "";
-                        const userUsername = user?.username || "";
-                        const isSubmitter = chatResponse?.submittedBy === userEmail ||
-                          chatResponse?.submittedBy === userUsername ||
-                          chatResponse?.submitterContact?.email === userEmail;
+                      pendingReviewOption ? (
+                        /* Pending state: show label + cancel */
+                        <div className="flex items-center gap-2">
+                          <span className={`px-3 py-1 text-xs font-bold rounded ${pendingReviewOption === 'Rejected' ? 'bg-red-500/30 text-red-100 border border-red-400' : 'bg-yellow-500/30 text-yellow-100 border border-yellow-400'
+                            }`}>
+                            {pendingReviewOption === 'Rejected' ? '❌' : '🔄'} {pendingReviewOption} — Select questions below
+                          </span>
+                          <button
+                            onClick={() => setPendingReviewOption(null)}
+                            className="px-2 py-1 text-xs font-bold rounded bg-white/10 text-white hover:bg-white/20 transition-all"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        /* Normal state: 3 review buttons - Only show if user is not the submitter */
+                        (() => {
+                          const userEmail = user?.email || "";
+                          const userUsername = user?.username || "";
+                          const userIdStr = user?._id ? String(user._id) : (user?.id ? String(user.id) : "");
+                          const creatorId = typeof chatResponse?.createdBy === "object"
+                            ? (chatResponse.createdBy as any)?._id || (chatResponse.createdBy as any)?.id
+                            : chatResponse?.createdBy;
+                          const creatorIdStr = creatorId ? String(creatorId) : "";
 
-                        return !isSubmitter ? (
-                          <div className="flex gap-2">
-                            {['Accepted', 'Rejected', 'Rework'].map((option) => (
-                              <button
-                                key={option}
-                                onClick={() => {
-                                  if (option === 'Accepted') {
-                                    handleReviewSubmit(chatResponse!.id, option);
-                                  } else {
-                                    setPendingReviewOption(option);
-                                  }
-                                }}
-                                className={`px-3 py-1 text-xs font-bold rounded transition-all border ${
-                                  option === 'Accepted'
+                          const isSubmitter = chatResponse?.submittedBy === userEmail ||
+                            chatResponse?.submittedBy === userUsername ||
+                            chatResponse?.submitterContact?.email === userEmail || (creatorIdStr && creatorIdStr === userIdStr);
+
+                          return !isSubmitter ? (
+                            <div className="flex gap-2">
+                              {['Accepted', 'Rejected', 'Rework'].map((option) => (
+                                <button
+                                  key={option}
+                                  onClick={() => {
+                                    if (option === 'Accepted') {
+                                      handleReviewSubmit(chatResponse!.id, option);
+                                    } else {
+                                      setPendingReviewOption(option);
+                                    }
+                                  }}
+                                  className={`px-3 py-1 text-xs font-bold rounded transition-all border ${option === 'Accepted'
                                     ? 'bg-green-500/30 border-green-400 text-green-100 hover:bg-green-500/50'
                                     : option === 'Rejected'
-                                    ? 'bg-red-500/30 border-red-400 text-red-100 hover:bg-red-500/50'
-                                    : 'bg-yellow-500/30 border-yellow-400 text-yellow-100 hover:bg-yellow-500/50'
-                                }`}
-                              >
-                                {option === 'Accepted' ? '✅' : option === 'Rejected' ? '❌' : '🔄'} {option}
-                              </button>
-                            ))}
-                          </div>
-                        ) : null;
-                      })()
-                    )
-                  )}
+                                      ? 'bg-red-500/30 border-red-400 text-red-100 hover:bg-red-500/50'
+                                      : 'bg-yellow-500/30 border-yellow-400 text-yellow-100 hover:bg-yellow-500/50'
+                                    }`}
+                                >
+                                  {option === 'Accepted' ? '✅' : option === 'Rejected' ? '❌' : '🔄'} {option}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null;
+                        })()
+                      )
+                    )}
 
                   <button
                     onClick={() => {
@@ -9238,9 +9740,9 @@ const fetchChatHistory = async (responseId: string) => {
                       return 'N/A';
                     })()}</p>
 
-                     {/* Show question selection panel when Rejected/Rework is pending */}
-                      {pendingReviewOption && (
-  <>
+                    {/* Show question selection panel when Rejected/Rework is pending */}
+                    {pendingReviewOption && (
+                      <>
                         <div className="space-y-2">
                           <div className={`flex items-center gap-2 mb-3 px-3 py-2 rounded-lg ${pendingReviewOption === 'Rejected' ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800' : 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'}`}>
                             <span className="text-lg">{pendingReviewOption === 'Rejected' ? '❌' : '🔄'}</span>
@@ -9255,9 +9757,9 @@ const fetchChatHistory = async (responseId: string) => {
                             Select Questions to Flag
                           </label>
                           <div className="max-h-[400px] overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-xl shadow-inner scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 bg-white dark:bg-gray-800">
-                            {form?.sections?.flatMap(s => 
-  (s.questions || []).filter((q: any) => !q.parentId && !q.showWhen?.questionId)
-).map(q => (
+                            {form?.sections?.flatMap(s =>
+                              (s.questions || []).filter((q: any) => !q.parentId && !q.showWhen?.questionId)
+                            ).map(q => (
                               <div key={q.id} className="border-b border-gray-100 dark:border-gray-700 last:border-0">
                                 <div className="flex items-start gap-3 p-3 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/10 cursor-default transition-colors group">
                                   <label className="mt-1 cursor-pointer">
@@ -9300,209 +9802,214 @@ const fetchChatHistory = async (responseId: string) => {
                           </div>
                         </div>
 
-                  <div className="pt-6 flex items-center justify-between">
+                        <div className="pt-6 flex items-center justify-between">
                           <button
-                      onClick={() => setChatFilters({ chassisNumber: "", location: "", questions: [], selectedCategories: {}, zoneType: "both", suggestedAnswers: {} })}
-                      className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
-                    >
-                      Clear All Filters
-                    </button>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setShowChatModal(false)}
-                        className="px-4 py-2 text-xs font-bold text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                            onClick={() => setChatFilters({ chassisNumber: "", location: "", questions: [], selectedCategories: {}, zoneType: "both", suggestedAnswers: {} })}
+                            className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
                           >
-                        Cancel
-                      </button>
-                      <button 
-                        onClick={() => setShowChatModal(false)}
-                        className="px-4 py-2 text-xs font-extrabold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all active:scale-95"
-                      >
-                        Apply Filters
+                            Clear All Filters
                           </button>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => setShowChatModal(false)}
+                              className="px-4 py-2 text-xs font-bold text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => setShowChatModal(false)}
+                              className="px-4 py-2 text-xs font-extrabold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all active:scale-95"
+                            >
+                              Apply Filters
+                            </button>
+                          </div>
                         </div>
-                    </div>
                         <p className="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold mt-2">
                           ✏️ Type your message below and click <b>Send Feedback</b> to submit the review.
                         </p>
-                        </>)}
+                      </>)}
 
-                 </div>
-                 </div>
-                 </div>
-                    {/* Right Column: Chat history and input */}
-                    <div className="flex-1 flex flex-col bg-white dark:bg-gray-900 border-t md:border-t-0 p-6 overflow-hidden">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
-                          Message Center
-                        </h3>
-                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-green-100 dark:bg-green-900/30 rounded-full border border-green-200 dark:border-green-800">
-                          <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                          <span className="text-[10px] font-bold text-green-700 dark:text-green-400">Live Context</span>
-                        </div>
-                      </div>
-
-                      <div className="flex-1 bg-gray-50 dark:bg-gray-800/20 rounded-2xl border border-gray-100 dark:border-gray-800 p-4 mb-4 overflow-y-auto space-y-4 flex flex-col scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700">
-                        {chatMessages.length === 0 ? (
-                          <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-3 opacity-50">
-                            <div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-full ring-8 ring-gray-50 dark:ring-gray-900/50">
-                              <MessageCircle className="w-10 h-10" />
-                            </div>
-                            <div className="text-center">
-                              <p className="text-sm font-bold text-gray-600 dark:text-gray-300">No active conversation</p>
-                              <p className="text-xs">Send a message to start the thread.</p>
-                            </div>
-                          </div>
-                        ) : (
-                          chatMessages.map((msg, i) => (
-                            <div key={i} className={`flex flex-col ${String(msg.from?._id || msg.from) === String(user?._id || (user as any)?.id) ? 'items-end' : 'items-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
-                              <div className={`max-w-[90%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed shadow-sm ${String(msg.from?._id || msg.from) === String(user?._id || (user as any)?.id)
-                                ? 'bg-[#dcf8c6] text-gray-900 rounded-br-lg rounded-tr-lg rounded-tl-sm'
-                                : 'bg-white dark:bg-gray-100 text-gray-900 border border-gray-100 dark:border-gray-700 rounded-bl-lg rounded-tl-lg rounded-tr-sm'
-                                }`}>
-                                {msg.questionContexts && msg.questionContexts.length > 0 ? (
-                                  <div className="space-y-3">
-                                    {msg.questionContexts.map((ctx: any, idx: number) => (
-                                      <div key={idx} className="space-y-2">
-                                         <p className="text-[12px] font-bold text-gray-500 dark:text-gray-400 border-b border-indigo-100 dark:border-indigo-800/50 pb-0.5">
-                                           {ctx.title}
-                                        </p> 
-                                       
-                                         {ctx.suggestion && (
-                                           <div className="mt-1 p-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-100 dark:border-amber-800">
-                                             <p className="text-[10px] font-bold text-amber-600 uppercase mb-1">Review Feedback:</p>
-                                             {ctx.question ? (
-                                               <QuestionSuggestionRenderer
-                                                 question={ctx.question}
-                                                 value={ctx.suggestion}
-                                                 currentAnswer={ctx.answer}
-                                                 onChange={(newSuggestion) => {
-                                                   // Update the suggestion in chatFilters
-                                                   setChatFilters(prev => ({
-                                                     ...prev,
-                                                     suggestedAnswers: {
-                                                       ...prev.suggestedAnswers,
-                                                       [ctx.question.id]: newSuggestion
-                                                     }
-                                                   }));
-                                                 }}
-                                               />
-                                             ) : (
-                                               // Fallback to read-only display if question data is missing
-                                               <div className="text-xs text-gray-600 dark:text-gray-400">
-                                                 {renderAnswerDisplay(ctx.suggestion, { type: 'text' } as any)}
-                                               </div>
-                                             )}
-                                           </div>
-                                         )}
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : msg.questionTitles && msg.questionTitles.length > 0 && (
-                                  <div className="mb-2 p-2 bg-indigo-50/50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100/50 dark:border-indigo-800/30">
-                                    <p className="text-[10px] uppercase font-black text-indigo-500 dark:text-indigo-400 mb-1.5 flex items-center gap-1">
-                                      <Filter className="w-2.5 h-2.5" />
-                                      Linked Questions
-                                    </p>
-                                    <div className="flex flex-wrap gap-1">
-                                      {msg.questionTitles.map((title: string, idx: number) => (
-                                        <span key={idx} className="px-1.5 py-0.5 bg-white dark:bg-gray-700 text-[9px] font-bold text-indigo-600 dark:text-indigo-300 rounded-md border border-indigo-100 dark:border-indigo-800">
-                                          {title}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                                {renderMessageWithImages(msg.message)}
-                              </div>
-                              <div className="flex items-center gap-1 mt-1.5 px-1 opacity-60">
-                                <span className="text-[9px] font-medium text-gray-500 dark:text-gray-400">
-                                  {String(msg.from?._id || msg.from) === String(user?._id || (user as any)?.id) ? 'You' : (msg.from?.name || 'Inspector')} • {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </span>
-                                {String(msg.from?._id || msg.from) !== String(user?._id || (user as any)?.id) && (
-                                  <button
-                                    onClick={() => {
-                                      setNewMessage(`Replying to: "${msg.message.substring(0, 30)}..." \n`);
-                                      const textarea = document.querySelector('textarea');
-                                      if (textarea) textarea.focus();
-                                    }}
-                                    className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:underline ml-2 pointer-events-auto"
-                                  >
-                                    <Reply className="w-3 h-3" />
-                                    Reply
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-
-                       {(() => {
-                         const userEmail = user?.email || "";
-                         const userUsername = user?.username || "";
-                         const isSubmitter = chatResponse?.submittedBy === userEmail ||
-                           chatResponse?.submittedBy === userUsername ||
-                           chatResponse?.submitterContact?.email === userEmail;
-
-                         // For submitters, only show message input if no review option is pending
-                         if (isSubmitter && pendingReviewOption) {
-                           return null;
-                         }
-
-                         return (
-                           <div className="space-y-3">
-                             <div className="relative">
-                               <textarea
-                                 value={newMessage}
-                                 onChange={(e) => setNewMessage(e.target.value)}
-                                 placeholder={isSubmitter ? "Send a message..." : "Type your feedback to the inspector..."}
-                                 className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-800 border-2 border-transparent focus:border-indigo-500 dark:focus:border-indigo-400 rounded-2xl text-sm focus:ring-0 transition-all resize-none shadow-inner text-gray-800 dark:text-gray-200"
-                                 rows={3}
-                               />
-                             </div>
-                             <button
-                               onClick={async () => {
-                                 // If a Rejected/Rework review is pending and user is not submitter, send message + submit review together
-                                 if (pendingReviewOption && !isSubmitter) {
-                                   setPendingReviewOption(null); // Clear pending state immediately
-                                   const reviewNote = newMessage.trim() || `Please review and correct the flagged questions (${pendingReviewOption}).`;
-                                   await handleSendMessage(reviewNote);
-                                   await handleReviewSubmit(chatResponse!.id, pendingReviewOption);
-                                 } else {
-                                   await handleSendMessage();
-                                 }
-                               }}
-                               disabled={isSendingMessage || !newMessage.trim()}
-                               className={`w-full flex items-center justify-center gap-2 px-6 py-3.5 text-white text-sm font-black rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] shadow-xl ${
-                                 pendingReviewOption && !isSubmitter
-                                   ? (pendingReviewOption === 'Rejected'
-                                       ? 'bg-red-600 hover:bg-red-700 shadow-red-200 dark:shadow-none'
-                                       : 'bg-yellow-600 hover:bg-yellow-700 shadow-yellow-200 dark:shadow-none')
-                                   : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200 dark:shadow-none'
-                               }`}
-                             >
-                               {isSendingMessage ? (
-                                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                               ) : (
-                                 <>
-                                   <span>{pendingReviewOption && !isSubmitter ? `Send Feedback & Submit ${pendingReviewOption}` : 'Send Message'}</span>
-                                   <ChevronRight className="w-4 h-4" />
-                                 </>
-                               )}
-                             </button>
-                             <div className="flex justify-center gap-2">
-                               <p className="text-[10px] text-center text-gray-400 font-medium">
-                                 Message will be sent to <b>{isSubmitter ? 'the reviewer' : (chatResponse.submittedBy || 'the submitter')}</b>
-                               </p>
-                             </div>
-                           </div>
-                         );
-                       })()}
-                    </div>
+                  </div>
                 </div>
               </div>
+              {/* Right Column: Chat history and input */}
+              <div className="flex-1 flex flex-col bg-white dark:bg-gray-900 border-t md:border-t-0 p-6 overflow-hidden">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+                    Message Center
+                  </h3>
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 bg-green-100 dark:bg-green-900/30 rounded-full border border-green-200 dark:border-green-800">
+                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                    <span className="text-[10px] font-bold text-green-700 dark:text-green-400">Live Context</span>
+                  </div>
+                </div>
+
+                <div className="flex-1 bg-gray-50 dark:bg-gray-800/20 rounded-2xl border border-gray-100 dark:border-gray-800 p-4 mb-4 overflow-y-auto space-y-4 flex flex-col scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700">
+                  {chatMessages.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-3 opacity-50">
+                      <div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-full ring-8 ring-gray-50 dark:ring-gray-900/50">
+                        <MessageCircle className="w-10 h-10" />
+                      </div>
+                      <div className="text-center">
+                        <p className="text-sm font-bold text-gray-600 dark:text-gray-300">No active conversation</p>
+                        <p className="text-xs">Send a message to start the thread.</p>
+                      </div>
+                    </div>
+                  ) : (
+                    chatMessages.map((msg, i) => (
+                      <div key={i} className={`flex flex-col ${String(msg.from?._id || msg.from) === String(user?._id || (user as any)?.id) ? 'items-end' : 'items-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+                        <div className={`max-w-[90%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed shadow-sm ${String(msg.from?._id || msg.from) === String(user?._id || (user as any)?.id)
+                          ? 'bg-[#dcf8c6] text-gray-900 rounded-br-lg rounded-tr-lg rounded-tl-sm'
+                          : 'bg-white dark:bg-gray-100 text-gray-900 border border-gray-100 dark:border-gray-700 rounded-bl-lg rounded-tl-lg rounded-tr-sm'
+                          }`}>
+                          {msg.questionContexts && msg.questionContexts.length > 0 ? (
+                            <div className="space-y-3">
+                              {msg.questionContexts.map((ctx: any, idx: number) => (
+                                <div key={idx} className="space-y-2">
+                                  <p className="text-[12px] font-bold text-gray-500 dark:text-gray-400 border-b border-indigo-100 dark:border-indigo-800/50 pb-0.5">
+                                    {ctx.title}
+                                  </p>
+
+                                  {ctx.suggestion && (
+                                    <div className="mt-1 p-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-100 dark:border-amber-800">
+                                      <p className="text-[10px] font-bold text-amber-600 uppercase mb-1">Review Feedback:</p>
+                                      {ctx.question ? (
+                                        <QuestionSuggestionRenderer
+                                          question={ctx.question}
+                                          value={ctx.suggestion}
+                                          currentAnswer={ctx.answer}
+                                          onChange={(newSuggestion) => {
+                                            // Update the suggestion in chatFilters
+                                            setChatFilters(prev => ({
+                                              ...prev,
+                                              suggestedAnswers: {
+                                                ...prev.suggestedAnswers,
+                                                [ctx.question.id]: newSuggestion
+                                              }
+                                            }));
+                                          }}
+                                        />
+                                      ) : (
+                                        // Fallback to read-only display if question data is missing
+                                        <div className="text-xs text-gray-600 dark:text-gray-400">
+                                          {renderAnswerDisplay(ctx.suggestion, { type: 'text' } as any)}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : msg.questionTitles && msg.questionTitles.length > 0 && (
+                            <div className="mb-2 p-2 bg-indigo-50/50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100/50 dark:border-indigo-800/30">
+                              <p className="text-[10px] uppercase font-black text-indigo-500 dark:text-indigo-400 mb-1.5 flex items-center gap-1">
+                                <Filter className="w-2.5 h-2.5" />
+                                Linked Questions
+                              </p>
+                              <div className="flex flex-wrap gap-1">
+                                {msg.questionTitles.map((title: string, idx: number) => (
+                                  <span key={idx} className="px-1.5 py-0.5 bg-white dark:bg-gray-700 text-[9px] font-bold text-indigo-600 dark:text-indigo-300 rounded-md border border-indigo-100 dark:border-indigo-800">
+                                    {title}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {renderMessageWithImages(msg.message)}
+                        </div>
+                        <div className="flex items-center gap-1 mt-1.5 px-1 opacity-60">
+                          <span className="text-[9px] font-medium text-gray-500 dark:text-gray-400">
+                            {String(msg.from?._id || msg.from) === String(user?._id || (user as any)?.id) ? 'You' : (msg.from?.name || 'Inspector')} • {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          {String(msg.from?._id || msg.from) !== String(user?._id || (user as any)?.id) && (
+                            <button
+                              onClick={() => {
+                                setNewMessage(`Replying to: "${msg.message.substring(0, 30)}..." \n`);
+                                const textarea = document.querySelector('textarea');
+                                if (textarea) textarea.focus();
+                              }}
+                              className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:underline ml-2 pointer-events-auto"
+                            >
+                              <Reply className="w-3 h-3" />
+                              Reply
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {(() => {
+                  const userEmail = user?.email || "";
+                  const userUsername = user?.username || "";
+                  const userIdStr = user?._id ? String(user._id) : (user?.id ? String(user.id) : "");
+                  const creatorId = typeof chatResponse?.createdBy === "object"
+                    ? (chatResponse.createdBy as any)?._id || (chatResponse.createdBy as any)?.id
+                    : chatResponse?.createdBy;
+                  const creatorIdStr = creatorId ? String(creatorId) : "";
+
+                  const isSubmitter = chatResponse?.submittedBy === userEmail ||
+                    chatResponse?.submittedBy === userUsername ||
+                    chatResponse?.submitterContact?.email === userEmail || (creatorIdStr && creatorIdStr === userIdStr);
+
+                  // For submitters, only show message input if no review option is pending
+                  if (isSubmitter && pendingReviewOption) {
+                    return null;
+                  }
+
+                  return (
+                    <div className="space-y-3">
+                      <div className="relative">
+                        <textarea
+                          value={newMessage}
+                          onChange={(e) => setNewMessage(e.target.value)}
+                          placeholder={isSubmitter ? "Send a message..." : "Type your feedback to the inspector..."}
+                          className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-800 border-2 border-transparent focus:border-indigo-500 dark:focus:border-indigo-400 rounded-2xl text-sm focus:ring-0 transition-all resize-none shadow-inner text-gray-800 dark:text-gray-200"
+                          rows={3}
+                        />
+                      </div>
+                      <button
+                        onClick={async () => {
+                          // If a Rejected/Rework review is pending and user is not submitter, send message + submit review together
+                          if (pendingReviewOption && !isSubmitter) {
+                            setPendingReviewOption(null); // Clear pending state immediately
+                            const reviewNote = newMessage.trim() || `Please review and correct the flagged questions (${pendingReviewOption}).`;
+                            await handleSendMessage(reviewNote);
+                            await handleReviewSubmit(chatResponse!.id, pendingReviewOption);
+                          } else {
+                            await handleSendMessage();
+                          }
+                        }}
+                        disabled={isSendingMessage || !newMessage.trim()}
+                        className={`w-full flex items-center justify-center gap-2 px-6 py-3.5 text-white text-sm font-black rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] shadow-xl ${pendingReviewOption && !isSubmitter
+                          ? (pendingReviewOption === 'Rejected'
+                            ? 'bg-red-600 hover:bg-red-700 shadow-red-200 dark:shadow-none'
+                            : 'bg-yellow-600 hover:bg-yellow-700 shadow-yellow-200 dark:shadow-none')
+                          : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200 dark:shadow-none'
+                          }`}
+                      >
+                        {isSendingMessage ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <>
+                            <span>{pendingReviewOption && !isSubmitter ? `Send Feedback & Submit ${pendingReviewOption}` : 'Send Message'}</span>
+                            <ChevronRight className="w-4 h-4" />
+                          </>
+                        )}
+                      </button>
+                      <div className="flex justify-center gap-2">
+                        <p className="text-[10px] text-center text-gray-400 font-medium">
+                          Message will be sent to <b>{isSubmitter ? 'the reviewer' : (chatResponse.submittedBy || 'the submitter')}</b>
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
+          </div>
+        </div>
       )}
     </div>
   );

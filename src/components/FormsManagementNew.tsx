@@ -511,8 +511,8 @@ export default function FormsManagementNew() {
     navigate("/forms/create");
   };
 
-  const handleExportTemplate = () => {
-    downloadFormImportTemplate();
+  const handleExportTemplate = async () => {
+    await downloadFormImportTemplate();
   };
 
   const handleLoadSampleData = async () => {

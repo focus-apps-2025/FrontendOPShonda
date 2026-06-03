@@ -13,8 +13,7 @@ const API_BASE_URL = (() => {
     : "https://3wheelertvsbackend.focusengineeringapp.com/api";
 
   console.log(
-    `🔗 API Base URL: ${baseUrl} (Environment: ${
-      isLocal ? "Local" : "Production"
+    `🔗 API Base URL: ${baseUrl} (Environment: ${isLocal ? "Local" : "Production"
     })`,
   );
   return baseUrl;
@@ -1606,9 +1605,8 @@ class ApiClient {
       query.set("formId", params.formId);
     }
 
-    const endpoint = `/parameters${
-      query.toString() ? `?${query.toString()}` : ""
-    }`;
+    const endpoint = `/parameters${query.toString() ? `?${query.toString()}` : ""
+      }`;
 
     return this.request<{ parameters: any[] }>(endpoint);
   }
@@ -1692,8 +1690,8 @@ class ApiClient {
         console.error("API Error Response:", errorData);
         throw new Error(
           errorData.details ||
-            errorData.error ||
-            `PDF generation failed: ${response.statusText}`,
+          errorData.error ||
+          `PDF generation failed: ${response.statusText}`,
         );
       }
 
@@ -1707,6 +1705,47 @@ class ApiClient {
       throw error;
     }
   }
+
+
+  async generateOPSPDF(data: {
+    htmlContent: string;
+    filename: string;
+  }): Promise<Blob> {
+    console.log('📄 Generating OPS PDF via server...');
+
+    const url = `${this.baseUrl}/pdf/generate-ops`;
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          htmlContent: data.htmlContent,
+          filename: data.filename
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.details || error.error || `Failed to generate OPS PDF: ${response.status}`);
+      }
+
+      return response.blob();
+    } catch (error: any) {
+      console.error('OPS PDF generation error:', error);
+      throw new Error(error.message || 'Failed to generate OPS PDF');
+    }
+  }
+
+  // Add helper method for blob responses if not exists
 
   // Form Invite Management
   async uploadInvites(formId: string, formData: FormData) {
@@ -1796,9 +1835,8 @@ class ApiClient {
       });
     }
 
-    const endpoint = `/forms/${formId}/invites${
-      query.toString() ? `?${query.toString()}` : ""
-    }`;
+    const endpoint = `/forms/${formId}/invites${query.toString() ? `?${query.toString()}` : ""
+      }`;
     const url = `${this.baseUrl}${endpoint}`;
 
     const headers: Record<string, string> = {
@@ -2154,7 +2192,7 @@ class ApiClient {
     if (params?.limit) query.set("limit", params.limit.toString());
     return this.request<{ data: any }>(
       "/hr/attendance/my-history" +
-        (query.toString() ? `?${query.toString()}` : ""),
+      (query.toString() ? `?${query.toString()}` : ""),
     );
   }
 
@@ -2487,7 +2525,30 @@ class ApiClient {
       }>;
     }>;
   }
+
+
+
+
+  // Add helper method for blob responses if not exists
+  private async postBlob(endpoint: string, data: any): Promise<Blob> {
+    const response = await fetch(`${this.baseURL}${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.getToken()}`
+      },
+      body: JSON.stringify(data)
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to generate PDF');
+    }
+
+    return response.blob();
+  }
 }
+
 
 // Create and export a singleton instance
 export const apiClient = new ApiClient();

@@ -230,10 +230,10 @@ export default function AllResponses() {
   // const [openViewDropdown, setOpenViewDropdown] = useState<string | null>(null);
 
   const handlePDFTypeSelect = (type: 'no-only' | 'yes-only' | 'both' | 'na-only' | 'section' | 'default' | 'responses-view') => {
-  setSelectedPDFType(type);
-  
-  handleDownloadPDF(type);
-};
+    setSelectedPDFType(type);
+
+    handleDownloadPDF(type);
+  };
 
 
   useEffect(() => {
@@ -474,7 +474,7 @@ export default function AllResponses() {
     try {
       // Generate filename
       const fileName = `${selectedForm.title}_${formatTimestamp(selectedResponse.createdAt)}_${type}.xlsx`;
-      
+
       generateResponseExcelReport(
         selectedResponse,
         selectedForm,
@@ -495,8 +495,8 @@ export default function AllResponses() {
   const handleBulkDownloadZip = async () => {
     if (exportingZip) return;
 
-    const formsToDownload = selectedFormIds.length === 0 
-      ? uniqueForms 
+    const formsToDownload = selectedFormIds.length === 0
+      ? uniqueForms
       : uniqueForms.filter(f => selectedFormIds.includes(f.id));
 
     if (formsToDownload.length === 0) {
@@ -508,7 +508,7 @@ export default function AllResponses() {
     try {
       const zip = new JSZip();
       const timestamp = new Date().toISOString().split('T')[0];
-      
+
       showSuccess(`Preparing PDF files for ${formsToDownload.length} forms...`);
 
       let totalResponsesProcessed = 0;
@@ -518,7 +518,7 @@ export default function AllResponses() {
         try {
           const formData = await apiClient.getForm(formItem.id);
           const fullForm = formData.form;
-          
+
           if (!fullForm) continue;
 
           const formResponses = responses.filter(r => {
@@ -529,7 +529,7 @@ export default function AllResponses() {
 
           if (formResponses.length > 0) {
             const formFolder = zip.folder(formItem.title.replace(/[/\\?%*:|"<>]/g, '-'));
-            
+
             for (const response of formResponses) {
               try {
                 const { blob, filename } = await exportResponseToPDFBlob(response, fullForm);
@@ -541,7 +541,7 @@ export default function AllResponses() {
                 }
                 formFolder?.file(finalFilename, blob);
                 totalResponsesProcessed++;
-                
+
                 // Small delay to avoid server strain
                 await new Promise(resolve => setTimeout(resolve, 300));
               } catch (pdfErr) {
@@ -566,7 +566,7 @@ export default function AllResponses() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
+
       showSuccess(`ZIP file with ${totalResponsesProcessed} PDFs downloaded successfully.`);
     } catch (error) {
       console.error("Failed to generate ZIP:", error);
@@ -576,187 +576,187 @@ export default function AllResponses() {
     }
   };
 
- const handleDownloadPDF = async (type?: 'no-only' | 'yes-only' | 'both' | 'na-only' | 'section' | 'default' | 'responses-view') => {
-  if (generatingPDF || !selectedResponse || !selectedForm) {
-    return;
-  }
+  const handleDownloadPDF = async (type?: 'no-only' | 'yes-only' | 'both' | 'na-only' | 'section' | 'default' | 'responses-view') => {
+    if (generatingPDF || !selectedResponse || !selectedForm) {
+      return;
+    }
 
-  setGeneratingPDF(true);
-  
-  // If type is not provided, show the modal
-  if (!type) {
-    setShowDownloadOptions(true);
-    setGeneratingPDF(false);
-    return;
-  }
+    setGeneratingPDF(true);
 
-  try {
-    // For 'section' type, we need section data
-    let sectionQuestionStats: Record<string, any[]> = {};
-    let sectionMainParameters: Record<string, any[]> = {};
+    // If type is not provided, show the modal
+    if (!type) {
+      setShowDownloadOptions(true);
+      setGeneratingPDF(false);
+      return;
+    }
 
-    if (selectedForm.sections && (type === 'both' || type === 'default' || type === 'section')) {
-      selectedForm.sections.forEach((section: any) => {
-        // Get the actual question stats for the current response
-        sectionQuestionStats[section.id] = getSectionYesNoQuestionStats(section.id);
+    try {
+      // For 'section' type, we need section data
+      let sectionQuestionStats: Record<string, any[]> = {};
+      let sectionMainParameters: Record<string, any[]> = {};
 
-        const sectionQuestions = getSectionQuestionsWithFollowUps(section.id);
-        const mainParamsData: any[] = [];
+      if (selectedForm.sections && (type === 'both' || type === 'default' || type === 'section')) {
+        selectedForm.sections.forEach((section: any) => {
+          // Get the actual question stats for the current response
+          sectionQuestionStats[section.id] = getSectionYesNoQuestionStats(section.id);
 
-        // Process each main question in the section
-        sectionQuestions.forEach((mainQuestion: any) => {
-          // Find follow-ups with actual data for this main question
-          const followUpsWithData = mainQuestion.followUpQuestions?.filter((fq: any) => {
-            const answer = selectedResponse.answers?.[fq.id];
-            return answer && typeof answer === 'object' && (
-              answer.remarks ||
-              answer.actionInitiated ||
-              answer.reasonForNotOK ||
-              answer.responsiblePerson ||
-              answer.review ||
-              answer.files
-            );
-          });
+          const sectionQuestions = getSectionQuestionsWithFollowUps(section.id);
+          const mainParamsData: any[] = [];
 
-          // If we have follow-ups with data, create parameter entries
-          if (followUpsWithData && followUpsWithData.length > 0) {
-            followUpsWithData.forEach((followUp: any) => {
-              const answer = selectedResponse.answers?.[followUp.id] || {};
+          // Process each main question in the section
+          sectionQuestions.forEach((mainQuestion: any) => {
+            // Find follow-ups with actual data for this main question
+            const followUpsWithData = mainQuestion.followUpQuestions?.filter((fq: any) => {
+              const answer = selectedResponse.answers?.[fq.id];
+              return answer && typeof answer === 'object' && (
+                answer.remarks ||
+                answer.actionInitiated ||
+                answer.reasonForNotOK ||
+                answer.responsiblePerson ||
+                answer.review ||
+                answer.files
+              );
+            });
 
+            // If we have follow-ups with data, create parameter entries
+            if (followUpsWithData && followUpsWithData.length > 0) {
+              followUpsWithData.forEach((followUp: any) => {
+                const answer = selectedResponse.answers?.[followUp.id] || {};
+
+                mainParamsData.push({
+                  subParam1: mainQuestion.subParam1 || "No parameter set",
+                  remarks: answer.remarks || '',
+                  actionInitiated: answer.actionInitiated || '',
+                  reasonForNotOK: answer.reasonForNotOK || '',
+                  responsiblePerson: answer.responsiblePerson || '',
+                  review: answer.review || '',
+                  files: answer.files || []
+                });
+              });
+            } else {
+              // Add entry even if no follow-up data, but mark as empty
               mainParamsData.push({
                 subParam1: mainQuestion.subParam1 || "No parameter set",
-                remarks: answer.remarks || '',
-                actionInitiated: answer.actionInitiated || '',
-                reasonForNotOK: answer.reasonForNotOK || '',
-                responsiblePerson: answer.responsiblePerson || '',
-                review: answer.review || '',
-                files: answer.files || []
+                remarks: '',
+                actionInitiated: '',
+                reasonForNotOK: '',
+                responsiblePerson: '',
+                review: '',
+                files: []
               });
-            });
-          } else {
-            // Add entry even if no follow-up data, but mark as empty
-            mainParamsData.push({
-              subParam1: mainQuestion.subParam1 || "No parameter set",
-              remarks: '',
-              actionInitiated: '',
-              reasonForNotOK: '',
-              responsiblePerson: '',
-              review: '',
-              files: []
-            });
-          }
+            }
+          });
+
+          sectionMainParameters[section.id] = mainParamsData;
         });
+      }
 
-        sectionMainParameters[section.id] = mainParamsData;
+      // Add chart element IDs for capturing
+      const chartElementIds = [
+        'section-performance-chart',
+        ...availableSections.map(section => `section-chart-${section.id}`)
+      ];
+
+      // Use the current filtered section stats from the dashboard
+      const currentSectionStats = filteredSectionStats;
+
+      // Prepare section summary rows for PDF
+      const pdfSectionSummaryRows = currentSectionStats.map((stat) => {
+        const yesPercent = stat.total ? (stat.yes / stat.total) * 100 : 0;
+        const noPercent = stat.total ? (stat.no / stat.total) * 100 : 0;
+        const naPercent = stat.total ? (stat.na / stat.total) * 100 : 0;
+
+        return {
+          id: stat.id,
+          title: stat.title,
+          yesPercent,
+          noPercent,
+          naPercent,
+        };
       });
-    }
 
-    // Add chart element IDs for capturing
-    const chartElementIds = [
-      'section-performance-chart',
-      ...availableSections.map(section => `section-chart-${section.id}`)
-    ];
+      // Add the type parameter to the PDF options
+      await generateAndDownloadPDF({
+        filename: `${selectedForm.title}_Report_${formatTimestamp(selectedResponse.createdAt, 'file')}_${type}.pdf`,
+        formTitle: selectedForm.title,
+        submittedDate: formatTimestamp(selectedResponse.createdAt),
+        sectionStats: currentSectionStats,
+        sectionSummaryRows: pdfSectionSummaryRows,
+        form: selectedForm,
+        response: selectedResponse,
+        sectionQuestionStats: sectionQuestionStats,
+        sectionMainParameters: sectionMainParameters,
+        availableSections: availableSections,
+        chartElementIds: chartElementIds,
+        type: type // Add the type parameter
+      });
 
-    // Use the current filtered section stats from the dashboard
-    const currentSectionStats = filteredSectionStats;
-
-    // Prepare section summary rows for PDF
-    const pdfSectionSummaryRows = currentSectionStats.map((stat) => {
-      const yesPercent = stat.total ? (stat.yes / stat.total) * 100 : 0;
-      const noPercent = stat.total ? (stat.no / stat.total) * 100 : 0;
-      const naPercent = stat.total ? (stat.na / stat.total) * 100 : 0;
-
-      return {
-        id: stat.id,
-        title: stat.title,
-        yesPercent,
-        noPercent,
-        naPercent,
-      };
-    });
-
-    // Add the type parameter to the PDF options
-    await generateAndDownloadPDF({
-      filename: `${selectedForm.title}_Report_${formatTimestamp(selectedResponse.createdAt, 'file')}_${type}.pdf`,
-      formTitle: selectedForm.title,
-      submittedDate: formatTimestamp(selectedResponse.createdAt),
-      sectionStats: currentSectionStats,
-      sectionSummaryRows: pdfSectionSummaryRows,
-      form: selectedForm,
-      response: selectedResponse,
-      sectionQuestionStats: sectionQuestionStats,
-      sectionMainParameters: sectionMainParameters,
-      availableSections: availableSections,
-      chartElementIds: chartElementIds,
-      type: type // Add the type parameter
-    });
-
-    showSuccess(`PDF with ${getPDFTypeLabel(type)} downloaded successfully.`);
-    setSelectedPDFType(null);
-    setShowDownloadOptions(false);
-    
-  } catch (error) {
-    console.error("Failed to generate PDF:", error);
-    showError("Failed to generate PDF. Please try again.");
-    setSelectedPDFType(null);
-    setShowDownloadOptions(false);
-  } finally {
-    setGeneratingPDF(false);
-  }
-};
-
-// Helper function to get PDF type label
-// Helper function to get PDF type label
-const getPDFTypeLabel = (type: 'no-only' | 'yes-only' | 'both' | 'na-only' | 'section' | 'default' | 'responses-view') => {
-  switch (type) {
-    case 'no-only':
-      return 'NO Response Analysis';
-    case 'yes-only':
-      return 'YES Response Analysis';
-    case 'na-only':
-      return 'N/A Response Analysis';
-    case 'both':
-      return 'BOTH YES, NO & N/A Response Analysis';
-    case 'section':
-      return 'Section Analysis';
-    case 'responses-view':
-      return 'Form Responses Detail';
-    case 'default':
-      return 'Full Analysis';
-    default:
-      return 'Full Analysis';
-  }
-};
-
-const handleDropdownClick = (type: 'yes-only' | 'no-only' | 'na-only' | 'both' | 'section' | 'responses-view', e: React.MouseEvent) => {
-  e.stopPropagation();
-  setShowDownloadOptions(false);
-  setShowResponseDropdown(false);
-  
-  // Handle all PDF types
-  handleDownloadPDF(type);
-};
-
-useEffect(() => {
-  const handleClickOutside = (event: MouseEvent) => {
-    const target = event.target as HTMLElement;
-    if (!target.closest('.download-container') && !target.closest('.responses-dropdown')) {
+      showSuccess(`PDF with ${getPDFTypeLabel(type)} downloaded successfully.`);
+      setSelectedPDFType(null);
       setShowDownloadOptions(false);
-      setShowResponseDropdown(false);
+
+    } catch (error) {
+      console.error("Failed to generate PDF:", error);
+      showError("Failed to generate PDF. Please try again.");
+      setSelectedPDFType(null);
+      setShowDownloadOptions(false);
+    } finally {
+      setGeneratingPDF(false);
     }
-    // if (!target.closest('.download-excel-container') && !target.closest('.excel-responses-dropdown')) {
-    //   setShowExcelDownloadOptions(false);
-    //   setShowExcelResponseDropdown(false);
-    // }
   };
 
-  document.addEventListener('click', handleClickOutside);
-  return () => {
-    document.removeEventListener('click', handleClickOutside);
+  // Helper function to get PDF type label
+  // Helper function to get PDF type label
+  const getPDFTypeLabel = (type: 'no-only' | 'yes-only' | 'both' | 'na-only' | 'section' | 'default' | 'responses-view') => {
+    switch (type) {
+      case 'no-only':
+        return 'NO Response Analysis';
+      case 'yes-only':
+        return 'YES Response Analysis';
+      case 'na-only':
+        return 'N/A Response Analysis';
+      case 'both':
+        return 'BOTH YES, NO & N/A Response Analysis';
+      case 'section':
+        return 'Section Analysis';
+      case 'responses-view':
+        return 'Form Responses Detail';
+      case 'default':
+        return 'Full Analysis';
+      default:
+        return 'Full Analysis';
+    }
   };
-}, []);
 
-  
+  const handleDropdownClick = (type: 'yes-only' | 'no-only' | 'na-only' | 'both' | 'section' | 'responses-view', e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowDownloadOptions(false);
+    setShowResponseDropdown(false);
+
+    // Handle all PDF types
+    handleDownloadPDF(type);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.download-container') && !target.closest('.responses-dropdown')) {
+        setShowDownloadOptions(false);
+        setShowResponseDropdown(false);
+      }
+      // if (!target.closest('.download-excel-container') && !target.closest('.excel-responses-dropdown')) {
+      //   setShowExcelDownloadOptions(false);
+      //   setShowExcelResponseDropdown(false);
+      // }
+    };
+
+    document.addEventListener('click', handleClickOutside);
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, []);
+
+
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -776,7 +776,7 @@ useEffect(() => {
 
       // Pre-calculate dealer question IDs for each form
       const dealerQuestionMap = new Map<string, string>();
-      
+
       Object.values(formsMap).forEach((form: Form) => {
         const formId = form._id || form.id;
         if (!formId) return;
@@ -804,7 +804,7 @@ useEffect(() => {
       // Helper function to extract dealer name from answers using form structure
       const extractDealerName = (response: Response, form: Form | undefined): { name: string | null, rank: number | null } => {
         if (!form || !response.answers) return { name: null, rank: null };
-        
+
         const formId = form._id || form.id;
         if (!formId) return { name: null, rank: null };
 
@@ -814,7 +814,7 @@ useEffect(() => {
           const answer = response.answers[dealerQuestionId];
           if (answer && hasAnswerValue(answer)) {
             const q = form.sections.flatMap(s => s.questions || []).find(q => q.id === dealerQuestionId);
-            return { 
+            return {
               name: renderAnswerDisplay(answer, q) as string,
               rank: response.responseRanks?.[dealerQuestionId] || null
             };
@@ -824,18 +824,18 @@ useEffect(() => {
         // Fallback: if no specific dealer field found or no answer, check first section's first answer
         // This mimics the original behavior's fallback
         if (form.sections && form.sections.length > 0) {
-           const firstSection = form.sections[0];
-           if (firstSection.questions && firstSection.questions.length > 0) {
-             for (const question of firstSection.questions) {
-               const answer = response.answers[question.id];
-               if (answer && hasAnswerValue(answer)) {
-                 return { 
-                   name: renderAnswerDisplay(answer, question) as string,
-                   rank: response.responseRanks?.[question.id] || null
-                 };
-               }
-             }
-           }
+          const firstSection = form.sections[0];
+          if (firstSection.questions && firstSection.questions.length > 0) {
+            for (const question of firstSection.questions) {
+              const answer = response.answers[question.id];
+              if (answer && hasAnswerValue(answer)) {
+                return {
+                  name: renderAnswerDisplay(answer, question) as string,
+                  rank: response.responseRanks?.[question.id] || null
+                };
+              }
+            }
+          }
         }
 
         return { name: null, rank: null };
@@ -902,9 +902,9 @@ useEffect(() => {
   const filteredResponses = useMemo(() => {
     return responses.filter(response => {
       const matchesSearch = response.formTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          (typeof response.dealerName === 'string' ? response.dealerName.toLowerCase().includes(searchQuery.toLowerCase()) : false);
-      const matchesForm = selectedFormIds.length === 0 || 
-                         selectedFormIds.includes(response.questionId || response.formId || '');
+        (typeof response.dealerName === 'string' ? response.dealerName.toLowerCase().includes(searchQuery.toLowerCase()) : false);
+      const matchesForm = selectedFormIds.length === 0 ||
+        selectedFormIds.includes(response.questionId || response.formId || '');
       return matchesSearch && matchesForm;
     });
   }, [responses, searchQuery, selectedFormIds]);
@@ -1327,29 +1327,29 @@ useEffect(() => {
     return stats.filter((stat): stat is SectionStat => Boolean(stat));
   }
 
-const getRankStyle = (answer: any, darkMode: boolean = false) => {
-  if (answer === null || answer === undefined) return "";
-  // Ensure we stringify object/array answers for consistent hashing
-  const str = typeof answer === 'object' ? JSON.stringify(answer) : String(answer).trim().toLowerCase();
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const colors = [
-    { l: "bg-blue-50 text-blue-700 border-blue-200", d: "bg-blue-900/30 text-blue-300 border-blue-800" },
-    { l: "bg-emerald-50 text-emerald-700 border-emerald-200", d: "bg-emerald-900/30 text-emerald-300 border-emerald-800" },
-    { l: "bg-amber-50 text-amber-700 border-amber-200", d: "bg-amber-900/30 text-amber-300 border-amber-800" },
-    { l: "bg-orange-50 text-orange-700 border-orange-200", d: "bg-orange-900/30 text-orange-300 border-orange-800" },
-    { l: "bg-rose-50 text-rose-700 border-rose-200", d: "bg-rose-900/30 text-rose-300 border-rose-800" },
-    { l: "bg-purple-50 text-purple-700 border-purple-200", d: "bg-purple-900/30 text-purple-300 border-purple-800" },
-    { l: "bg-pink-50 text-pink-700 border-pink-200", d: "bg-pink-900/30 text-pink-300 border-pink-800" },
-    { l: "bg-indigo-50 text-indigo-700 border-indigo-200", d: "bg-indigo-900/30 text-indigo-300 border-indigo-800" },
-    { l: "bg-teal-50 text-teal-700 border-teal-200", d: "bg-teal-900/30 text-teal-300 border-teal-800" },
-    { l: "bg-cyan-50 text-cyan-700 border-cyan-200", d: "bg-cyan-900/30 text-cyan-300 border-cyan-800" }
-  ];
-  const color = colors[Math.abs(hash) % colors.length];
-  return darkMode ? color.d : color.l;
-};
+  const getRankStyle = (answer: any, darkMode: boolean = false) => {
+    if (answer === null || answer === undefined) return "";
+    // Ensure we stringify object/array answers for consistent hashing
+    const str = typeof answer === 'object' ? JSON.stringify(answer) : String(answer).trim().toLowerCase();
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const colors = [
+      { l: "bg-blue-50 text-blue-700 border-blue-200", d: "bg-blue-900/30 text-blue-300 border-blue-800" },
+      { l: "bg-emerald-50 text-emerald-700 border-emerald-200", d: "bg-emerald-900/30 text-emerald-300 border-emerald-800" },
+      { l: "bg-amber-50 text-amber-700 border-amber-200", d: "bg-amber-900/30 text-amber-300 border-amber-800" },
+      { l: "bg-orange-50 text-orange-700 border-orange-200", d: "bg-orange-900/30 text-orange-300 border-orange-800" },
+      { l: "bg-rose-50 text-rose-700 border-rose-200", d: "bg-rose-900/30 text-rose-300 border-rose-800" },
+      { l: "bg-purple-50 text-purple-700 border-purple-200", d: "bg-purple-900/30 text-purple-300 border-purple-800" },
+      { l: "bg-pink-50 text-pink-700 border-pink-200", d: "bg-pink-900/30 text-pink-300 border-pink-800" },
+      { l: "bg-indigo-50 text-indigo-700 border-indigo-200", d: "bg-indigo-900/30 text-indigo-300 border-indigo-800" },
+      { l: "bg-teal-50 text-teal-700 border-teal-200", d: "bg-teal-900/30 text-teal-300 border-teal-800" },
+      { l: "bg-cyan-50 text-cyan-700 border-cyan-200", d: "bg-cyan-900/30 text-cyan-300 border-cyan-800" }
+    ];
+    const color = colors[Math.abs(hash) % colors.length];
+    return darkMode ? color.d : color.l;
+  };
 
   const hasAnswerValue = (value: any) => {
     if (value === null || value === undefined) {
@@ -1372,12 +1372,12 @@ const getRankStyle = (answer: any, darkMode: boolean = false) => {
       const isArray = Array.isArray(val);
       const strValue = isArray ? val.join(", ") : String(val || "");
       const normalized = strValue.trim().toLowerCase();
-      
+
       let bgColor = "";
       let textColor = "";
       let borderColor = "";
       let Icon = null;
-      
+
       let isYes = normalized === "yes";
       let isNo = normalized === "no";
       let isNA = normalized === "n/a" || normalized === "na" || normalized === "not applicable";
@@ -1390,16 +1390,16 @@ const getRankStyle = (answer: any, darkMode: boolean = false) => {
           isNA = normalized === String(question.options[2]).toLowerCase().trim();
         }
       }
-      
+
       // Quiz logic
       const isQuiz = question && (question.correctAnswer || (question.correctAnswers && question.correctAnswers.length > 0));
       let isCorrect = false;
-      
+
       if (isQuiz) {
         if (question.correctAnswers && question.correctAnswers.length > 0) {
           if (isArray) {
-            isCorrect = val.length === question.correctAnswers.length && 
-                        val.every((a: any) => question.correctAnswers!.some((ca: any) => String(ca).toLowerCase() === String(a).toLowerCase()));
+            isCorrect = val.length === question.correctAnswers.length &&
+              val.every((a: any) => question.correctAnswers!.some((ca: any) => String(ca).toLowerCase() === String(a).toLowerCase()));
           } else {
             isCorrect = question.correctAnswers.some((ca: any) => String(ca).toLowerCase() === normalized);
           }
@@ -1654,100 +1654,100 @@ const getRankStyle = (answer: any, darkMode: boolean = false) => {
       );
     }
 
-if (typeof value === "object") {
-       // Handle complex Chassis/Inspection object (Standard structure for defects)
-       if (typeof value === 'object' && !Array.isArray(value) && (value.chassisNumber || value.status || value.categories)) {
-         const status = value.status || 'Unknown';
-         const statusColor = 
-           status.toLowerCase() === 'accepted' || status.toLowerCase() === 'verified' ? 'text-green-600 bg-green-50 border-green-100' :
-           status.toLowerCase() === 'rejected' ? 'text-red-600 bg-red-50 border-red-100' :
-           'text-amber-600 bg-amber-50 border-amber-100';
+    if (typeof value === "object") {
+      // Handle complex Chassis/Inspection object (Standard structure for defects)
+      if (typeof value === 'object' && !Array.isArray(value) && (value.chassisNumber || value.status || value.categories)) {
+        const status = value.status || 'Unknown';
+        const statusColor =
+          status.toLowerCase() === 'accepted' || status.toLowerCase() === 'verified' ? 'text-green-600 bg-green-50 border-green-100' :
+            status.toLowerCase() === 'rejected' ? 'text-red-600 bg-red-50 border-red-100' :
+              'text-amber-600 bg-amber-50 border-amber-100';
 
-         return (
-           <div className="space-y-3 mt-2">
-             <div className="flex items-center gap-2">
-               <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase border-2 ${statusColor} shadow-sm`}>
-                 {status}
-               </span>
-               {value.chassisNumber && (
-                 <span className="text-[11px] font-extrabold text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-md">
-                   VIN: {value.chassisNumber}
-                 </span>
-               )}
-             </div>
-             
-             {value.remark && (
-               <div className="flex items-start gap-1.5 text-[10px] text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-1.5 rounded-lg border-l-2 border-indigo-400">
-                 <MessageCircle className="w-3 h-3 mt-0.5 shrink-0" />
-                 <span className="italic leading-relaxed">"{value.remark}"</span>
-               </div>
-             )}
-             
-             {value.evidenceUrl && (
-               <div className="mt-1">
-                 <a 
-                   href={value.evidenceUrl} 
-                   target="_blank" 
-                   rel="noopener noreferrer"
-                   className="block"
-                 >
-                   <img 
-                     src={value.evidenceUrl} 
-                     alt="Evidence" 
-                     className="w-24 h-24 object-cover rounded-lg border border-gray-200 dark:border-gray-600"
-                   />
-                 </a>
-               </div>
-             )}
-           </div>
-         );
-       }
+        return (
+          <div className="space-y-3 mt-2">
+            <div className="flex items-center gap-2">
+              <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase border-2 ${statusColor} shadow-sm`}>
+                {status}
+              </span>
+              {value.chassisNumber && (
+                <span className="text-[11px] font-extrabold text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-md">
+                  VIN: {value.chassisNumber}
+                </span>
+              )}
+            </div>
 
-       const fileData = resolveFileData(value);
-       if (fileData?.data) {
-         return (
-           <FilePreview data={fileData.data} fileName={fileData.fileName} />
-         );
-       }
-       if (fileData?.url) {
-         return <FilePreview url={fileData.url} fileName={fileData.fileName} />;
-       }
-       if (!Object.keys(value).length) {
-         return <span className="text-primary-400">No response</span>;
-       }
-       
-       // Handle generic objects with better display
-       const headerNames: Record<string, string> = {
-         chassisNumber: 'Chassis Number',
-         status: 'Status',
-         zones: 'Zone',
-         zonesData: 'Zones Data',
-         evidenceUrl: 'Evidence',
-         remark: 'Remark'
-       };
-       
-       const entries = Object.entries(value).filter(([key, val]) => {
-         if (val === null || val === undefined || val === '') return false;
-         if (key === 'zonesData' || key === '__v') return false;
-         return true;
-       });
-       
-       if (entries.length === 0) return <span className="text-gray-400 italic">No details</span>;
-       
-       return (
-         <div className="space-y-2 mt-2">
-           {entries.map(([key, val], idx) => {
-             const displayKey = headerNames[key] || key;
-             return (
-               <div key={idx} className="text-[10px] text-gray-600 dark:text-gray-400">
-                 <span className="font-semibold">{displayKey}:</span>{' '}
-                 {typeof val === 'object' ? JSON.stringify(val) : String(val)}
-               </div>
-             );
-           })}
-         </div>
-       );
-     }
+            {value.remark && (
+              <div className="flex items-start gap-1.5 text-[10px] text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-1.5 rounded-lg border-l-2 border-indigo-400">
+                <MessageCircle className="w-3 h-3 mt-0.5 shrink-0" />
+                <span className="italic leading-relaxed">"{value.remark}"</span>
+              </div>
+            )}
+
+            {value.evidenceUrl && (
+              <div className="mt-1">
+                <a
+                  href={value.evidenceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block"
+                >
+                  <img
+                    src={value.evidenceUrl}
+                    alt="Evidence"
+                    className="w-24 h-24 object-cover rounded-lg border border-gray-200 dark:border-gray-600"
+                  />
+                </a>
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      const fileData = resolveFileData(value);
+      if (fileData?.data) {
+        return (
+          <FilePreview data={fileData.data} fileName={fileData.fileName} />
+        );
+      }
+      if (fileData?.url) {
+        return <FilePreview url={fileData.url} fileName={fileData.fileName} />;
+      }
+      if (!Object.keys(value).length) {
+        return <span className="text-primary-400">No response</span>;
+      }
+
+      // Handle generic objects with better display
+      const headerNames: Record<string, string> = {
+        chassisNumber: 'Chassis Number',
+        status: 'Status',
+        zones: 'Zone',
+        zonesData: 'Zones Data',
+        evidenceUrl: 'Evidence',
+        remark: 'Remark'
+      };
+
+      const entries = Object.entries(value).filter(([key, val]) => {
+        if (val === null || val === undefined || val === '') return false;
+        if (key === 'zonesData' || key === '__v') return false;
+        return true;
+      });
+
+      if (entries.length === 0) return <span className="text-gray-400 italic">No details</span>;
+
+      return (
+        <div className="space-y-2 mt-2">
+          {entries.map(([key, val], idx) => {
+            const displayKey = headerNames[key] || key;
+            return (
+              <div key={idx} className="text-[10px] text-gray-600 dark:text-gray-400">
+                <span className="font-semibold">{displayKey}:</span>{' '}
+                {typeof val === 'object' ? JSON.stringify(val) : String(val)}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
 
     return renderHighlightedAnswer(value);
   };
@@ -2216,8 +2216,8 @@ if (typeof value === "object") {
                       <tr
                         key={stat.id}
                         className={`group hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all duration-200 ${index % 2 === 0
-                            ? "bg-white dark:bg-gray-900"
-                            : "bg-blue-25 dark:bg-blue-900/5"
+                          ? "bg-white dark:bg-gray-900"
+                          : "bg-blue-25 dark:bg-blue-900/5"
                           }`}
                       >
                         <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
@@ -2239,8 +2239,8 @@ if (typeof value === "object") {
                           <div className="flex flex-col items-center gap-1">
                             <span
                               className={`inline-flex items-center justify-center w-8 h-8 rounded-full ${stat.yes > 0
-                                  ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
-                                  : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500"
+                                ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                                : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500"
                                 }`}
                             >
                               {stat.yes}
@@ -2254,8 +2254,8 @@ if (typeof value === "object") {
                           <div className="flex flex-col items-center gap-1">
                             <span
                               className={`inline-flex items-center justify-center w-8 h-8 rounded-full ${stat.no > 0
-                                  ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
-                                  : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500"
+                                ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+                                : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500"
                                 }`}
                             >
                               {stat.no}
@@ -2269,8 +2269,8 @@ if (typeof value === "object") {
                           <div className="flex flex-col items-center gap-1">
                             <span
                               className={`inline-flex items-center justify-center w-8 h-8 rounded-full ${stat.na > 0
-                                  ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
-                                  : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500"
+                                ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
+                                : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500"
                                 }`}
                             >
                               {stat.na}
@@ -2340,7 +2340,7 @@ if (typeof value === "object") {
                 const yesPercent = total > 0 ? ((stat.yes / total) * 100).toFixed(1) : 0;
                 const noPercent = total > 0 ? ((stat.no / total) * 100).toFixed(1) : 0;
                 const naPercent = total > 0 ? ((stat.na / total) * 100).toFixed(1) : 0;
-                
+
                 return (
                   <div key={stat.id} className="p-4 bg-white dark:bg-gray-900">
                     <div className="flex flex-col gap-2 mb-4">
@@ -2353,7 +2353,7 @@ if (typeof value === "object") {
                         {stat.title}
                       </p>
                     </div>
-                    
+
                     <div className="grid grid-cols-3 gap-3">
                       <div className="bg-green-50 dark:bg-green-900/20 p-2 rounded-xl border border-green-100 dark:border-green-800/30 text-center">
                         <p className="text-[10px] font-bold text-green-700 dark:text-green-400 uppercase mb-1">Yes</p>
@@ -2371,7 +2371,7 @@ if (typeof value === "object") {
                         <p className="text-[9px] font-bold text-yellow-600 dark:text-yellow-500">{naPercent}%</p>
                       </div>
                     </div>
-                    
+
                     <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-800 flex justify-between items-center">
                       <span className="text-xs font-bold text-gray-400 uppercase">Total Responses</span>
                       <span className="text-sm font-black text-blue-600 dark:text-blue-400">{total}</span>
@@ -2379,7 +2379,7 @@ if (typeof value === "object") {
                   </div>
                 );
               })}
-              
+
               {/* Mobile Section Totals */}
               <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border-t-2 border-blue-200 dark:border-blue-800">
                 <p className="text-xs font-black text-blue-900 dark:text-blue-100 uppercase tracking-widest mb-3">Section Totals</p>
@@ -3010,7 +3010,7 @@ if (typeof value === "object") {
               </p>
             </div>
           </div>
-          
+
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 lg:flex-1 lg:max-w-2xl lg:justify-end">
             <div className="relative flex-1 sm:max-w-xs">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -3026,7 +3026,7 @@ if (typeof value === "object") {
                 className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800/50 border border-blue-200 dark:border-blue-700/50 rounded-xl text-gray-900 dark:text-white placeholder-blue-300 dark:placeholder-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-sm text-sm"
               />
             </div>
-            
+
             <div className="flex items-center gap-2">
               <button
                 onClick={fetchData}
@@ -3088,7 +3088,7 @@ if (typeof value === "object") {
                         </button>
                       </div>
                     </div>
-                    
+
                     <div className="max-h-[60vh] overflow-y-auto py-2 custom-scrollbar">
                       {uniqueForms.length > 0 ? (
                         uniqueForms.map(form => (
@@ -3144,7 +3144,7 @@ if (typeof value === "object") {
                         <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-6">No forms available</p>
                       )}
                     </div>
-                    
+
                     <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700">
                       <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest text-center">
                         {selectedFormIds.length === 0 ? uniqueForms.length : (selectedFormIds.includes('NONE_SELECTED') ? 0 : selectedFormIds.length)} of {uniqueForms.length} selected
@@ -3189,8 +3189,8 @@ if (typeof value === "object") {
                     <div
                       key={response._id}
                       className={`flex flex-col sm:flex-row sm:items-center sm:justify-between p-5 rounded-xl border transition-all duration-200 ${isFollowUp
-                          ? "ml-0 sm:ml-8 bg-gradient-to-r from-blue-100/60 to-indigo-100/60 dark:from-blue-900/20 dark:to-indigo-900/20 border-blue-300 dark:border-blue-800/50 hover:shadow-md"
-                          : "bg-gradient-to-br from-blue-50/70 to-indigo-50/50 dark:from-blue-900/15 dark:to-indigo-900/10 border-blue-100 dark:border-blue-800/30 hover:shadow-md"
+                        ? "ml-0 sm:ml-8 bg-gradient-to-r from-blue-100/60 to-indigo-100/60 dark:from-blue-900/20 dark:to-indigo-900/20 border-blue-300 dark:border-blue-800/50 hover:shadow-md"
+                        : "bg-gradient-to-br from-blue-50/70 to-indigo-50/50 dark:from-blue-900/15 dark:to-indigo-900/10 border-blue-100 dark:border-blue-800/30 hover:shadow-md"
                         }`}
                     >
                       <div className="flex items-start sm:items-center gap-4 min-w-0 flex-1">
@@ -3359,7 +3359,7 @@ if (typeof value === "object") {
               No Customer Requests
             </h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 max-w-md mx-auto">
-              {selectedFormIds.length === 0 
+              {selectedFormIds.length === 0
                 ? "There are currently no customer service requests. Requests will appear here once customers submit forms."
                 : "No requests match your current filters. Try adjusting your search or form selection."}
             </p>
@@ -3420,91 +3420,91 @@ if (typeof value === "object") {
                 </button>
 
                 {viewMode === "dashboard" ? (
-                 <div className="flex items-center download-container">
-  {showDownloadOptions && (
-    <div className="flex items-center gap-1.5 animate-in slide-in-from-right-2 duration-300 mr-2">
-      {/* Type 1 - Yes */}
-      <button
-        onClick={(e) => handleDropdownClick('yes-only', e)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-all duration-200"
-        title="Yes Responses Only"
-      >
-        <CheckCircle className="w-3 h-3" />
-        <span>YES</span>
-      </button>
+                  <div className="flex items-center download-container">
+                    {showDownloadOptions && (
+                      <div className="flex items-center gap-1.5 animate-in slide-in-from-right-2 duration-300 mr-2">
+                        {/* Type 1 - Yes */}
+                        <button
+                          onClick={(e) => handleDropdownClick('yes-only', e)}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-all duration-200"
+                          title="Yes Responses Only"
+                        >
+                          <CheckCircle className="w-3 h-3" />
+                          <span>YES</span>
+                        </button>
 
-      {/* Type 2 - No */}
-      <button
-        onClick={(e) => handleDropdownClick('no-only', e)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-all duration-200"
-        title="No Responses Only"
-      >
-        <XCircle className="w-3 h-3" />
-        <span>NO</span>
-      </button>
+                        {/* Type 2 - No */}
+                        <button
+                          onClick={(e) => handleDropdownClick('no-only', e)}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-all duration-200"
+                          title="No Responses Only"
+                        >
+                          <XCircle className="w-3 h-3" />
+                          <span>NO</span>
+                        </button>
 
-      {/* Type 3 - N/A */}
-      <button
-        onClick={(e) => handleDropdownClick('na-only', e)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-lg hover:bg-yellow-100 transition-all duration-200"
-        title="N/A Responses Only"
-      >
-        <AlertTriangle className="w-3 h-3" />
-        <span>N/A</span>
-      </button>
+                        {/* Type 3 - N/A */}
+                        <button
+                          onClick={(e) => handleDropdownClick('na-only', e)}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-lg hover:bg-yellow-100 transition-all duration-200"
+                          title="N/A Responses Only"
+                        >
+                          <AlertTriangle className="w-3 h-3" />
+                          <span>N/A</span>
+                        </button>
 
-      {/* Type 4 - All */}
-      <button
-        onClick={(e) => handleDropdownClick('both', e)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-all duration-200"
-        title="All Responses"
-      >
-        <FileText className="w-3 h-3" />
-        <span>ALL</span>
-      </button>
-      
-      {/* Sections Button */}
-      <button
-        onClick={() => handleDownloadPDF('section')}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-all duration-200"
-        title="Section Analysis"
-      >
-        <span>SECTIONS</span>
-      </button>
+                        {/* Type 4 - All */}
+                        <button
+                          onClick={(e) => handleDropdownClick('both', e)}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-all duration-200"
+                          title="All Responses"
+                        >
+                          <FileText className="w-3 h-3" />
+                          <span>ALL</span>
+                        </button>
 
-      {/* Responses Button */}
-      <button
-        onClick={(e) => handleDropdownClick('responses-view', e)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-cyan-700 bg-cyan-50 border border-cyan-200 rounded-lg hover:bg-cyan-100 transition-all duration-200"
-        title="Form Responses Detail"
-      >
-        <FileText className="w-3 h-3" />
-        <span>RESPONSES</span>
-      </button>
-    </div>
-  )}
-  
-  {/* Main Download PDF Button */}
-  <div className="relative">
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        setShowDownloadOptions(!showDownloadOptions);
-      }}
-      disabled={generatingPDF}
-      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white rounded-lg transition-all duration-200 shadow-sm hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed hover:opacity-90 ${showDownloadOptions ? 'bg-gray-600' : 'bg-[#16a34a]'}`}
-    >
-      {generatingPDF ? (
-        <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-      ) : (
-        <>
-          <Download className="w-3 h-3" />
-          <span>{showDownloadOptions ? 'Close' : 'Download PDF'}</span>
-        </>
-      )}
-    </button>
-  </div>
-</div>
+                        {/* Sections Button */}
+                        <button
+                          onClick={() => handleDownloadPDF('section')}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-all duration-200"
+                          title="Section Analysis"
+                        >
+                          <span>SECTIONS</span>
+                        </button>
+
+                        {/* Responses Button */}
+                        <button
+                          onClick={(e) => handleDropdownClick('responses-view', e)}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-cyan-700 bg-cyan-50 border border-cyan-200 rounded-lg hover:bg-cyan-100 transition-all duration-200"
+                          title="Form Responses Detail"
+                        >
+                          <FileText className="w-3 h-3" />
+                          <span>RESPONSES</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Main Download PDF Button */}
+                    <div className="relative">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowDownloadOptions(!showDownloadOptions);
+                        }}
+                        disabled={generatingPDF}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white rounded-lg transition-all duration-200 shadow-sm hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed hover:opacity-90 ${showDownloadOptions ? 'bg-gray-600' : 'bg-[#16a34a]'}`}
+                      >
+                        {generatingPDF ? (
+                          <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <>
+                            <Download className="w-3 h-3" />
+                            <span>{showDownloadOptions ? 'Close' : 'Download PDF'}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
                 ) : (
                   <button
                     onClick={handleExportExcel}
@@ -3619,232 +3619,232 @@ if (typeof value === "object") {
                             {/* Two-Column Layout: Stats (25%) and Basic Info (75%) */}
                             <div className="flex flex-col md:flex-row gap-4 items-stretch">
                               <div className="w-full md:w-1/4 flex flex-col gap-3">
-                              <div className="bg-gradient-to-br from-yellow-50 to-amber-50 dark:from-yellow-900/20 dark:to-amber-900/20 backdrop-blur-sm p-3 rounded-xl border border-yellow-200/50 dark:border-yellow-700/50 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105">
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <p className="text-xs font-semibold text-yellow-700 dark:text-yellow-300 mb-1">
-                                      Overall Score
-                                    </p>
-                                    <p className="text-2xl font-bold text-yellow-900 dark:text-yellow-100">
-                                      {(() => {
-                                        const totalQuestions =
-                                          filteredSectionStats.reduce(
-                                            (sum, stat) => sum + stat.total,
-                                            0
-                                          );
-                                        const totalYes =
-                                          filteredSectionStats.reduce(
-                                            (sum, stat) => sum + stat.yes,
-                                            0
-                                          );
-                                        return totalQuestions > 0
-                                          ? (
-                                            (totalYes / totalQuestions) *
-                                            100
-                                          ).toFixed(1)
-                                          : "0.0";
-                                      })()}
-                                      %
-                                    </p>
-                                  </div>
-                                  <div className="p-2 bg-yellow-500/20 rounded-full">
-                                    <Award className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 backdrop-blur-sm p-3 rounded-xl border border-blue-200/50 dark:border-blue-700/50 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105">
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1">
-                                      Total Sections
-                                    </p>
-                                    <p className="text-2xl font-bold text-blue-900 dark:text-blue-100">
-                                      {filteredSectionStats.length}
-                                    </p>
-                                  </div>
-                                  <div className="p-2 bg-blue-500/20 rounded-full">
-                                    <Target className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div
-                                className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 backdrop-blur-sm p-3 rounded-xl border border-green-200/50 dark:border-green-700/50 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 cursor-pointer"
-                                onClick={() =>
-                                  setExpandResponseRateBreakdown(
-                                    !expandResponseRateBreakdown
-                                  )
-                                }
-                              >
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <div className="flex items-center gap-1">
-                                      <p className="text-xs font-semibold text-green-700 dark:text-green-300 mb-1">
-                                        Response Rate
+                                <div className="bg-gradient-to-br from-yellow-50 to-amber-50 dark:from-yellow-900/20 dark:to-amber-900/20 backdrop-blur-sm p-3 rounded-xl border border-yellow-200/50 dark:border-yellow-700/50 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105">
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <p className="text-xs font-semibold text-yellow-700 dark:text-yellow-300 mb-1">
+                                        Overall Score
                                       </p>
-                                      <ChevronDown
-                                        className={`w-4 h-4 text-green-700 dark:text-green-300 transition-transform duration-300 ${expandResponseRateBreakdown
-                                          ? "rotate-180"
-                                          : ""
-                                          }`}
-                                      />
+                                      <p className="text-2xl font-bold text-yellow-900 dark:text-yellow-100">
+                                        {(() => {
+                                          const totalQuestions =
+                                            filteredSectionStats.reduce(
+                                              (sum, stat) => sum + stat.total,
+                                              0
+                                            );
+                                          const totalYes =
+                                            filteredSectionStats.reduce(
+                                              (sum, stat) => sum + stat.yes,
+                                              0
+                                            );
+                                          return totalQuestions > 0
+                                            ? (
+                                              (totalYes / totalQuestions) *
+                                              100
+                                            ).toFixed(1)
+                                            : "0.0";
+                                        })()}
+                                        %
+                                      </p>
                                     </div>
-                                    <p className="text-2xl font-bold text-green-900 dark:text-green-100">
-                                      {(() => {
-                                        const totalQuestions =
-                                          filteredSectionStats.reduce(
-                                            (sum, stat) => sum + stat.total,
-                                            0
-                                          );
-                                        const totalAnswered =
-                                          filteredSectionStats.reduce(
-                                            (sum, stat) =>
-                                              sum +
-                                              stat.yes +
-                                              stat.no +
-                                              stat.na,
-                                            0
-                                          );
-                                        return totalQuestions > 0
-                                          ? (
-                                            (totalAnswered / totalQuestions) *
-                                            100
-                                          ).toFixed(1)
-                                          : "0.0";
-                                      })()}
-                                      %
-                                    </p>
-                                  </div>
-                                  <div className="p-2 bg-green-500/20 rounded-full">
-                                    <Activity className="w-5 h-5 text-green-600 dark:text-green-400" />
+                                    <div className="p-2 bg-yellow-500/20 rounded-full">
+                                      <Award className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+                                    </div>
                                   </div>
                                 </div>
 
-                                {expandResponseRateBreakdown && (
-                                  <div className="mt-3 pt-3 border-t border-green-300/50 dark:border-green-600/50">
-                                    <div className="grid grid-cols-3 gap-2">
-                                      {(() => {
-                                        const totalYes =
-                                          filteredSectionStats.reduce(
-                                            (sum, stat) => sum + stat.yes,
-                                            0
-                                          );
-                                        const totalNo =
-                                          filteredSectionStats.reduce(
-                                            (sum, stat) => sum + stat.no,
-                                            0
-                                          );
-                                        const totalNA =
-                                          filteredSectionStats.reduce(
-                                            (sum, stat) => sum + stat.na,
-                                            0
-                                          );
-                                        const totalAnswered =
-                                          totalYes + totalNo + totalNA;
-
-                                        const yesPercent =
-                                          totalAnswered > 0
-                                            ? (
-                                              (totalYes / totalAnswered) *
-                                              100
-                                            ).toFixed(1)
-                                            : "0.0";
-                                        const noPercent =
-                                          totalAnswered > 0
-                                            ? (
-                                              (totalNo / totalAnswered) *
-                                              100
-                                            ).toFixed(1)
-                                            : "0.0";
-                                        const naPercent =
-                                          totalAnswered > 0
-                                            ? (
-                                              (totalNA / totalAnswered) *
-                                              100
-                                            ).toFixed(1)
-                                            : "0.0";
-
-                                        return (
-                                          <>
-                                            <div className="text-center p-2 bg-white/50 dark:bg-green-900/20 rounded-lg">
-                                              <p className="text-xs font-semibold text-green-600 dark:text-green-400 mb-0.5 uppercase">
-                                                Yes
-                                              </p>
-                                              <p className="text-xl font-bold text-green-700 dark:text-green-300">
-                                                {yesPercent}%
-                                              </p>
-                                            </div>
-                                            <div className="text-center p-2 bg-white/50 dark:bg-red-900/20 rounded-lg">
-                                              <p className="text-xs font-semibold text-red-600 dark:text-red-400 mb-0.5 uppercase">
-                                                No
-                                              </p>
-                                              <p className="text-xl font-bold text-red-700 dark:text-red-300">
-                                                {noPercent}%
-                                              </p>
-                                            </div>
-                                            <div className="text-center p-2 bg-white/50 dark:bg-yellow-900/20 rounded-lg">
-                                              <p className="text-xs font-semibold text-yellow-600 dark:text-yellow-400 mb-0.5 uppercase">
-                                                N/A
-                                              </p>
-                                              <p className="text-xl font-bold text-yellow-700 dark:text-yellow-300">
-                                                {naPercent}%
-                                              </p>
-                                            </div>
-                                          </>
-                                        );
-                                      })()}
+                                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 backdrop-blur-sm p-3 rounded-xl border border-blue-200/50 dark:border-blue-700/50 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105">
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1">
+                                        Total Sections
+                                      </p>
+                                      <p className="text-2xl font-bold text-blue-900 dark:text-blue-100">
+                                        {filteredSectionStats.length}
+                                      </p>
+                                    </div>
+                                    <div className="p-2 bg-blue-500/20 rounded-full">
+                                      <Target className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                                     </div>
                                   </div>
-                                )}
-                              </div>
+                                </div>
 
-                              {/* Location Card */}
-                              <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 backdrop-blur-sm p-3 rounded-xl border border-purple-200/50 dark:border-purple-700/50 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105">
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <p className="text-xs font-semibold text-purple-700 dark:text-purple-300 mb-1">
-                                      Location
-                                    </p>
-                                    <p className="text-sm font-bold text-purple-900 dark:text-purple-100">
-                                      {selectedForm?.locationEnabled !== false
-                                        ? (() => {
-                                          const capturedLoc =
-                                            selectedResponse?.submissionMetadata?.capturedLocation;
-                                          const ipLoc =
-                                            selectedResponse?.submissionMetadata?.location;
-
-                                          let locationToUse = null;
-
-                                          if (capturedLoc?.city || capturedLoc?.region || capturedLoc?.country) {
-                                            locationToUse = capturedLoc;
-                                          } else if (ipLoc?.city || ipLoc?.region || ipLoc?.country) {
-                                            locationToUse = ipLoc;
-                                          }
-
-                                          if (locationToUse) {
-                                            const parts = [];
-                                            if (locationToUse.city)
-                                              parts.push(locationToUse.city);
-                                            if (locationToUse.region)
-                                              parts.push(locationToUse.region);
-                                            if (locationToUse.country)
-                                              parts.push(locationToUse.country);
-                                            return parts.length > 0
-                                              ? parts.join(", ")
-                                              : "Location data unavailable";
-                                          }
-                                          return "Location data unavailable";
-                                        })()
-                                        : "Location disabled"}
-                                    </p>
+                                <div
+                                  className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 backdrop-blur-sm p-3 rounded-xl border border-green-200/50 dark:border-green-700/50 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 cursor-pointer"
+                                  onClick={() =>
+                                    setExpandResponseRateBreakdown(
+                                      !expandResponseRateBreakdown
+                                    )
+                                  }
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <div className="flex items-center gap-1">
+                                        <p className="text-xs font-semibold text-green-700 dark:text-green-300 mb-1">
+                                          Response Rate
+                                        </p>
+                                        <ChevronDown
+                                          className={`w-4 h-4 text-green-700 dark:text-green-300 transition-transform duration-300 ${expandResponseRateBreakdown
+                                            ? "rotate-180"
+                                            : ""
+                                            }`}
+                                        />
+                                      </div>
+                                      <p className="text-2xl font-bold text-green-900 dark:text-green-100">
+                                        {(() => {
+                                          const totalQuestions =
+                                            filteredSectionStats.reduce(
+                                              (sum, stat) => sum + stat.total,
+                                              0
+                                            );
+                                          const totalAnswered =
+                                            filteredSectionStats.reduce(
+                                              (sum, stat) =>
+                                                sum +
+                                                stat.yes +
+                                                stat.no +
+                                                stat.na,
+                                              0
+                                            );
+                                          return totalQuestions > 0
+                                            ? (
+                                              (totalAnswered / totalQuestions) *
+                                              100
+                                            ).toFixed(1)
+                                            : "0.0";
+                                        })()}
+                                        %
+                                      </p>
+                                    </div>
+                                    <div className="p-2 bg-green-500/20 rounded-full">
+                                      <Activity className="w-5 h-5 text-green-600 dark:text-green-400" />
+                                    </div>
                                   </div>
-                                  <div className="p-2 bg-purple-500/20 rounded-full">
-                                    <MapPin className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+
+                                  {expandResponseRateBreakdown && (
+                                    <div className="mt-3 pt-3 border-t border-green-300/50 dark:border-green-600/50">
+                                      <div className="grid grid-cols-3 gap-2">
+                                        {(() => {
+                                          const totalYes =
+                                            filteredSectionStats.reduce(
+                                              (sum, stat) => sum + stat.yes,
+                                              0
+                                            );
+                                          const totalNo =
+                                            filteredSectionStats.reduce(
+                                              (sum, stat) => sum + stat.no,
+                                              0
+                                            );
+                                          const totalNA =
+                                            filteredSectionStats.reduce(
+                                              (sum, stat) => sum + stat.na,
+                                              0
+                                            );
+                                          const totalAnswered =
+                                            totalYes + totalNo + totalNA;
+
+                                          const yesPercent =
+                                            totalAnswered > 0
+                                              ? (
+                                                (totalYes / totalAnswered) *
+                                                100
+                                              ).toFixed(1)
+                                              : "0.0";
+                                          const noPercent =
+                                            totalAnswered > 0
+                                              ? (
+                                                (totalNo / totalAnswered) *
+                                                100
+                                              ).toFixed(1)
+                                              : "0.0";
+                                          const naPercent =
+                                            totalAnswered > 0
+                                              ? (
+                                                (totalNA / totalAnswered) *
+                                                100
+                                              ).toFixed(1)
+                                              : "0.0";
+
+                                          return (
+                                            <>
+                                              <div className="text-center p-2 bg-white/50 dark:bg-green-900/20 rounded-lg">
+                                                <p className="text-xs font-semibold text-green-600 dark:text-green-400 mb-0.5 uppercase">
+                                                  Yes
+                                                </p>
+                                                <p className="text-xl font-bold text-green-700 dark:text-green-300">
+                                                  {yesPercent}%
+                                                </p>
+                                              </div>
+                                              <div className="text-center p-2 bg-white/50 dark:bg-red-900/20 rounded-lg">
+                                                <p className="text-xs font-semibold text-red-600 dark:text-red-400 mb-0.5 uppercase">
+                                                  No
+                                                </p>
+                                                <p className="text-xl font-bold text-red-700 dark:text-red-300">
+                                                  {noPercent}%
+                                                </p>
+                                              </div>
+                                              <div className="text-center p-2 bg-white/50 dark:bg-yellow-900/20 rounded-lg">
+                                                <p className="text-xs font-semibold text-yellow-600 dark:text-yellow-400 mb-0.5 uppercase">
+                                                  N/A
+                                                </p>
+                                                <p className="text-xl font-bold text-yellow-700 dark:text-yellow-300">
+                                                  {naPercent}%
+                                                </p>
+                                              </div>
+                                            </>
+                                          );
+                                        })()}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Location Card */}
+                                <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 backdrop-blur-sm p-3 rounded-xl border border-purple-200/50 dark:border-purple-700/50 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105">
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <p className="text-xs font-semibold text-purple-700 dark:text-purple-300 mb-1">
+                                        Location
+                                      </p>
+                                      <p className="text-sm font-bold text-purple-900 dark:text-purple-100">
+                                        {selectedForm?.locationEnabled !== false
+                                          ? (() => {
+                                            const capturedLoc =
+                                              selectedResponse?.submissionMetadata?.capturedLocation;
+                                            const ipLoc =
+                                              selectedResponse?.submissionMetadata?.location;
+
+                                            let locationToUse = null;
+
+                                            if (capturedLoc?.city || capturedLoc?.region || capturedLoc?.country) {
+                                              locationToUse = capturedLoc;
+                                            } else if (ipLoc?.city || ipLoc?.region || ipLoc?.country) {
+                                              locationToUse = ipLoc;
+                                            }
+
+                                            if (locationToUse) {
+                                              const parts = [];
+                                              if (locationToUse.city)
+                                                parts.push(locationToUse.city);
+                                              if (locationToUse.region)
+                                                parts.push(locationToUse.region);
+                                              if (locationToUse.country)
+                                                parts.push(locationToUse.country);
+                                              return parts.length > 0
+                                                ? parts.join(", ")
+                                                : "Location data unavailable";
+                                            }
+                                            return "Location data unavailable";
+                                          })()
+                                          : "Location disabled"}
+                                      </p>
+                                    </div>
+                                    <div className="p-2 bg-purple-500/20 rounded-full">
+                                      <MapPin className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                                    </div>
                                   </div>
                                 </div>
                               </div>
-                            </div>
 
                               {/* Basic Information - 75% */}
                               <div className="w-full md:w-3/4">
@@ -3975,7 +3975,7 @@ if (typeof value === "object") {
                                 </div>
                               </div>
                             </div>
-                            
+
                             <div className="overflow-x-auto">
                               <table className="w-full divide-y divide-blue-200 dark:divide-blue-800/50 text-sm">
                                 <thead className="bg-gradient-to-r from-blue-100/70 to-indigo-100/70 dark:from-blue-900/30 dark:to-indigo-900/20 sticky top-0">
@@ -3994,7 +3994,7 @@ if (typeof value === "object") {
                                     </th>
                                   </tr>
                                 </thead>
-                                
+
                                 <tbody className="divide-y divide-blue-100 dark:divide-blue-900/30 bg-blue-50/50 dark:bg-blue-900/10">
                                   {sectionSummaryRows.map((row) => (
                                     <tr
@@ -4133,7 +4133,7 @@ if (typeof value === "object") {
         onClose={() => setIsAnswerTemplateOpen(false)}
         onSuccess={() => fetchData()}
       />
-       
+
     </div>
   );
 }

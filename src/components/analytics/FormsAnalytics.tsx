@@ -582,18 +582,15 @@ export default function FormsAnalytics() {
     });
   };
 
-  const handleExportTemplate = (templateId?: "flat" | "nested") => {
+  const handleExportTemplate = async (templateId?: "flat" | "nested") => {
     const templateToUse = templateId || (selectedTemplate?.id as "flat" | "nested");
     
     if (templateToUse === "nested") {
-      // Call the nested template download function
-      // You'll need to create downloadNestedFormImportTemplate() in your exportUtils
-      downloadNestedFormImportTemplate(); // For now, using the existing one
+      downloadNestedFormImportTemplate();
       showSuccess("Nested Follow-up template downloaded", "Success");
     } else {
-      // Default to flat template
-      downloadFormImportTemplate();
-      showSuccess("Follow-up Only template downloaded", "Success");
+      await downloadFormImportTemplate();
+      showSuccess("OPS template downloaded", "Success");
     }
     
     setIsTemplateDropdownOpen(false);
