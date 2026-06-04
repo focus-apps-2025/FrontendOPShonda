@@ -7,7 +7,7 @@ import { useQuestionLogic } from '../hooks/useQuestionLogic';
 interface ResponseEditProps {
   response: Response;
   question: Question;
-  onSave: (updatedResponse: Response) => void;
+  onSave: (updatedAnswers: Record<string, any>) => void;  // Change this
   onCancel: () => void;
 }
 
@@ -22,12 +22,8 @@ export default function ResponseEdit({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const updatedResponse: Response = {
-      ...response,
-      answers,
-      timestamp: new Date().toISOString(), // Update timestamp on edit
-    };
-    onSave(updatedResponse);
+    // Pass only the answers, not the full response
+    onSave(answers);
   };
 
   // Get all questions from sections or fallback to followUpQuestions
@@ -42,7 +38,7 @@ export default function ResponseEdit({
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto m-4">
         <div className="sticky top-0 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-6 py-4 flex justify-between items-center">
           <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
-            Edit Response 
+            Edit Response
           </h3>
           <div className="flex items-center space-x-3">
             <button
@@ -76,10 +72,8 @@ export default function ResponseEdit({
               question={q}
               value={answers[q.id]}
               trackingValue={answers[`${q.id}_tracking`]}
-
               onChange={(value) => setAnswers({ ...answers, [q.id]: value })}
               onTrackingChange={(value) => setAnswers({ ...answers, [`${q.id}_tracking`]: value })}
-
             />
           ))}
         </form>

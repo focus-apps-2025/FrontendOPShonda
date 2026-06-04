@@ -791,6 +791,24 @@ class ApiClient {
     });
   }
 
+  async getResponsesByModel(
+    formId: string,
+    tenantSlug: string | undefined,
+    modelQuestionId: string,
+    modelNumber: string,
+  ): Promise<any[]> {
+    const params = new URLSearchParams({ modelNumber, modelQuestionId });
+    const endpoint = tenantSlug
+      ? `/responses/${tenantSlug}/forms/${formId}/responses/by-model?${params}`
+      : `/responses/form/${formId}/responses/by-model?${params}`;
+    try {
+      const data = await this.request<any[]>(endpoint);
+      return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
+  }
+
   async updateResponse(id: string, responseData: any) {
     console.log("API Client: Updating response", id, responseData);
     const result = await this.request<{ response: any }>(`/responses/${id}`, {
@@ -2526,27 +2544,6 @@ class ApiClient {
     }>;
   }
 
-
-
-
-  // Add helper method for blob responses if not exists
-  private async postBlob(endpoint: string, data: any): Promise<Blob> {
-    const response = await fetch(`${this.baseURL}${endpoint}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.getToken()}`
-      },
-      body: JSON.stringify(data)
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to generate PDF');
-    }
-
-    return response.blob();
-  }
 }
 
 

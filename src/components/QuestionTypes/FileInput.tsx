@@ -5,8 +5,8 @@ import { apiClient } from "../../api/client";
 
 interface FileInputProps {
   question: FollowUpQuestion;
-  value: string;
-  onChange: (value: string) => void;
+  value: any;
+  onChange: (value: any) => void;
   readOnly?: boolean;
   isApplied?: boolean;
 }
@@ -64,9 +64,15 @@ const FILE_TYPE_LABELS: Record<string, string> = {
   doc: "Word",
 };
 
-const resolveFileName = (fileUrl: string) => {
+const resolveFileName = (fileUrl: any) => {
   if (!fileUrl) {
     return "";
+  }
+  if (typeof fileUrl === 'object' && fileUrl.url) {
+    fileUrl = fileUrl.url;
+  }
+  if (typeof fileUrl !== 'string') {
+    return "Uploaded file";
   }
   if (fileUrl.startsWith("data:")) {
     return "Embedded file";
@@ -82,13 +88,19 @@ const resolveFileName = (fileUrl: string) => {
   }
 };
 
-const isImageUrl = (fileUrl: string) => {
+const isImageUrl = (fileUrl: any) => {
   if (!fileUrl) {
+    return false;
+  }
+  if (typeof fileUrl === 'object' && fileUrl.url) {
+    return isImageUrl(fileUrl.url);
+  }
+  if (typeof fileUrl !== 'string') {
     return false;
   }
   try {
     const parsed = JSON.parse(fileUrl);
-    if (parsed.url) {
+    if (parsed && parsed.url) {
       return isImageUrl(parsed.url);
     }
   } catch {
@@ -100,23 +112,40 @@ const isImageUrl = (fileUrl: string) => {
   return /\.(png|jpg|jpeg|gif|bmp|webp|svg)$/i.test(fileUrl);
 };
 
-const parseFileValue = (fileValue: string) => {
-  try {
-    const parsed = JSON.parse(fileValue);
-    if (parsed.url && parsed.location) {
+const parseFileValue = (fileValue: any) => {
+  if (typeof fileValue === 'object' && fileValue !== null) {
+    if (fileValue.url && fileValue.location) {
       return {
         type: "camera",
-        url: parsed.url,
-        location: parsed.location,
-        timestamp: parsed.timestamp,
+        url: fileValue.url,
+        location: fileValue.location,
+        timestamp: fileValue.timestamp,
       };
     }
-  } catch {
-    // Not JSON, regular file URL
+    if (fileValue.url) {
+      return { type: "file", url: fileValue.url };
+    }
   }
+
+  if (typeof fileValue === 'string') {
+    try {
+      const parsed = JSON.parse(fileValue);
+      if (parsed && parsed.url && parsed.location) {
+        return {
+          type: "camera",
+          url: parsed.url,
+          location: parsed.location,
+          timestamp: parsed.timestamp,
+        };
+      }
+    } catch {
+      // Not JSON, regular file URL
+    }
+  }
+  
   return {
     type: "file",
-    url: fileValue,
+    url: typeof fileValue === 'string' ? fileValue : "",
   };
 };
 
@@ -337,7 +366,25 @@ export default function FileInput({
         timestamp: new Date().toISOString(),
       };
 
-      onChange(JSON.stringify(metadata));
+
+      const newFileValue = JSON.stringify(metadata);
+      let existingFiles: any[] = [];
+      if (Array.isArray(value)) {
+        existingFiles = value;
+      } else if (value) {
+        try {
+          const parsed = JSON.parse(value);
+          if (Array.isArray(parsed)) {
+            existingFiles = parsed;
+          } else {
+            existingFiles = [value];
+          }
+        } catch {
+          existingFiles = [value];
+        }
+      }
+      onChange([...existingFiles, newFileValue]);
+
       stopCamera();
       setShowCapturePreview(false);
       setCapturedImageBlob(null);
@@ -350,7 +397,7 @@ export default function FileInput({
       setUploading(false);
       setUploadProgress(null);
     }
-  }, [capturedImageBlob, location, question.id, onChange, stopCamera]);
+  }, [capturedImageBlob, location, question.id, onChange, stopCamera, value]);
 
   useEffect(() => {
     return () => {
@@ -361,36 +408,36 @@ export default function FileInput({
   const handleFileChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (readOnly) return;
-      const file = e.target.files?.[0];
-      if (file) {
+      const files = e.target.files;
+      if (files && files.length > 0) {
         // Check file size before upload
         const maxSize = 10 * 1024 * 1024; // 10MB
-        if (file.size > maxSize) {
-          const errorMsg = `File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds maximum limit of 10MB`;
-          setError(errorMsg);
-          e.target.value = "";
-          if (inputRef.current) {
-            inputRef.current.value = "";
-          }
-          return;
-        }
-
-        const allowed = question.allowedFileTypes;
-        if (allowed && allowed.length > 0) {
-          const isValid = allowed.some((type) => {
-            const validator = FILE_VALIDATORS[type];
-            return validator ? validator(file) : true;
-          });
-          if (!isValid) {
-            const allowedLabels = allowed
-              .map((type) => FILE_TYPE_LABELS[type] ?? type)
-              .join(", ");
-            window.alert(`Please upload a ${allowedLabels} file.`);
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          if (file.size > maxSize) {
+            const errorMsg = `File ${file.name} size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds maximum limit of 10MB`;
+            setError(errorMsg);
             e.target.value = "";
-            if (inputRef.current) {
-              inputRef.current.value = "";
-            }
+            if (inputRef.current) inputRef.current.value = "";
             return;
+          }
+
+          const allowed = question.allowedFileTypes;
+          if (allowed && allowed.length > 0) {
+            const isValid = allowed.some((type) => {
+              const validator = FILE_VALIDATORS[type];
+              return validator ? validator(file) : true;
+            });
+            if (!isValid) {
+              const allowedLabels = allowed
+                .map((type) => FILE_TYPE_LABELS[type] ?? type)
+                .join(", ");
+              window.alert(`Please upload a ${allowedLabels} file. (${file.name} is invalid)`);
+              e.target.value = "";
+              if (inputRef.current) inputRef.current.value = "";
+              return;
+            }
+
           }
         }
 
@@ -399,22 +446,46 @@ export default function FileInput({
           setError(null);
           setUploadProgress(null);
 
-          const result = await apiClient.uploadFile(
-            file,
-            "form",
-            question.id,
-            (progress) => {
-              setUploadProgress(progress);
+
+          const uploadedUrls: string[] = [];
+          for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const result = await apiClient.uploadFile(
+              file,
+              "form",
+              question.id,
+              (progress) => {
+                setUploadProgress({
+                  ...progress,
+                  percentage: ((i * 100) + progress.percentage) / files.length
+                });
+              }
+            );
+            const uploadedUrl = apiClient.resolveUploadedFileUrl(result);
+            if (!uploadedUrl) {
+              throw new Error(`File upload did not return a valid URL for ${file.name}`);
             }
-          );
-
-          const uploadedUrl = apiClient.resolveUploadedFileUrl(result);
-
-          if (!uploadedUrl) {
-            throw new Error("File upload did not return a valid URL");
+            uploadedUrls.push(uploadedUrl);
           }
 
-          onChange(uploadedUrl);
+
+          let existingFiles: any[] = [];
+          if (Array.isArray(value)) {
+            existingFiles = value;
+          } else if (value) {
+            try {
+              const parsed = JSON.parse(value);
+              if (Array.isArray(parsed)) {
+                existingFiles = parsed;
+              } else {
+                existingFiles = [value];
+              }
+            } catch {
+              existingFiles = [value];
+            }
+          }
+
+          onChange([...existingFiles, ...uploadedUrls]);
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : "Failed to upload file";
           setError(errorMsg);
@@ -429,18 +500,34 @@ export default function FileInput({
         }
       }
     },
-    [onChange, question.allowedFileTypes, readOnly]
+    [onChange, question.allowedFileTypes, readOnly, value, question.id]
   );
 
-  const handleRemoveFile = useCallback(() => {
-    if (readOnly) {
-      return;
+  const handleRemoveSingleFile = useCallback((indexToRemove: number) => {
+    if (readOnly) return;
+    let existingFiles: any[] = [];
+    if (Array.isArray(value)) {
+      existingFiles = [...value];
+    } else if (value) {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) existingFiles = [...parsed];
+        else existingFiles = [value];
+      } catch {
+        existingFiles = [value];
+      }
     }
-    if (inputRef.current) {
-      inputRef.current.value = "";
+    existingFiles.splice(indexToRemove, 1);
+
+    if (inputRef.current) inputRef.current.value = "";
+
+    if (existingFiles.length === 0) {
+      onChange("");
+    } else {
+      onChange(existingFiles);
     }
     onChange("");
-  }, [onChange, readOnly]);
+  }, [value, onChange, readOnly]);
 
   return (
     <div className="space-y-4">
@@ -478,8 +565,8 @@ export default function FileInput({
           </button>
           <label
             className={`flex flex-col items-center px-4 py-6 border-2 border-dashed rounded-lg ${readOnly || uploading
-                ? "cursor-not-allowed bg-gray-100 dark:bg-gray-800"
-                : "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700"
+              ? "cursor-not-allowed bg-gray-100 dark:bg-gray-800"
+              : "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700"
               } border-gray-300 dark:border-gray-600 ${error ? "border-red-300 dark:border-red-600" : ""}`}
           >
             {uploading ? (
@@ -532,7 +619,8 @@ export default function FileInput({
               onChange={handleFileChange}
               disabled={readOnly || uploading}
               className="hidden"
-              required={question.required && !value}
+              required={question.required && (!value || value.length === 0)}
+              multiple
             />
           </label>
         </>
@@ -689,98 +777,117 @@ export default function FileInput({
           <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
         </div>
       )}
-
       {value ? (() => {
-        const fileData = parseFileValue(value);
-        const imageUrl = fileData.type === "camera" ? fileData.url : value;
+        let filesToRender: any[] = [];
+        if (Array.isArray(value)) {
+          filesToRender = value;
+        } else if (value) {
+          try {
+            const parsed = JSON.parse(value);
+            if (Array.isArray(parsed)) filesToRender = parsed;
+            else filesToRender = [value];
+          } catch {
+            filesToRender = [value];
+          }
+        }
+        if (filesToRender.length === 0) return null;
+
         return (
-          <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
-            <div className={`flex items-center gap-3 p-4 rounded-xl border transition-all duration-300 ${
-              isApplied 
-                ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-500/50 ring-4 ring-emerald-500/5' 
-                : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
-            }`}>
-              <div className={`p-2 rounded-lg ${isApplied ? 'bg-emerald-500 text-white' : 'bg-blue-500 text-white'}`}>
-                {showImagePreview ? (
-                  <Eye className="w-5 h-5" />
-                ) : (
-                  <CheckCircle2 className="w-5 h-5" />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className={`text-sm font-bold truncate ${isApplied ? 'text-emerald-900 dark:text-emerald-100' : 'text-gray-900 dark:text-gray-100'}`}>
-                  {fileName || "Uploaded file"}
-                </p>
-                <p className={`text-xs font-medium ${isApplied ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-gray-400'}`}>
-                  {fileData.type === "camera" ? "Camera captured" : showImagePreview ? "Image uploaded" : "File uploaded successfully"}
-                  {isApplied && " (Auto-filled)"}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <a
-                  href={imageUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-black uppercase tracking-wider rounded-lg border transition-all ${
-                    isApplied
-                      ? 'text-emerald-600 bg-emerald-50 border-emerald-200 hover:bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-900/40 dark:border-emerald-700'
-                      : 'text-blue-600 bg-blue-50 border-blue-200 hover:bg-blue-100 dark:text-blue-300 dark:bg-blue-900/40 dark:border-blue-700'
-                  }`}
-                >
-                  <Eye className="w-4 h-4" />
-                  View
-                </a>
-                {!readOnly && (
-                  <button
-                    type="button"
-                    onClick={handleRemoveFile}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-black uppercase tracking-wider text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 dark:text-red-300 dark:bg-red-900/40 dark:border-red-700 transition-all"
-                  >
-                    <X className="w-4 h-4" />
-                    Remove
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {fileData.type === "camera" && fileData.location && (
-              <div className={`flex items-start gap-3 p-3 rounded-lg border transition-all duration-300 ${
-                isApplied
-                  ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-700'
-                  : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700'
-              }`}>
-                <MapPin className={`w-5 h-5 flex-shrink-0 mt-0.5 ${isApplied ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-600 dark:text-blue-400'}`} />
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-bold ${isApplied ? 'text-emerald-900 dark:text-emerald-200' : 'text-blue-900 dark:text-blue-200'}`}>
-                    Location Metadata
-                  </p>
-                  <div className={`mt-1 space-y-0.5 ${isApplied ? 'text-emerald-700 dark:text-emerald-300' : 'text-blue-700 dark:text-blue-300'}`}>
-                    <p className="text-xs">
-                      <strong>Latitude:</strong> {fileData.location.latitude.toFixed(6)}
-                    </p>
-                    <p className="text-xs">
-                      <strong>Longitude:</strong> {fileData.location.longitude.toFixed(6)}
-                    </p>
-                    <p className="text-xs">
-                      <strong>Accuracy:</strong> ±{fileData.location.accuracy.toFixed(1)}m
-                    </p>
-                    {fileData.timestamp && (
-                      <p className="text-xs mt-1 italic">
-                        <strong>Captured:</strong> {new Date(fileData.timestamp).toLocaleString()}
+          <div className="space-y-4">
+            {filesToRender.map((fileVal, index) => {
+              const fileData = parseFileValue(fileVal);
+              const imageUrl = fileData.type === "camera" ? fileData.url : fileVal;
+              const fileName = resolveFileName(fileVal);
+              const showImagePreview = isImageUrl(fileVal);
+              return (
+                <div key={index} className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className={`flex items-center gap-3 p-4 rounded-xl border transition-all duration-300 ${isApplied
+                    ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-500/50 ring-4 ring-emerald-500/5'
+                    : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
+                    }`}>
+                    <div className={`p-2 rounded-lg ${isApplied ? 'bg-emerald-500 text-white' : 'bg-blue-500 text-white'}`}>
+                      {showImagePreview ? (
+                        <Eye className="w-5 h-5" />
+                      ) : (
+                        <CheckCircle2 className="w-5 h-5" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-bold truncate ${isApplied ? 'text-emerald-900 dark:text-emerald-100' : 'text-gray-900 dark:text-gray-100'}`}>
+                        {fileName || "Uploaded file"}
                       </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
+                      <p className={`text-xs font-medium ${isApplied ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                        {fileData.type === "camera" ? "Camera captured" : showImagePreview ? "Image uploaded" : "File uploaded successfully"}
+                        {isApplied && " (Auto-filled)"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={imageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-black uppercase tracking-wider rounded-lg border transition-all ${isApplied
+                          ? 'text-emerald-600 bg-emerald-50 border-emerald-200 hover:bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-900/40 dark:border-emerald-700'
+                          : 'text-blue-600 bg-blue-50 border-blue-200 hover:bg-blue-100 dark:text-blue-300 dark:bg-blue-900/40 dark:border-blue-700'
+                          }`}
+                      >
+                        <Eye className="w-4 h-4" />
+                        View
+                      </a>
+                      {!readOnly && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSingleFile(index)}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-black uppercase tracking-wider text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 dark:text-red-300 dark:bg-red-900/40 dark:border-red-700 transition-all"
+                        >
+                          <X className="w-4 h-4" />
+                          Remove
+                        </button>
+                      )}
+                    </div>
 
-            {showImagePreview ? (
-              <img
-                src={imageUrl}
-                alt={fileName || "Uploaded file"}
-                className="max-w-full h-auto rounded-lg max-h-64 border border-gray-200 dark:border-gray-700"
-              />
-            ) : null}
+                  </div>
+
+
+                  {fileData.type === "camera" && fileData.location && (
+                    <div className={`flex items-start gap-3 p-3 rounded-lg border transition-all duration-300 ${isApplied
+                      ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-700'
+                      : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700'
+                      }`}>
+                      <MapPin className={`w-5 h-5 flex-shrink-0 mt-0.5 ${isApplied ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-600 dark:text-blue-400'}`} />
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-bold ${isApplied ? 'text-emerald-900 dark:text-emerald-200' : 'text-blue-900 dark:text-blue-200'}`}>
+                          Location Metadata
+                        </p>
+                        <div className={`mt-1 space-y-0.5 ${isApplied ? 'text-emerald-700 dark:text-emerald-300' : 'text-blue-700 dark:text-blue-300'}`}>
+                          <p className="text-xs">
+                            <strong>Latitude:</strong> {fileData.location.latitude.toFixed(6)}
+                          </p>
+                          <p className="text-xs">
+                            <strong>Longitude:</strong> {fileData.location.longitude.toFixed(6)}
+                          </p>
+                          <p className="text-xs">
+                            <strong>Accuracy:</strong> ±{fileData.location.accuracy.toFixed(1)}m
+                          </p>
+                          {fileData.timestamp && (
+                            <p className="text-xs mt-1 italic">
+                              <strong>Captured:</strong> {new Date(fileData.timestamp).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {showImagePreview ? (
+                    <img
+                      src={imageUrl}
+                      alt={fileName || "Uploaded file"}
+                      className="max-w-full h-auto rounded-lg max-h-64 border border-gray-200 dark:border-gray-700"
+                    />
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         );
       })() : null}

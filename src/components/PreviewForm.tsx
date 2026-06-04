@@ -60,10 +60,70 @@ interface OPSTemplateProps {
   answers: Record<string, any>;
   opsSectionMapping?: PreviewFormProps["opsSectionMapping"];
   onPrint: () => void;
+  highlightedField: {
+    questionId: string;
+    columnName?: string;
+    rowIndex?: number;
+  } | null;
+  historicalAnswers?: any[];
+  isLoadingHistory?: boolean;
+  submissionHistory?: Array<{ no: number; date: string; issuanceDetails: string }>;
 }
 
-function OPSTemplate({ form, answers, opsSectionMapping, onPrint }: OPSTemplateProps) {
+function OPSTemplate({ form, answers, opsSectionMapping, onPrint, highlightedField, historicalAnswers = [], isLoadingHistory = false, submissionHistory = [] }: OPSTemplateProps) {
   const opsRef = useRef<HTMLDivElement>(null);
+
+  // Add this function to get highlight style for a field
+  const getCellHighlightStyle = (
+    questionId: string | null,
+    columnName?: string,
+    rowIndex: number = 0
+  ): React.CSSProperties => {
+    if (!highlightedField || !questionId) return {};
+
+    // Check if this is the exact field being edited
+    const isExactMatch =
+      (highlightedField.questionId === questionId ||
+        highlightedField.questionId.includes(questionId) ||
+        questionId.includes(highlightedField.questionId)) &&
+      (!highlightedField.columnName || highlightedField.columnName === columnName) &&
+      highlightedField.rowIndex === rowIndex;
+
+    if (isExactMatch) {
+      return {
+        outline: '2px solid #3b82f6',
+        outlineOffset: '1.5px',
+        borderRadius: '2px',
+        transition: 'all 0.2s ease-in-out',
+      };
+    }
+    return {};
+  };
+
+  // Get highlight style for header fields (only single cell)
+  const getHeaderHighlightStyle = (questionId: string | null): React.CSSProperties => {
+    if (!highlightedField || !questionId) return {};
+
+    // Only highlight if no columnName (header field) and rowIndex matches
+    const isMatch =
+      (highlightedField.questionId === questionId ||
+        highlightedField.questionId.includes(questionId) ||
+        questionId.includes(highlightedField.questionId)) &&
+      (!highlightedField.columnName) &&
+      highlightedField.rowIndex === 0;
+
+    if (isMatch) {
+      return {
+        outline: '4px solid #29a131ff',
+        outlineOffset: '1.5px',
+        borderRadius: '2px',
+        transition: 'all 0.2s ease-in-out',
+      };
+    }
+    return {};
+  };
+
+
 
   const getQuestionsFromSection = useCallback((sectionId: string | undefined) => {
     if (!form || !sectionId) return [];
@@ -107,7 +167,7 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint }: OPSTemplateP
   const model = getAnswerOrFallback(headerQuestions, 2, "—");
   const station = getAnswerOrFallback(headerQuestions, 3, "—");
 
-  const formatNo = getAnswerOrFallback(headerQuestions, 4, "—");
+  const formatNo = getAnswerOrFallback(headerQuestions, 2, "—");
   const controlNo = getAnswerOrFallback(headerQuestions, 5, "—");
 
 
@@ -190,17 +250,40 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint }: OPSTemplateP
 
   const imgQ = illustrationQuestions.find((q: any) => q.id?.includes("image") || q.type === "file") || illustrationQuestions[0];
   const imgVal = imgQ ? answers[imgQ.id || imgQ._id] : null;
-  const hasImg = imgVal && typeof imgVal === "string" && imgVal.startsWith("http");
 
+  // Parse image value - could be string URL or array of URLs
+  let imageUrls: string[] = [];
+  if (imgVal) {
+    if (Array.isArray(imgVal)) {
+      imageUrls = imgVal.map((item: any) => typeof item === "string" ? item : item.url).filter(Boolean);
+    } else if (typeof imgVal === "string") {
+      try {
+        const parsed = JSON.parse(imgVal);
+        if (Array.isArray(parsed)) {
+          imageUrls = parsed.map((item: any) => typeof item === "string" ? item : item.url).filter(Boolean);
+        } else if (parsed.url) {
+          imageUrls = [parsed.url];
+        } else {
+          imageUrls = [imgVal];
+        }
+      } catch {
+        imageUrls = [imgVal];
+      }
+    } else if (typeof imgVal === "object" && imgVal.url) {
+      imageUrls = [imgVal.url];
+    }
+  }
+
+  const hasImg = imageUrls.length > 0;
   const live = (v: string) => (v && v !== "—") ? "#15803d" : "#999";
   const BORDER = "1px solid #999";
   const BORDER2 = "2px solid #000";
 
-  const C: React.CSSProperties = { border: BORDER, padding: "2px 1.5px", fontSize: "7pt", verticalAlign: "top", wordBreak: "break-word", lineHeight: "3" };
+  const C: React.CSSProperties = { border: BORDER, padding: "1px 1.5px", fontSize: "7pt", verticalAlign: "top", wordBreak: "break-word", lineHeight: "1.4" };
   const H: React.CSSProperties = { ...C, background: "#d9d9d9", fontWeight: 700, textAlign: "center", verticalAlign: "middle", fontSize: "6.5pt" };
-  const L: React.CSSProperties = { ...C, background: "#e8e8e8", fontWeight: 700, fontSize: "6.5pt", verticalAlign: "middle" };
+  const L: React.CSSProperties = { ...C, background: "#e8e8e8", fontWeight: 700, fontSize: "6.5pt", verticalAlign: "middle", lineHeight: "1" };
   const V: React.CSSProperties = { ...C, background: "#fff", verticalAlign: "middle" };
-  const T: React.CSSProperties = { width: "100%", borderCollapse: "collapse" as const, tableLayout: "fixed" as const, fontSize: "7pt" };
+  const T: React.CSSProperties = { width: "100%", borderCollapse: "collapse" as const, tableLayout: "fixed" as const, fontSize: "7pt", lineHeight: "1" };
 
   const LOGO = "/assets/Companylogo.png";
   const STOP = "/assets/Safetyposter.png";
@@ -237,9 +320,9 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint }: OPSTemplateP
 
   const LinedBox = () => (
     <table style={{ width: "100%", height: "100%", borderCollapse: "collapse" }}>
-      {Array.from({ length: 8 }).map((_, i) => (
+      {Array.from({ length: 10 }).map((_, i) => (
         <tr key={i}>
-          <td style={{ borderBottom: i < 13 ? "0.5px solid #ccc" : "none", height: 10 }}>&nbsp;</td>
+          <td style={{ borderBottom: i < 13 ? "0.5px solid #ccc" : "none", height: 8 }}>&nbsp;</td>
         </tr>
       ))}
     </table>
@@ -283,16 +366,20 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint }: OPSTemplateP
           <col style={{ width: "9%" }} />
         </colgroup>
         <tbody>
-          <tr style={{ height: 7 }}> {/* Reduced from 14 */}
-            <td rowSpan={8} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 1, background: "#1d4ed8" }}> {/* Reduced padding */}
-              <img src={LOGO} alt="Logo" style={{ width: "100%", maxHeight: 60, objectFit: "contain" }} /> {/* Reduced from 80 */}
+          <tr style={{ height: 4 }}> {/* Reduced from 14 */}
+            <td rowSpan={8} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 0, background: "#1d4ed8" }}> {/* Reduced padding */}
+              <img src={LOGO} alt="Logo" style={{ width: "100%", maxHeight: 80, objectFit: "contain" }} /> {/* Reduced from 80 */}
             </td>
             <td style={{ ...L, marginBottom: 0, lineHeight: "1.5" }}>{getQuestionText(headerQuestions, 0, "Dept. / Section")} :</td>
-            <td style={{ ...V, fontWeight: 700, color: live(dept), marginBottom: 0, lineHeight: "1.5" }}>{dept || "—"}</td>
-            <td style={L}>{getQuestionText(headerQuestions, 1, "Line / Zones")} :</td>
-            <td style={{ ...V, fontWeight: 700, color: live(lineZone) }}>{lineZone || "—"}</td>
+            <td style={{ ...V, fontWeight: 700, color: live(dept), marginBottom: 0, lineHeight: "1.5", ...getHeaderHighlightStyle(headerQuestions[0]?.id || headerQuestions[0]?._id) }}>
+              {dept || "—"}
+            </td>
+            <td style={{ ...L, marginBottom: 0, lineHeight: "1.5" }}>{getQuestionText(headerQuestions, 1, "Line / Zones")} :</td>
+            <td style={{ ...V, fontWeight: 700, color: live(lineZone), marginBottom: 0, lineHeight: "1.5", ...getHeaderHighlightStyle(headerQuestions[1]?.id || headerQuestions[1]?._id) }}>
+              {lineZone || "—"}
+            </td>
             <td colSpan={4} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 2 }}> {/* Reduced padding */}
-              <div style={{ fontSize: "11pt", fontWeight: 700, letterSpacing: 1 }}>Operation Standard</div> {/* Reduced from 14pt */}
+              <div style={{ fontSize: "9pt", fontWeight: 700, letterSpacing: 1 }}>Operation Standard</div> {/* Reduced from 14pt */}
             </td>
             {/* Prepared, Checked, Approved — plain empty cells (no ruled lines) */}
             {[0, 1, 2].map(i => (
@@ -300,52 +387,95 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint }: OPSTemplateP
             ))}
             {/* No., DD/MM/YY, Issuance/Revision details — keep ruled lines */}
             {[3, 4, 5].map(i => (
-              <td key={i} rowSpan={7} style={{ border: BORDER2, verticalAlign: "top", padding: 0 }}>
-                <LinedBox />
+              <td key={i} rowSpan={7} style={{ border: BORDER2, verticalAlign: "top", padding: 0, background: "#fff" }}>
+                <table style={{ width: "100%", height: "100%", borderCollapse: "collapse" }}>
+                  {Array.from({ length: 8 }).map((_, rIndex) => {
+                    const entry = submissionHistory?.[rIndex];
+                    let displayValue: string | number = "";
+                    if (entry) {
+                      if (i === 3) displayValue = entry.no;
+                      else if (i === 4) {
+                        try {
+                          displayValue = new Date(entry.date).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "2-digit" });
+                        } catch (e) {
+                          displayValue = entry.date;
+                        }
+                      }
+                      else if (i === 5) displayValue = entry.issuanceDetails;
+                    }
+                    return (
+                      <tr key={rIndex}>
+                        <td style={{
+                          borderBottom: "1px solid #ccc",
+                          height: 11,
+                          padding: "0 2px",
+                          fontSize: "5.5pt",
+                          textAlign: "center",
+                          color: entry ? "#15803d" : "transparent",
+                          fontWeight: entry ? 700 : 400,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}>
+                          {displayValue || "\u00A0"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </table>
               </td>
             ))}
             <td rowSpan={8} style={{ border: BORDER2, verticalAlign: "top", padding: "2px 3px", fontSize: "5.5pt" }}>
               {/* Format No. - Use actual question text from form */}
-              <div style={{ fontWeight: 700, color: "#c00" }}>
+              <div style={{ fontWeight: 700, color: "#c00", lineHeight: "1.5", marginBottom: 2, height: 20 }}>
                 {getQuestionText(headerQuestions, 4, "Format No.")} :
               </div>
-              <div style={{ fontWeight: 700, fontSize: "7pt", marginBottom: 2, color: live(formatNo) }}>{formatNo || "—"}</div>
+              <div style={{ fontWeight: 700, fontSize: "7pt", marginBottom: 2, color: live(formatNo), ...getHeaderHighlightStyle(headerQuestions[4]?.id || headerQuestions[4]?._id) }}>
+                {formatNo || "—"}
+              </div>
+
 
               <div style={{ borderTop: "0.5px solid #999", margin: "2px 0" }} />
 
               {/* Control No. - Use actual question text from form */}
-              <div style={{ fontWeight: 700, color: "#c00" }}>
+              <div style={{ fontWeight: 700, color: "#c00", lineHeight: "1.5", marginBottom: 2, height: 20 }}>
                 {getQuestionText(headerQuestions, 5, "Control No.")} :
               </div>
-              <div style={{ fontWeight: 700, fontSize: "7pt", marginBottom: 2, color: live(controlNo) }}>{controlNo || "—"}</div>
+              <div style={{ fontWeight: 700, fontSize: "7pt", marginBottom: 2, color: live(controlNo), ...getHeaderHighlightStyle(headerQuestions[5]?.id || headerQuestions[5]?._id) }}>
+                {controlNo || "—"}
+              </div>
 
               <div style={{ borderTop: "0.5px solid #999", margin: "2px 0" }} />
 
               {/* QR Code - This might be a static label or from form */}
-              <div style={{ fontWeight: 700, marginBottom: 1 }}>
+              <div style={{ fontWeight: 700, marginBottom: 4, alignItems: "center", justifyContent: "center" }}>
                 {getQuestionText(instructionQuestions, 6, "QR Code")} :
               </div>
-              <img src={QR} alt="QR" style={{ width: 30, height: 20, objectFit: "contain" }} />
+              <img src={QR} alt="QR" style={{ width: 60, height: 45, objectFit: "contain" }} />
             </td>
           </tr>
 
-          <tr style={{ height: 7 }}> {/* Reduced from 13 */}
-            <td style={L}>{getQuestionText(headerQuestions, 2, "Model")} :</td>
-            <td style={{ ...V, fontWeight: 700, color: live(model) }}>{model || "—"}</td>
-            <td style={L}>{getQuestionText(headerQuestions, 3, "Process / Station")} :</td>
-            <td style={{ ...V, fontWeight: 700, color: live(station) }}>{station || "—"}</td>
+          <tr style={{ height: 4 }}> {/* Reduced from 13 */}
+            <td style={{ ...L, lineHeight: "1.5" }}>{getQuestionText(headerQuestions, 2, "Model")} :</td>
+            <td style={{ ...V, fontWeight: 700, color: live(model), ...getHeaderHighlightStyle(headerQuestions[2]?.id || headerQuestions[2]?._id) }}>
+              {model || "—"}
+            </td>
+            <td style={{ ...L, lineHeight: "1.5" }}>{getQuestionText(headerQuestions, 3, "Process / Station")} :</td>
+            <td style={{ ...V, fontWeight: 700, color: live(station), ...getHeaderHighlightStyle(headerQuestions[3]?.id || headerQuestions[3]?._id) }}>
+              {station || "—"}
+            </td>
             <td colSpan={4} style={{ ...H, border: BORDER2, fontSize: "5.5pt" }}> {/* Reduced from 6.5pt */}
               Your Work When Trouble Stopped The Production Line
             </td>
           </tr>
 
-          <tr style={{ height: 7 }}> {/* Reduced from 13 */}
+          <tr style={{ height: 4 }}> {/* Reduced from 13 */}
             <td rowSpan={6} colSpan={2} style={{ border: BORDER2, verticalAlign: "top", fontSize: "5pt", padding: "2px 3px" }}> {/* Reduced padding */}
-              <div style={{ fontWeight: 700, marginBottom: 1 }}>REJECTION HANDLING :-</div>
-              <div style={{ marginBottom: 2 }}>Clearly Identify Rejected / NG parts.</div>
-              <div>Keep them properly with proper identification at defined Location.</div>
+              <div style={{ fontWeight: 900, marginBottom: 5, fontSize: 8 }}>REJECTION HANDLING :-</div>
+              <div style={{ marginBottom: 2, fontSize: 7 }}>Clearly Identify Rejected / NG parts.</div>
+              <div style={{ lineHeight: "1.5", fontSize: 7 }}>Keep them properly with proper identification at defined Location.</div>
             </td>
-            <td rowSpan={6} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", fontWeight: 700, fontSize: "5pt", padding: 1 }}> {/* Reduced padding */}
+            <td rowSpan={6} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", fontWeight: 700, fontSize: "6pt", padding: 1, lineHeight: 1.5 }}> {/* Reduced padding */}
               Measuring<br />Instruments<br />or Gauges
             </td>
             <td rowSpan={6} style={{ border: BORDER2, verticalAlign: "top", fontSize: "5pt", padding: 0 }}>
@@ -355,18 +485,18 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint }: OPSTemplateP
                 "Do Not Use Unidentified Measuring Tool / Gauges.",
                 "In case of any abnormality, inform Line leader and Quality Engineer.",
               ].map((txt, i, arr) => (
-                <div key={i} style={{ padding: "1px 1px", borderBottom: i < arr.length - 1 ? "0.5px solid #ccc" : "none" }}>{txt}</div> // Reduced padding
+                <div key={i} style={{ padding: "2px 1px", borderBottom: i < arr.length - 1 ? "0.5px solid #ccc" : "none", lineHeight: "1.5" }}>{txt}</div> // Reduced padding
               ))}
             </td>
             <td rowSpan={6} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 2 }}> {/* Reduced padding */}
-              <img src={STOP} alt="Stop Call Wait" style={{ maxWidth: "100%", height: 100, objectFit: "contain" }} /> {/* Reduced from 180 */}
+              <img src={STOP} alt="Stop Call Wait" style={{ maxWidth: "100%", height: 90, objectFit: "contain" }} /> {/* Reduced from 180 */}
             </td>
             <td style={{ ...H, }}>S. No.</td>
             <td style={H}>Trouble</td>
             <td style={H}>Your task</td>
           </tr>
 
-          <tr style={{ height: 7 }}> {/* Reduced from 12 */}
+          <tr style={{ height: 4 }}> {/* Reduced from 12 */}
             <td style={{ ...C, textAlign: "center" }}>1</td>
             <td style={{ ...C, fontSize: "5.5pt" }}>{troubleRows[0]}</td> {/* Reduced from 6pt */}
             <td rowSpan={5} style={{ fontSize: "5.5pt", textAlign: "center", verticalAlign: "middle", lineHeight: "2" }}> {/* Reduced from 5.5pt */}
@@ -388,12 +518,12 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint }: OPSTemplateP
           <tr style={{ height: 7 }}>
             <td style={{ ...C, textAlign: "center" }}>5</td>
             <td style={{ ...C, fontSize: "5.5pt" }}>{troubleRows[4]}</td>
-            <td style={{ ...H, border: BORDER2, fontSize: "5pt" }}>Prepared</td>
-            <td style={{ ...H, fontSize: "5pt" }}>Checked</td>
-            <td style={{ ...H, fontSize: "5pt" }}>Approved</td>
-            <td style={{ ...H, fontSize: "5pt" }}>No.</td>
-            <td style={{ ...H, fontSize: "5pt" }}>DD/MM/YY</td>
-            <td style={{ ...H, border: BORDER2, fontSize: "5pt" }}>Issuance / Revision details</td>
+            <td style={{ ...H, border: BORDER2, fontSize: "6pt" }}>Prepared</td>
+            <td style={{ ...H, fontSize: "6pt" }}>Checked</td>
+            <td style={{ ...H, fontSize: "6pt" }}>Approved</td>
+            <td style={{ ...H, fontSize: "6pt" }}>No.</td>
+            <td style={{ ...H, fontSize: "6pt" }}>DD/MM/YY</td>
+            <td style={{ ...H, border: BORDER2, fontSize: "6pt" }}>Issuance / Revision details</td>
           </tr>
         </tbody>
       </table>
@@ -410,7 +540,7 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint }: OPSTemplateP
       </table>
 
       {/* General Instructions Body - COMPACT */}
-      <table style={{ ...T, border: BORDER2, borderTop: "none", }}>
+      <table style={{ ...T, border: BORDER2, borderTop: "none" }}>
         <colgroup>
           <col style={{ width: "10%" }} />
           <col style={{ width: "8%" }} />
@@ -436,21 +566,21 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint }: OPSTemplateP
           </tr>
           <tr>
             <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}> {/* Reduced font */}
-              <div style={{ fontWeight: 700, marginBottom: 1 }}>FIFO System</div> {/* Reduced margin */}
-              {fifo.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "2.5" }}>{l}</div>)} {/* Reduced margin */}
+              <div style={{ fontWeight: 800, marginBottom: 1, fontSize: "6pt" }}>FIFO System</div> {/* Reduced margin */}
+              {fifo.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "2", fontSize: "6pt" }}>{l}</div>)} {/* Reduced margin */}
             </td>
             <td style={{ ...C, verticalAlign: "top", padding: 0 }}>
-              <div style={{ padding: "2px 3px", borderBottom: "0.5px solid #ccc", fontSize: "5pt" }}>{nonLub}</div> {/* Reduced padding */}
+              <div style={{ padding: "2px 3px", borderBottom: "0.5px solid #ccc", fontSize: "6pt", lineHeight: "2" }}>{nonLub}</div> {/* Reduced padding */}
               <div style={{ display: "flex", borderBottom: "0.5px solid #ccc" }}>
-                <div style={{ flex: 1, borderRight: "0.5px solid #ccc", padding: "1px 2px", textAlign: "center", fontWeight: 700, fontSize: "4.5pt", background: "#d9d9d9" }}>No mobile on shopfloor</div>
-                <div style={{ flex: 1, padding: "1px 2px", textAlign: "center", fontWeight: 700, fontSize: "4.5pt", background: "#d9d9d9" }}>Do not run on shopfloor</div>
+                <div style={{ flex: 1, borderRight: "0.5px solid #ccc", padding: "1px 2px", textAlign: "center", fontWeight: 700, fontSize: "5pt", background: "#d9d9d9", lineHeight: "2" }}>No mobile on shopfloor</div>
+                <div style={{ flex: 1, padding: "1px 2px", textAlign: "center", fontWeight: 700, fontSize: "5pt", background: "#d9d9d9", lineHeight: "2" }}>Do not run on shopfloor</div>
               </div>
               <div style={{ display: "flex" }}>
                 <div style={{ flex: 1, borderRight: "0.5px solid #ccc", padding: 2, textAlign: "center" }}> {/* Reduced padding */}
-                  <img src={NO_MOB} alt="No Mobile" style={{ width: 50, height: 70, objectFit: "contain" }} /> {/* Reduced from 72x72 */}
+                  <img src={NO_MOB} alt="No Mobile" style={{ width: 60, height: 90, objectFit: "contain" }} /> {/* Reduced from 72x72 */}
                 </div>
                 <div style={{ flex: 1, padding: 2, textAlign: "center" }}>
-                  <img src={NO_RUN} alt="No Run" style={{ width: 50, height: 70, objectFit: "contain" }} />
+                  <img src={NO_RUN} alt="No Run" style={{ width: 60, height: 90, objectFit: "contain" }} />
                 </div>
               </div>
             </td>
@@ -460,21 +590,21 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint }: OPSTemplateP
             <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 2 }}>
               <img src={PPE_STA} alt="Station PPE" style={{ width: "100%", maxHeight: 140, objectFit: "contain" }} /> {/* Reduced from 190 */}
             </td>
-            <td style={{ ...C, textAlign: "center", verticalAlign: "top", padding: 2, marginTop: 1 }}> {/* Reduced padding */}
-              <img src={SHIFT} alt="Shift Timings" style={{ width: "100%", height: 190, objectFit: "contain" }} /> {/* Reduced from 190 */}
+            <td style={{ ...C, textAlign: "center", verticalAlign: "top", padding: 2, marginTop: 6 }}> {/* Reduced padding */}
+              <img src={SHIFT} alt="Shift Timings" style={{ width: "100%", maxHeight: 160, objectFit: "contain" }} /> {/* Reduced from 190 */}
             </td>
-            <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
+            <td style={{ ...C, verticalAlign: "top", fontSize: "5.5pt" }}>
               <div style={{ fontWeight: 700, color: "#166534", marginBottom: 2 }}>Environmental Issues</div> {/* Reduced margin */}
-              {envTxt.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 1 }}>{l}</div>)} {/* Reduced margin */}
+              {envTxt.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 1, fontSize: "6pt", lineHeight: "2" }}>{l}</div>)} {/* Reduced margin */}
             </td>
-            <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
+            <td style={{ ...C, verticalAlign: "top", fontSize: "5.5pt" }}>
               <div style={{ fontWeight: 700, color: "#991b1b", marginBottom: 2 }}>Safety Issues</div>
-              {safeTxt.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "2.5" }}>{l}</div>)}
+              {safeTxt.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "2", fontSize: "6pt" }}>{l}</div>)}
             </td>
             <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 2 }}>
               <img src={FIVE_S} alt="5S Guidelines" style={{ width: "100%", maxHeight: 100, objectFit: "fill" }} /> {/* Reduced from 140 */}
             </td>
-            <td style={{ ...C, verticalAlign: "top", fontSize: "5.5pt" }}>
+            <td style={{ ...C, verticalAlign: "top", fontSize: "6pt" }}>
               {procInstructions.map((l, i) => (
                 <div key={i} style={{
                   marginBottom: "0px",
@@ -509,23 +639,116 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint }: OPSTemplateP
           </tr>
         </thead>
         <tbody>
-          {Array.from({ length: PROC_ROWS }).map((_, rowIdx) => (
-            <tr key={rowIdx}>
-              <td style={{ ...C, background: "#ffff00", textAlign: "center", verticalAlign: "middle", padding: 2, minHeight: 50, height: 50 }}>
-                {hasImg && rowIdx === 0
-                  ? <img src={imgVal} alt="Illustration" style={{ maxWidth: "90%", maxHeight: 55, objectFit: "contain" }} />
-                  : <span style={{ fontSize: "5.5pt", color: "#aaa" }}>&nbsp;</span>
-                }
+          {/* ── Loading indicator ── */}
+          {isLoadingHistory && (
+            <tr>
+              <td colSpan={2 + columnFields.length} style={{ ...C, textAlign: 'center', background: '#f0f9ff', color: '#3b82f6', fontStyle: 'italic', height: 28 }}>
+                ⏳ Fetching historical responses…
               </td>
-              <td style={{ ...C, textAlign: "center", fontWeight: 700, fontSize: "9pt", verticalAlign: "middle" }}>{rowIdx + 1}</td>
-              {columnFields.map((col, colIdx) => {
-                const cellVal = rowIdx === 0 ? rowAnswers[colIdx] : "";
-                return (
-                  <td key={col.field} style={{ ...C, color: cellVal ? "#000" : "transparent", height: 50, minHeight: 50 }}>
-                    {cellVal || "\u00A0"}
-                  </td>
-                );
-              })}
+            </tr>
+          )}
+
+          {/* ── Historical rows (previous responses) ── */}
+          {!isLoadingHistory && historicalAnswers.map((histResp, histIdx) => {
+            const histAnswers: Record<string, any> = histResp.answers || histResp;
+            return (
+              <tr key={`hist-${histIdx}`}>
+                {/* Illustration cell – blank for historical */}
+                <td style={{ ...C, background: '#f3f4f6', height: 50, minHeight: 50 }} />
+                {/* SN */}
+                <td style={{ ...C, background: '#f3f4f6', textAlign: 'center', fontWeight: 700, fontSize: '9pt', verticalAlign: 'middle', fontStyle: 'italic', color: '#6b7280' }}>
+                  {histIdx + 1}
+                </td>
+                {columnFields.map((col) => {
+                  // Extract this column's answer from the historical response
+                  const fieldQuestion = findQuestionByField(col.field);
+                  const qId = fieldQuestion?.id || fieldQuestion?._id;
+                  const val = qId ? histAnswers[qId] : '';
+                  const displayVal = val !== undefined && val !== null && val !== '' ? String(val) : '';
+                  return (
+                    <td
+                      key={col.field}
+                      style={{
+                        ...C,
+                        background: '#f3f4f6',
+                        fontStyle: 'italic',
+                        color: displayVal ? '#374151' : '#d1d5db',
+                        height: 50,
+                        minHeight: 50,
+                        fontSize: '6.5pt',
+                      }}
+                    >
+                      {displayVal || '\u00A0'}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+
+
+
+          {/* ── Current / new response row ── */}
+          <tr>
+            <td style={{ ...C, background: "#ffff00", textAlign: "center", verticalAlign: "middle", padding: 2, minHeight: 50, height: 50 }}>
+              {hasImg && (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '4px',
+                    ...getCellHighlightStyle(imgQ?.id || imgQ?._id)
+                  }}
+                >
+                  {imageUrls.map((url, idx) => (
+                    <img
+                      key={idx}
+                      src={url}
+                      alt={`Illustration ${idx + 1}`}
+                      style={{ width: '48%', height: 40, objectFit: 'contain', cursor: 'pointer' }}
+                      onClick={() => window.open(url, '_blank')}
+                    />
+                  ))}
+                </div>
+              )}
+            </td>
+            {/* SN = after all historical rows */}
+            <td style={{ ...C, textAlign: "center", fontWeight: 700, fontSize: "9pt", verticalAlign: "middle" }}>
+              {historicalAnswers.length + 1}
+            </td>
+            {columnFields.map((col, colIdx) => {
+              const cellVal = rowAnswers[colIdx];
+              const fieldQuestion = findQuestionByField(col.field);
+              const questionId = fieldQuestion?.id || fieldQuestion?._id;
+              const shouldShowValue = !!cellVal;
+              return (
+                <td
+                  key={col.field}
+                  style={{
+                    ...C,
+                    fontWeight: 700,
+                    color: shouldShowValue ? '#000' : 'transparent',
+                    height: 50,
+                    minHeight: 50,
+                    ...getCellHighlightStyle(questionId, col.field, 0)
+                  }}
+                >
+                  {shouldShowValue ? cellVal : '\u00A0'}
+                </td>
+              );
+            })}
+          </tr>
+
+          {/* ── Extra blank rows to maintain minimum height ── */}
+          {Array.from({ length: Math.max(0, PROC_ROWS - historicalAnswers.length - 1) }).map((_, i) => (
+            <tr key={`blank-${i}`}>
+              <td style={{ ...C, background: "#ffff00", height: 50, minHeight: 50 }} />
+              <td style={{ ...C, textAlign: 'center', fontWeight: 700, fontSize: '9pt', verticalAlign: 'middle', color: '#ccc' }}>
+                {historicalAnswers.length + 2 + i}
+              </td>
+              {columnFields.map(col => (
+                <td key={col.field} style={{ ...C, height: 50, minHeight: 50 }}>&nbsp;</td>
+              ))}
             </tr>
           ))}
         </tbody>
@@ -652,6 +875,21 @@ export default function PreviewForm({
   const { showSuccess, showConfirm, showError: showNotifyError } = useNotification();
   const { getOrderedVisibleQuestions } = useQuestionLogic();
 
+  const [highlightTimeout, setHighlightTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [historicalAnswers, setHistoricalAnswers] = useState<any[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  const [showSubmitPopup, setShowSubmitPopup] = useState(false);
+  const [popupDate, setPopupDate] = useState("");
+  const [popupIssuanceDetails, setPopupIssuanceDetails] = useState("");
+  const [submissionHistory, setSubmissionHistory] = useState<Array<{ no: number; date: string; issuanceDetails: string }>>([]);
+
+  const [highlightedField, setHighlightedField] = useState<{
+    questionId: string;
+    columnName?: string;  // For process steps columns
+    rowIndex?: number;    // For which row (0 = first row)
+  } | null>(null);
+
   const chassisNumbers = useMemo(() => {
     const raw = propChassisNumbers || form?.chassisNumbers || [];
     return raw.map((cn: any) => typeof cn === "string" ? { chassisNumber: cn, partDescription: "" } : cn);
@@ -698,7 +936,7 @@ export default function PreviewForm({
   // ── Answer validation ──
   const isValidFileInput = (value: any): boolean => {
     if (!value) return false;
-    if (typeof value === "string") {
+    if (Array.isArray(value)) return value.length > 0 && value.some(v => isValidFileInput(v)); if (typeof value === "string") {
       try { const p = JSON.parse(value); if (p?.url && p?.location) return !!p.url; } catch { }
       return value.trim().length > 0;
     }
@@ -1002,33 +1240,80 @@ export default function PreviewForm({
   };
 
   // ── Submit ──
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmitClick = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form || !formId) return;
     const ms = getMainSections();
     const sectionsToValidate = ms.filter((_, idx) => Array.from(new Set(navigationHistory)).includes(idx));
     if (!validateSections(sectionsToValidate)) return;
-    showConfirm("Are you sure you want to submit?", async () => { await performSubmission(); }, "Confirm Submission", "Submit Now", "Review Form");
+    setShowSubmitPopup(true);
   };
 
-  const performSubmission = async () => {
+  const handleConfirmSubmit = async () => {
+    if (!popupDate || !popupIssuanceDetails) {
+      showNotifyError("Please fill in both Date and Issuance/Revision Details.");
+      return;
+    }
+    const newEntry = {
+      no: submissionHistory.length + 1,
+      date: popupDate,
+      issuanceDetails: popupIssuanceDetails
+    };
+    const updatedHistory = [...submissionHistory, newEntry];
+    setSubmissionHistory(updatedHistory);
+    await performSubmission(updatedHistory);
+  };
+
+  const performSubmission = async (updatedHistory: Array<{ no: number; date: string; issuanceDetails: string }>) => {
     if (formSessionId && chassisNumbers.length > 0 && !answers["chassis_number"]) {
-      showNotifyError("Please select a Chassis Number"); window.scrollTo({ top: 0, behavior: "smooth" }); return;
+      showNotifyError("Please select a Chassis Number");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
     }
     setSubmitting(true);
     try {
       let submittedBy: string | undefined;
       if (user) submittedBy = user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.username || user.email;
-      const data: any = { answers, inviteId: inviteId || null, submittedBy, submitterContact: user ? { email: user.email || "", phone: user.phone || "" } : {} };
+
+      // Store submission history inside answers
+      const answersWithHistory = {
+        ...answers,
+        __submissionHistory: updatedHistory
+      };
+
+      const data: any = {
+        answers: answersWithHistory,
+        inviteId: inviteId || null,
+        submittedBy,
+        submitterContact: user ? { email: user.email || "", phone: user.phone || "" } : {},
+        submissionMetadata: { date: popupDate, issuanceDetails: popupIssuanceDetails }
+      };
+
       if (location) data.location = { latitude: location.latitude, longitude: location.longitude, accuracy: location.accuracy, source: "browser", capturedAt: new Date().toISOString() };
       if (formSessionId) { data.sessionId = formSessionId; data.startedAt = sectionStartTime; data.completedAt = new Date(); }
-      if (propOnSubmit) { await propOnSubmit({ id: "preview-response", formId: formId || "preview", answers, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } as any); showSuccess("Preview submission successful!"); setSubmitted(true); return; }
+
+      if (propOnSubmit) {
+        await propOnSubmit({ id: "preview-response", formId: formId || "preview", answers: answersWithHistory, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } as any);
+        showSuccess("Preview submission successful!");
+        setShowSubmitPopup(false);
+        setPopupDate("");
+        setPopupIssuanceDetails("");
+        setSubmitted(true);
+        return;
+      }
       if (!formId) return;
       await apiClient.submitResponse(formId, tenantSlug, data);
-      showSuccess("Form submitted successfully!"); setSubmitted(true);
-    } catch { showNotifyError("Failed to submit form"); } finally { setSubmitting(false); }
+      showSuccess("Form submitted successfully!");
+      setShowSubmitPopup(false);
+      setPopupDate("");
+      setPopupIssuanceDetails("");
+      setSubmitted(true);
+    } catch {
+      showNotifyError("Failed to submit form");
+    } finally {
+      setSubmitting(false);
+    }
   };
-
   const handleSectionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form || !formId) return;
@@ -1042,8 +1327,11 @@ export default function PreviewForm({
     }
     setSectionStartTime(new Date());
     if (currentSectionIndex === 0 && formSessionId && chassisNumbers.length > 0 && !answers["chassis_number"]) {
-      showNotifyError("Please select a Chassis Number"); window.scrollTo({ top: 0, behavior: "smooth" }); return;
+      showNotifyError("Please select a Chassis Number");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
     }
+
     if (!validateSections([cur])) return;
     setSectionSubmitting(true);
     try {
@@ -1060,20 +1348,80 @@ export default function PreviewForm({
         setNavigationHistory((p) => [...p, next]); setSectionNavigationHistory((p) => [...p, next]);
         setVisitedSectionIndices((p) => new Set(p).add(next)); setCurrentSectionIndex(next);
         window.scrollTo({ top: 0, behavior: "smooth" });
-      } else handleSubmit(e);
+      } else handleSubmitClick(e);
     } catch { showNotifyError("Failed to submit section"); } finally { setSectionSubmitting(false); }
   };
+  // Get header questions for auto-sync
+  const headerQuestionsIds = useMemo(() => {
+    if (!form || !effectiveOpsMapping?.headerSectionId) return null;
+
+    const headerSection = form.sections?.find(s => s.id === effectiveOpsMapping.headerSectionId);
+    if (!headerSection?.questions) return null;
+
+    const questions = headerSection.questions;
+    return {
+      modelId: questions[2]?.id || questions[2]?._id,      // Model at index 2
+      formatNoId: questions[4]?.id || questions[4]?._id,  // Format No at index 4
+    };
+  }, [form, effectiveOpsMapping]);
+
+  // ── Fetch historical responses by model number ──
+  const fetchHistoricalResponses = useCallback(async (modelNumber: string) => {
+    if (!formId || !headerQuestionsIds?.modelId || !modelNumber.trim()) {
+      setHistoricalAnswers([]);
+      return;
+    }
+    setIsLoadingHistory(true);
+    try {
+      const results = await apiClient.getResponsesByModel(formId, tenantSlug, headerQuestionsIds.modelId, modelNumber.trim());
+      setHistoricalAnswers(Array.isArray(results) ? results : []);
+    } catch {
+      setHistoricalAnswers([]);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  }, [formId, tenantSlug, headerQuestionsIds]);
 
   // ── Answer change — this updates `answers` state which OPSTemplate reads directly ──
-  const handleResponseChange = useCallback((questionId: string, value: any) => {
+  const handleResponseChange = useCallback((questionId: string, value: any, additionalInfo?: { columnName?: string; rowIndex?: number }) => {
+    // Update the current question
+    setAnswers((prev) => ({ ...prev, [questionId]: value }));
+
+    // Auto-sync: If Model field is updated, also update Format No. + fetch history
+    if (headerQuestionsIds && questionId === headerQuestionsIds.modelId) {
+      if (value) {
+        setAnswers((prev) => ({ ...prev, [headerQuestionsIds.formatNoId]: value }));
+        fetchHistoricalResponses(String(value));
+      } else {
+        setHistoricalAnswers([]);
+      }
+    }
+
+    // Set highlighting for the current field
+    setHighlightedField({
+      questionId,
+      columnName: additionalInfo?.columnName,
+      rowIndex: additionalInfo?.rowIndex ?? 0,
+    });
+
+    // Clear previous timeout
+    if (highlightTimeout) {
+      clearTimeout(highlightTimeout);
+    }
+
+    // Remove highlight after 2 seconds
+    const timeout = setTimeout(() => {
+      setHighlightedField(null);
+    }, 2000);
+    setHighlightTimeout(timeout);
+
+    // Call onQuestionChange if needed
     if (!answers[questionId] && value && onQuestionChange && getMainSections()[currentSectionIndex]) {
       const cur = getMainSections()[currentSectionIndex];
       const q = cur.questions?.find((q: any) => q.id === questionId);
       if (q) onQuestionChange(questionId, q.text || "Unknown", q.type || "unknown", cur.id, cur.title || "Untitled Section", value);
     }
-    // Direct state update — triggers re-render of OPSTemplate with new answers
-    setAnswers((prev) => ({ ...prev, [questionId]: value }));
-  }, [answers, currentSectionIndex, onQuestionChange, getMainSections]);
+  }, [answers, currentSectionIndex, onQuestionChange, getMainSections, highlightTimeout, headerQuestionsIds, fetchHistoricalResponses]);
 
   const handleLoadSampleData = () => {
     if (!form) return;
@@ -1214,7 +1562,7 @@ export default function PreviewForm({
         {/* ── LEFT: 30% — Form ── */}
         <div
           className={`flex flex-col border-r overflow-hidden ${darkMode ? "border-slate-800 bg-slate-950" : "border-slate-200 bg-slate-50"}`}
-          style={{ width: "20%", minWidth: 280 }}
+          style={{ width: "40%", minWidth: 320 }}
         >
           {/* Panel label */}
           <div className={`flex-none px-3 py-1.5 border-b flex items-center gap-2 ${darkMode ? "border-slate-800 bg-slate-900/60" : "border-slate-100 bg-white"}`}>
@@ -1254,7 +1602,7 @@ export default function PreviewForm({
             )}
 
             {/* Section form */}
-            <form id="customer-form" onSubmit={handleSubmit}>
+            <form id="customer-form" onSubmit={handleSubmitClick}>
               <div className={`rounded-xl border overflow-hidden ${darkMode ? "border-slate-800 bg-slate-900/40" : "border-slate-200 bg-white shadow-sm"}`}>
                 {/* Section header */}
                 <div className={`border-b px-4 py-3 ${darkMode ? "border-slate-800 bg-slate-900/40" : "border-slate-100 bg-slate-50/50"}`}>
@@ -1326,7 +1674,7 @@ export default function PreviewForm({
                     {sectionSubmitting ? <><Loader2 className="h-2.5 w-2.5 animate-spin" /> Saving...</> : <><CheckCircle2 className="h-2.5 w-2.5" /> Next</>}
                   </button>
                 ) : (
-                  <button type="submit" form="customer-form" onClick={handleSubmit} disabled={submitting}
+                  <button type="submit" form="customer-form" onClick={handleSubmitClick} disabled={submitting}
                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[9px] font-bold uppercase hover:bg-emerald-700 disabled:opacity-50 transition-all">
                     {submitting ? <><Loader2 className="h-2.5 w-2.5 animate-spin" /> Submitting...</> : <><CheckCircle2 className="h-2.5 w-2.5" /> Submit</>}
                   </button>
@@ -1354,8 +1702,8 @@ export default function PreviewForm({
 
 
           {/* Scrollable OPS output */}
-          <div className="flex-1 overflow-auto p-2">
-            <div ref={opsContainerRef} className="bg-white shadow-sm" style={{ minWidth: 860 }}>
+          <div className="flex-1 overflow-y-auto overflow-x-auto p-2">
+            <div ref={opsContainerRef} className="bg-white shadow-sm" style={{ width: "1550px", minWidth: 860 }}>
               {showDebugView ? (
                 // Debug view - show all questions and answers
                 <div style={{ padding: "20px", fontFamily: "Arial", fontSize: "12px" }}>
@@ -1418,6 +1766,10 @@ export default function PreviewForm({
                   answers={answers}
                   opsSectionMapping={effectiveOpsMapping}
                   onPrint={handlePrintOPS}
+                  highlightedField={highlightedField}
+                  historicalAnswers={historicalAnswers}
+                  isLoadingHistory={isLoadingHistory}
+                  submissionHistory={submissionHistory}
                 />
               )}
             </div>
@@ -1425,6 +1777,63 @@ export default function PreviewForm({
         </div>
 
       </div>
+
+      {/* ── Submit Confirmation Popup ── */}
+      {showSubmitPopup && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className={`bg-white dark:bg-gray-900 rounded-xl p-6 w-full max-w-[400px] shadow-2xl border ${darkMode ? 'border-gray-700' : 'border-gray-200'} relative`}>
+            <button
+              onClick={() => setShowSubmitPopup(false)}
+              className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            <h3 className={`text-lg font-bold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Confirm Submission</h3>
+            <p className={`text-sm mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Are you sure you want to submit this OPS form?</p>
+
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Date *</label>
+                <input
+                  type="date"
+                  value={popupDate}
+                  onChange={(e) => setPopupDate(e.target.value)}
+                  className={`w-full px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'} focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                  required
+                />
+              </div>
+              <div>
+                <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Issuance / Revision Details *</label>
+                <textarea
+                  value={popupIssuanceDetails}
+                  onChange={(e) => setPopupIssuanceDetails(e.target.value)}
+                  rows={3}
+                  className={`w-full px-3 py-2 rounded-lg border ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'} focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => setShowSubmitPopup(false)}
+                className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${darkMode ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSubmit}
+                disabled={!popupDate || !popupIssuanceDetails || submitting}
+                className="px-4 py-2 rounded-lg font-medium text-sm text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
+              >
+                {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Submitting...</> : "Confirm Submit"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

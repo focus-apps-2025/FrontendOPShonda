@@ -182,25 +182,14 @@ type SectionStat = {
   hasYesNo: boolean;
 };
 
-// Updated OPSTemplate matching the generateOPSHTML() layout (Image 2)
-// Replace your existing OPSTemplate function with this one.
+interface OPSTemplateProps {
+  form: any;
+  response: any;
+  submissionHistory?: Array<{ no: number; date: string; issuanceDetails: string }>;  // Add this
+}
 
-// Updated OPSTemplate matching the generateOPSHTML() layout (Image 2)
-// Replace your existing OPSTemplate function with this one.
+function OPSTemplate({ form, response, submissionHistory = [] }: OPSTemplateProps) {
 
-// Updated OPSTemplate matching the generateOPSHTML() layout (Image 2)
-// Replace your existing OPSTemplate function with this one.
-
-// Updated OPSTemplate matching the generateOPSHTML() layout (Image 2)
-// Replace your existing OPSTemplate function with this one.
-
-// Updated OPSTemplate matching the generateOPSHTML() layout (Image 2)
-// Replace your existing OPSTemplate function with this one.
-
-// Updated OPSTemplate matching the generateOPSHTML() layout (Image 2)
-// Replace your existing OPSTemplate function with this one.
-
-function OPSTemplate({ form, response, }) {
   const ASSETS = {
     logo: "/assets/Companylogo.png",
     stop: "/assets/Safetyposter.png",
@@ -335,15 +324,36 @@ function OPSTemplate({ form, response, }) {
   const maxRows = Math.max(5, 1);
   const procRows = Array.from({ length: maxRows }, (_, i) => {
     if (i === 0) {
-      const imgQ = ilQ.find((q) => q.id === "q_illustrations_images");
-      const imgAns = imgQ ? response?.answers?.["q_illustrations_images"] : null;
-      const imgUrl = imgAns && typeof imgAns === "string" && imgAns.startsWith("http") ? imgAns : null;
+      const imgQ = ilQ.find((q) => q.id === "q_illustrations_images" || q.type === "file") || ilQ[0];
+      const imgAns = imgQ ? response?.answers?.[imgQ.id || imgQ._id] : null;
+      let imageUrls: string[] = [];
+      if (imgAns) {
+        if (Array.isArray(imgAns)) {
+          imageUrls = imgAns.map((item: any) => typeof item === "string" ? item : item.url).filter(Boolean);
+        } else if (typeof imgAns === "string") {
+          try {
+            const parsed = JSON.parse(imgAns);
+            if (Array.isArray(parsed)) {
+              imageUrls = parsed.map((item: any) => typeof item === "string" ? item : item.url).filter(Boolean);
+            } else if (parsed.url) {
+              imageUrls = [parsed.url];
+            } else {
+              imageUrls = [imgAns];
+            }
+          } catch {
+            imageUrls = [imgAns];
+          }
+        } else if (typeof imgAns === "object" && imgAns.url) {
+          imageUrls = [imgAns.url];
+        }
+      }
+
       const importance = prQ[1] ? getAnswerString(prQ[1].id) : "";
       const cells = PROC_COLS.map((col) => {
         const q = prQ[col.idx];
         return q ? getAnswerString(q.id) : "";
       });
-      return { empty: false, sn: i + 1, importance, cells, imgUrl };
+      return { empty: false, sn: i + 1, importance, cells, imageUrls };
     }
     return { empty: true, sn: i + 1 };
   });
@@ -444,21 +454,27 @@ function OPSTemplate({ form, response, }) {
             <td rowSpan={7} style={{ ...boldBorder, background: "#fff", padding: 0, verticalAlign: "top" }}>
               <table style={{ width: "100%", height: "100%", borderCollapse: "collapse" }}>
                 {Array(8).fill(null).map((_, i) => (
-                  <tr key={i}><td style={{ borderBottom: "1px solid #ccc", height: 11, padding: "0 2px" }}>&nbsp;</td></tr>
+                  <tr key={i}><td style={{ borderBottom: "1px solid #ccc", height: 11, padding: "0 2px", textAlign: "center", fontSize: "6pt" }}>
+                    {submissionHistory[i] ? i + 1 : "\u00A0"}
+                  </td></tr>
                 ))}
               </table>
             </td>
             <td rowSpan={7} style={{ ...boldBorder, background: "#fff", padding: 0, verticalAlign: "top" }}>
               <table style={{ width: "100%", height: "100%", borderCollapse: "collapse" }}>
                 {Array(8).fill(null).map((_, i) => (
-                  <tr key={i}><td style={{ borderBottom: "1px solid #ccc", height: 11, padding: "0 2px" }}>&nbsp;</td></tr>
+                  <tr key={i}><td style={{ borderBottom: "1px solid #ccc", height: 11, padding: "0 2px", textAlign: "center", fontSize: "6pt" }}>
+                    {submissionHistory[i] ? submissionHistory[i].date : "\u00A0"}
+                  </td></tr>
                 ))}
               </table>
             </td>
             <td rowSpan={7} style={{ ...boldBorder, background: "#fff", padding: 0, verticalAlign: "top" }}>
               <table style={{ width: "100%", height: "100%", borderCollapse: "collapse" }}>
                 {Array(8).fill(null).map((_, i) => (
-                  <tr key={i}><td style={{ borderBottom: "1px solid #ccc", height: 11, padding: "0 2px" }}>&nbsp;</td></tr>
+                  <tr key={i}><td style={{ borderBottom: "1px solid #ccc", height: 11, padding: "0 2px", fontSize: "6pt", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {submissionHistory[i] ? submissionHistory[i].issuanceDetails : "\u00A0"}
+                  </td></tr>
                 ))}
               </table>
             </td>
@@ -761,8 +777,12 @@ function OPSTemplate({ form, response, }) {
             return (
               <tr key={ri} style={{ minHeight: 56, verticalAlign: "top" }}>
                 <td style={{ ...cellBase, background: "#ffff00", padding: 2, textAlign: "center", verticalAlign: "middle" }}>
-                  {row.imgUrl ? (
-                    <img src={row.imgUrl} alt="Illustration" style={{ maxWidth: "100%", maxHeight: 80, objectFit: "contain" }} />
+                  {row.imageUrls && row.imageUrls.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
+                      {row.imageUrls.map((url, idx) => (
+                        <img key={idx} src={url} alt={`Illustration ${idx + 1}`} style={{ maxWidth: "100%", maxHeight: 80, objectFit: "contain" }} />
+                      ))}
+                    </div>
                   ) : (
                     <div style={{ width: "100%", height: 56, display: "flex", alignItems: "center", justifyContent: "center", color: "#bbb", fontSize: 20 }}>📷</div>
                   )}
@@ -892,6 +912,12 @@ export default function ResponseDetailsPage() {
   const [showSectionsPDFModal, setShowSectionsPDFModal] = useState(false);
   const [downloadingSectionsPDF, setDownloadingSectionsPDF] = useState(false);
   const [autoOpenSectionId, setAutoOpenSectionId] = useState<string | null>(null);
+
+  const [showUpdatePopup, setShowUpdatePopup] = useState(false);
+  const [popupDate, setPopupDate] = useState("");
+  const [popupIssuanceDetails, setPopupIssuanceDetails] = useState("");
+  const [pendingUpdate, setPendingUpdate] = useState<any>(null);
+  const [submissionHistory, setSubmissionHistory] = useState<any[]>([]);
 
 
 
@@ -1030,7 +1056,7 @@ export default function ResponseDetailsPage() {
       if (!selectedResponse) {
         console.error("Response not found. Looking for ID:", id);
         console.error("Available response IDs:", responsesData.responses.map((r: any) => ({ _id: r._id, id: r.id })));
-        throw new Error(`Response with ID "${id}" not found. Please check if the response exists.`);
+        throw new Error(`Response with ID "${id}" not found.`);
       }
 
       const formIdentifier = selectedResponse.questionId || selectedResponse.formId;
@@ -1057,8 +1083,18 @@ export default function ResponseDetailsPage() {
         selectedForm.followUpQuestions = [];
       }
 
+      // Get submissionHistory from answers.__submissionHistory
+      const history = selectedResponse.answers?.__submissionHistory || [];
+
+      console.log("=== SUBMISSION HISTORY DEBUG ===");
+      console.log("Found submissionHistory in answers.__submissionHistory:", history);
+
+      // Also add history to the response object for consistency
+      selectedResponse.submissionHistory = history;
+
       setResponse(selectedResponse);
       setForm(selectedForm);
+      setSubmissionHistory(history);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load response");
       console.error("Error loading response details:", err);
@@ -1134,14 +1170,60 @@ export default function ResponseDetailsPage() {
   const handleSaveEditedResponse = async (updated: any) => {
     if (savingEdit || !response) return;
 
+    setPendingUpdate(updated);
+    setPopupDate(new Date().toLocaleDateString("en-GB"));
+    setPopupIssuanceDetails(`Update of response`);
+    setShowUpdatePopup(true);
+  };
+
+  const handleConfirmUpdate = async () => {
+    if (!pendingUpdate || !response) return;
+
     setSavingEdit(true);
     try {
-      await apiClient.updateResponse(response._id, {
-        answers: updated.answers,
+      // Get the ID from different possible sources
+      const responseId = response._id || response.id;
+      console.log("=== UPDATE DEBUG ===");
+      console.log("response._id:", response._id);
+      console.log("response.id:", response.id);
+      console.log("URL param id (from useParams):", id);
+      console.log("Using responseId:", responseId);
+
+      // Try using the URL param directly instead
+      const urlId = id; // This comes from useParams
+      console.log("Would URL param work?:", urlId);
+
+      const newHistoryEntry = {
+        date: popupDate,
+        issuanceDetails: popupIssuanceDetails
+      };
+
+      const existingHistory = response.answers?.__submissionHistory || submissionHistory || [];
+      const newHistory = [...existingHistory, newHistoryEntry];
+
+      const updatedAnswers = {
+        ...pendingUpdate.answers,
+        __submissionHistory: newHistory
+      };
+
+      const updateData = {
+        answers: updatedAnswers
+      };
+
+      // Try with URL param ID instead
+      console.log("Attempting update with URL param ID:", urlId);
+      await apiClient.updateResponse(urlId!, updateData);
+
+      setResponse({
+        ...pendingUpdate,
+        answers: updatedAnswers,
+        submissionHistory: newHistory
       });
-      setResponse(updated);
+      setSubmissionHistory(newHistory);
+
       handleCloseEdit();
       showSuccess("Response updated successfully.");
+      setShowUpdatePopup(false);
     } catch (err) {
       console.error("Failed to save response:", err);
       showError("Failed to save response. Please try again.");
@@ -1149,7 +1231,6 @@ export default function ResponseDetailsPage() {
       setSavingEdit(false);
     }
   };
-
   const handleExportExcel = async (type?: 'yes-only' | 'no-only' | 'na-only' | 'both' | 'default') => {
     if (!response || !form) return;
 
@@ -4078,6 +4159,7 @@ export default function ResponseDetailsPage() {
           <OPSTemplate
             form={form}
             response={response}
+            submissionHistory={submissionHistory}
           />
         ) : (
           <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">
@@ -5007,6 +5089,73 @@ export default function ResponseDetailsPage() {
           </div>
         </div>
       )}
+
+      {/* Update Confirmation Popup */}
+      {showUpdatePopup && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 max-w-md w-full border border-gray-200 dark:border-gray-700 animate-in fade-in zoom-in duration-300">
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+              Confirm Update
+            </h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Date (DD/MM/YY)
+                </label>
+                <input
+                  type="text"
+                  value={popupDate}
+                  onChange={(e) => setPopupDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  placeholder="e.g. 05/10/24"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Issuance / Revision Details
+                </label>
+                <input
+                  type="text"
+                  value={popupIssuanceDetails}
+                  onChange={(e) => setPopupIssuanceDetails(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  placeholder="Enter revision details"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowUpdatePopup(false);
+                  setSavingEdit(false);
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                disabled={savingEdit}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmUpdate}
+                disabled={savingEdit}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {savingEdit ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Confirm Update"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {pdfProgress && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-md w-full border border-gray-200 dark:border-gray-700 animate-in fade-in zoom-in duration-300">
