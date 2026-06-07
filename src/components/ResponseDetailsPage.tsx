@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   Eye,
@@ -185,10 +185,20 @@ type SectionStat = {
 interface OPSTemplateProps {
   form: any;
   response: any;
-  submissionHistory?: Array<{ no: number; date: string; issuanceDetails: string }>;  // Add this
+  submissionHistory?: Array<{ no: number; date: string; issuanceDetails: string }>;
+  sameFormatResponses?: any[];  // Add this - all responses with same Format No
+  isLoadingSameFormatResponses?: boolean;  // Add this - loading state
+  formatQuestionId?: string;  // Add this - ID of the Format No question
+  controlQuestionId?: string;  // Add this - ID of the Control No question
 }
 
-function OPSTemplate({ form, response, submissionHistory = [] }: OPSTemplateProps) {
+function OPSTemplate({
+  form,
+  response,
+  submissionHistory = [],
+  sameFormatResponses = [],
+  isLoadingSameFormatResponses = false,
+}: OPSTemplateProps) {
 
   const ASSETS = {
     logo: "/assets/Companylogo.png",
@@ -199,64 +209,318 @@ function OPSTemplate({ form, response, submissionHistory = [] }: OPSTemplateProp
     ppeGl: "/assets/PPEGUIDE2.png",
     fiveS: "/assets/5S_Guidelines.png",
     qr: "/assets/Qrcode.png",
+    shift: "/assets/Shift_timing.png"
   };
 
-  const SECTION_MAP = {
-    header: "sec_basic_info",
-    genIns: "sec_doc_control",
-    pastProbs: "sec_abnormalities_handling",
-    processSteps: "sec_process_steps",
-    assocSign: "sec_associate_sign",
-    illustrations: "sec_illustrations",
-  };
 
-  const getAnswerString = (qId) => {
-    if (!response?.answers) return "";
-    const a = response.answers[qId];
-    if (a === null || a === undefined || a === "") return "";
-    if (typeof a === "object") {
-      if (a.status) return String(a.status);
-      if (a.chassisNumber) return String(a.chassisNumber);
-      if (a.remark) return String(a.remark);
-      if (a.zonesData) {
-        const z = Object.keys(a.zonesData);
-        if (z.length) return `Zones: ${z.join(", ")}`;
-      }
-      if (Array.isArray(a)) return a.join(", ");
-      try { return JSON.stringify(a); } catch { return String(a); }
+  // ============================================================
+  // MERGED VALUE HELPER - Same answer = show once, Different = italic+small
+  // ============================================================
+
+  const getMergedCellValue = useCallback((questionId: string): {
+    value: string;
+    isMerged: boolean;
+    count: number;
+  } => {
+    if (!sameFormatResponses || sameFormatResponses.length === 0) {
+      return { value: "", isMerged: false, count: 0 };
     }
-    return String(a);
+
+    const values: string[] = [];
+
+    sameFormatResponses.forEach(resp => {
+      const raw = resp?.answers?.[questionId];
+      if (raw === null || raw === undefined || raw === "") return;
+      let strVal = "";
+      if (typeof raw === "object") {
+        if (raw.status) strVal = String(raw.status);
+        else if (raw.chassisNumber) strVal = String(raw.chassisNumber);
+        else { try { strVal = JSON.stringify(raw); } catch { strVal = String(raw); } }
+      } else {
+        strVal = String(raw);
+      }
+      if (strVal.trim()) values.push(strVal.trim());
+    });
+
+    if (values.length === 0) return { value: "", isMerged: false, count: 0 };
+
+    const uniqueValues = Array.from(new Set(values));
+
+    if (uniqueValues.length === 1) {
+      // All responses have the same answer — show once, normal style
+      return { value: uniqueValues[0], isMerged: false, count: values.length };
+    }
+
+    // Different answers across responses — combine with comma
+    return { value: uniqueValues.join(", "), isMerged: true, count: values.length };
+  }, [sameFormatResponses]);
+
+
+  // ============================================================
+  // DYNAMIC SECTION & QUESTION RESOLUTION
+  // ============================================================
+
+  const allSections = useMemo(() => form?.sections || [], [form]);
+
+  const getQuestionsFromSectionByIndex = useCallback((sectionIndex: number) => {
+    const section = allSections[sectionIndex];
+    if (!section) return [];
+    return (section.questions || []).filter((q: any) => !q.showWhen?.questionId);
+  }, [allSections]);
+
+  const getQuestionsFromSectionById = useCallback((sectionId: string, fallbackIndex?: number) => {
+    const byId = allSections.find((s: any) => s.id === sectionId || s._id === sectionId);
+    if (byId) return (byId.questions || []).filter((q: any) => !q.showWhen?.questionId);
+    if (fallbackIndex !== undefined) return getQuestionsFromSectionByIndex(fallbackIndex);
+    return [];
+  }, [allSections, getQuestionsFromSectionByIndex]);
+
+  // Find process steps section - the one with most questions (should have 14 columns)
+  const processStepsSection = useMemo(() => {
+    // Look for section with "process" or "step" in name first
+    const byName = allSections.find((s: any) => {
+      const id = (s.id || s._id || "").toLowerCase();
+      const title = (s.title || "").toLowerCase();
+      return id.includes("process") || id.includes("step") ||
+        title.includes("process") || title.includes("step");
+    });
+    if (byName && byName.questions?.length >= 10) return byName;
+
+    // Fallback: section with most questions (should be the process steps section)
+    return allSections.reduce((best: any, s: any) => {
+      return (s.questions?.length || 0) > (best?.questions?.length || 0) ? s : best;
+    }, null);
+  }, [allSections]);
+
+  // Find illustrations section - separate section for images
+  const illustrationsSection = useMemo(() => {
+    return allSections.find((s: any) => {
+      const id = (s.id || s._id || "").toLowerCase();
+      const title = (s.title || "").toLowerCase();
+      return id.includes("illust") || id.includes("image") || id.includes("photo") ||
+        title.includes("illust") || title.includes("image") || title.includes("photo");
+    }) || null;
+  }, [allSections]);
+
+  // Find past problems section
+  const pastProblemsSection = useMemo(() => {
+    return allSections.find((s: any) => {
+      const id = (s.id || s._id || "").toLowerCase();
+      const title = (s.title || "").toLowerCase();
+      return id.includes("past") || id.includes("problem") || id.includes("abnormal") ||
+        title.includes("past") || title.includes("problem") || title.includes("abnormal");
+    }) || null;
+  }, [allSections]);
+
+  // Find doc control section (Format No, Control No)
+  const docControlSection = useMemo(() => {
+    return allSections.find((s: any) => {
+      const id = (s.id || s._id || "").toLowerCase();
+      const title = (s.title || "").toLowerCase();
+      return id.includes("doc") || id.includes("control") || id.includes("format") ||
+        title.includes("doc") || title.includes("control") || title.includes("format");
+    }) || null;
+  }, [allSections]);
+
+  // Header section = first section that isn't special
+  const headerSection = useMemo(() => {
+    const specialSections = new Set([
+      processStepsSection?.id,
+      illustrationsSection?.id,
+      pastProblemsSection?.id,
+      docControlSection?.id,
+    ].filter(Boolean));
+
+    return allSections.find((s: any) => !specialSections.has(s.id || s._id)) || allSections[0] || null;
+  }, [allSections, processStepsSection, illustrationsSection, pastProblemsSection, docControlSection]);
+
+  // Final question arrays
+  const headerQuestions = useMemo(() =>
+    (headerSection?.questions || []).filter((q: any) => !q.showWhen?.questionId),
+    [headerSection]);
+
+  const docControlQuestions = useMemo(() =>
+    (docControlSection?.questions || []).filter((q: any) => !q.showWhen?.questionId),
+    [docControlSection]);
+
+  // PROCESS QUESTIONS - THESE ARE THE 14 COLUMNS (Importance, Activity, Method, etc.)
+  const processQuestions = useMemo(() =>
+    (processStepsSection?.questions || []).filter((q: any) => !q.showWhen?.questionId),
+    [processStepsSection]);
+
+  const pastProbsQuestions = useMemo(() =>
+    (pastProblemsSection?.questions || []).filter((q: any) => !q.showWhen?.questionId),
+    [pastProblemsSection]);
+
+  // ILLUSTRATION QUESTIONS - ONLY FOR IMAGES (separate from process steps)
+  const illustrationQuestions = useMemo(() =>
+    (illustrationsSection?.questions || []).filter((q: any) => !q.showWhen?.questionId),
+    [illustrationsSection]);
+  // ============================================================
+  // ALL ILLUSTRATION IMAGES - collect thumbnails from every response
+  // ============================================================
+
+  const allIllustrationImages = useMemo((): Array<{ url: string; respIdx: number }> => {
+    const result: Array<{ url: string; respIdx: number }> = [];
+
+    const parseImages = (imgVal: any): string[] => {
+      if (!imgVal) return [];
+      if (Array.isArray(imgVal)) {
+        return imgVal.map((item: any) => typeof item === "string" ? item : item?.url).filter(Boolean);
+      }
+      if (typeof imgVal === "string") {
+        try {
+          const parsed = JSON.parse(imgVal);
+          if (Array.isArray(parsed)) return parsed.map((item: any) => typeof item === "string" ? item : item?.url).filter(Boolean);
+          if (parsed?.url) return [parsed.url];
+        } catch { /* not JSON */ }
+        return [imgVal];
+      }
+      if (typeof imgVal === "object" && imgVal?.url) return [imgVal.url];
+      return [];
+    };
+
+    // Find illustration question ID
+    const imgQ = illustrationQuestions.find(
+      (q: any) => q.type === "file" || q.type === "image" ||
+        (q.id || "").toLowerCase().includes("image") ||
+        (q.id || "").toLowerCase().includes("illust")
+    ) || illustrationQuestions[0];
+
+    if (!imgQ) return result;
+    const qId = imgQ.id || imgQ._id;
+
+    sameFormatResponses.forEach((resp, idx) => {
+      const urls = parseImages(resp?.answers?.[qId]);
+      urls.forEach(url => result.push({ url, respIdx: idx }));
+    });
+
+    return result;
+  }, [sameFormatResponses, illustrationQuestions]);
+  // ============================================================
+  // GENERIC ANSWER HELPERS
+  // ============================================================
+
+  const getAnswerByQuestionId = useCallback((questionId: string, resp: any = response): string => {
+    if (!resp?.answers || !questionId) return "";
+    const answer = resp.answers[questionId];
+    if (answer === null || answer === undefined || answer === "") return "";
+    if (typeof answer === "object") {
+      if (answer.status) return String(answer.status);
+      if (answer.chassisNumber) return String(answer.chassisNumber);
+      try { return JSON.stringify(answer); } catch { return String(answer); }
+    }
+    return String(answer);
+  }, [response]);
+
+  const getAnswerByIndex = useCallback((questions: any[], index: number, resp: any = response): string => {
+    const q = questions[index];
+    if (!q) return "";
+    return getAnswerByQuestionId(q.id || q._id, resp);
+  }, [getAnswerByQuestionId, response]);
+
+  const getCombinedHeaderAnswer = useCallback((questions: any[], index: number): string => {
+    const responses = sameFormatResponses.length > 0 ? sameFormatResponses : [response];
+    const uniqueValues = new Set<string>();
+    responses.forEach(resp => {
+      const answer = getAnswerByIndex(questions, index, resp);
+      if (answer) uniqueValues.add(answer);
+    });
+    return Array.from(uniqueValues).join(", ") || "—";
+  }, [sameFormatResponses, response, getAnswerByIndex]);
+
+  const label = useCallback((questions: any[], index: number, fallback: string): string => {
+    const q = questions[index];
+    return q?.text || q?.label || fallback;
+  }, []);
+
+  // ============================================================
+  // PROCESS STEP COLUMNS - FROM processQuestions (14 columns)
+  // ============================================================
+
+  const processStepColumns = useMemo(() => {
+    if (processQuestions.length === 0) {
+      // Fallback hardcoded columns if no process questions found
+      return [
+        { questionId: "importance", label: "Item Importance", width: "7%" },
+        { questionId: "activity", label: "What / Activity", width: "10%" },
+        { questionId: "method", label: "Method (How)", width: "8%" },
+        { questionId: "frequency", label: "Frequency / When", width: "6%" },
+        { questionId: "standard", label: "Standard (Spec./Criteria)", width: "10%" },
+        { questionId: "responsibility", label: "Responsibility", width: "6%" },
+        { questionId: "equipment", label: "Equipment / Measuring Eq.", width: "7%" },
+        { questionId: "abnormalities", label: "Possible Abnormalities", width: "8%" },
+        { questionId: "reactionPlan", label: "Reaction Plan", width: "6%" },
+        { questionId: "partNameQty", label: "Part Name & QTY", width: "6%" },
+        { questionId: "ppe", label: "PPEs required", width: "8%" },
+        { questionId: "remarks", label: "Remarks", width: "6%" },
+      ];
+    }
+
+    // Map each question in process section to a column
+    return processQuestions.map((q: any) => ({
+      questionId: q.id || q._id,
+      label: q.text || q.label || q.id,
+      width: q.columnWidth || `${Math.max(6, Math.floor(80 / Math.max(processQuestions.length, 1)))}%`,
+    }));
+  }, [processQuestions]);
+
+  // ============================================================
+  // ILLUSTRATION IMAGES (separate from process steps)
+  // ============================================================
+
+  const getResponseIllustrationImages = (resp: any): string[] => {
+    // Find image/file question in the illustrations section
+    const imgQ = illustrationQuestions.find(
+      (q: any) => q.type === "file" || q.type === "image" ||
+        (q.id || "").toLowerCase().includes("image") ||
+        (q.id || "").toLowerCase().includes("illust")
+    ) || illustrationQuestions[0];
+
+    if (!imgQ || !resp?.answers) return [];
+    const imgVal = resp.answers[imgQ.id || imgQ._id];
+    if (!imgVal) return [];
+
+    if (Array.isArray(imgVal)) {
+      return imgVal.map((item: any) => typeof item === "string" ? item : item?.url).filter(Boolean);
+    }
+    if (typeof imgVal === "string") {
+      try {
+        const parsed = JSON.parse(imgVal);
+        if (Array.isArray(parsed)) return parsed.map((item: any) => typeof item === "string" ? item : item?.url).filter(Boolean);
+        if (parsed?.url) return [parsed.url];
+      } catch { /* not JSON */ }
+      return [imgVal];
+    }
+    if (typeof imgVal === "object" && imgVal?.url) return [imgVal.url];
+    return [];
   };
 
-  const findQuestions = (sectionId) => {
-    const section = form?.sections?.find((s) => s.id === sectionId);
-    return (section?.questions || []).filter((q) => !q.parentId && !q.showWhen?.questionId);
+
+  const isImportanceColumn = (col: { label: string }) => {
+    const l = col.label.toLowerCase();
+    // Still identify importance column for bold font styling
+    return l.includes("importance") || l.includes("priority") || l.includes("item importance");
   };
 
+  // ============================================================
+  // HEADER VALUES
+  // ============================================================
 
-  const hQ = findQuestions(SECTION_MAP.header);
-  const iQ = findQuestions(SECTION_MAP.genIns);
-  const pQ = findQuestions(SECTION_MAP.pastProbs);
-  const prQ = findQuestions(SECTION_MAP.processSteps);
-  const aQ = findQuestions(SECTION_MAP.assocSign);
-  const ilQ = findQuestions(SECTION_MAP.illustrations);
-  // Add this after the findQuestions calls (around line 50-60)
-  console.log("=== OPS TEMPLATE DEBUG ===");
-  console.log("Illustrations section ID:", SECTION_MAP.illustrations);
-  console.log("Illustrations questions found:", ilQ.map(q => ({
-    id: q.id,
-    title: q.title || q.text,
-    type: q.type
-  })));
-  console.log("All response answers keys:", Object.keys(response?.answers || {}));
-  console.log("Illustrations answers:", ilQ.map(q => ({
-    id: q.id,
-    answer: response?.answers?.[q.id],
-    answerType: typeof response?.answers?.[q.id],
-    isString: typeof response?.answers?.[q.id] === 'string',
-    startsWithHttp: typeof response?.answers?.[q.id] === 'string' && response?.answers?.[q.id]?.startsWith?.('http')
-  })));
+  const deptCombined = getCombinedHeaderAnswer(headerQuestions, 0);
+  const lineCombined = getCombinedHeaderAnswer(headerQuestions, 1);
+  const modelCombined = getCombinedHeaderAnswer(headerQuestions, 2);
+  const stationCombined = getCombinedHeaderAnswer(headerQuestions, 3);
+  const formatNoCombined = getCombinedHeaderAnswer(docControlQuestions, 0);
+  const controlNoCombined = getCombinedHeaderAnswer(docControlQuestions, 1);
+  const pastProblemMerged = useMemo(() => {
+    if (!pastProbsQuestions[0]) return { value: "", isMerged: false };
+    return getMergedCellValue(pastProbsQuestions[0]?.id || pastProbsQuestions[0]?._id);
+  }, [pastProbsQuestions, getMergedCellValue]);
 
+  // ============================================================
+  // STATIC CONTENT (General Instructions - can also be made dynamic)
+  // ============================================================
   const DEF_FIFO = `1. Bin/trolley must be changed only after complete usage of all material in it.\n2. Empty bin/trolley should be replaced with new one.\n3. Don't top up partially filled bin.\n4. Follow FIFO on line during Process.\n5. Do not use next bin / Trolley material until running not consumed.`;
   const DEF_NONLUB = "Do not use any lubrication if not specified in OPS / Process Sheet.";
   const DEF_ENV = `1. Do waste segregation.\n2. Switch off idle lights & machines.\n3. Ensure 3R Principal in daily activities.\n4. If there was any leakage, communicate to Sub Leader.`;
@@ -272,14 +536,6 @@ function OPSTemplate({ form, response, submissionHistory = [] }: OPSTemplateProp
     "8. Zone In-Charge is overall responsible to ensure work is as per OPS.",
     "9. Contaminant parts should be covered properly.",
   ];
-
-  const SHIFT_ROWS = [
-    { act: "Shift Start", a: "06:00 AM", b: "02:50 PM" },
-    { act: "Shift End", a: "02:50 PM", b: "11:40 PM" },
-    { act: "Shift Start 3S & Meeting", a: "06:00 AM to 06:10 AM", b: "02:50 PM to 03:00 PM" },
-    { act: "Shift End 3S", a: "02:40 PM to 02:50 PM", b: "11:30 PM to 11:40 PM" },
-  ];
-
   const TROUBLE_ROWS = [
     "Equipment Trouble / Machine Break Down",
     "A Trouble You Are Responsible For",
@@ -288,94 +544,30 @@ function OPSTemplate({ form, response, submissionHistory = [] }: OPSTemplateProp
     "A Trouble From Different Section",
   ];
 
-  const PROC_COLS = [
-    { idx: 2, label: "Step\n(What / Activity)", w: "8%" },
-    { idx: 3, label: "Method\n(How)", w: "6%" },
-    { idx: 4, label: "Frequency\n/ When", w: "4.5%" },
-    { idx: 5, label: "Standard\n(Spec./Judgment Criteria)", w: "9%" },
-    { idx: 6, label: "Responsibility", w: "5%" },
-    { idx: 7, label: "Equipment /\nMeasuring Eq.", w: "5.5%" },
-    { idx: 8, label: "Possible\nAbnormalities", w: "5.5%" },
-    { idx: 9, label: "Reaction\nPlan", w: "4.5%" },
-    { idx: 10, label: "Part Name\n& QTY", w: "5%" },
-    { idx: 11, label: "PPEs\nrequired", w: "4%" },
-    { idx: 12, label: "Record /\nDocument", w: "4.5%" },
-    { idx: 13, label: "Remarks", w: "4%" },
-  ];
-
-  const getHeaderValue = (idx) => {
-    const q = hQ[idx];
-    return q && response?.answers?.[q.id] ? String(response.answers[q.id]) : "—";
-  };
-
-  const getInstructionValue = (idx) => {
-    const q = iQ[idx];
-    if (!q || !response?.answers?.[q.id]) return "";
-    return String(response.answers[q.id]);
-  };
-
-  const getPastProblemValue = (idx) => {
-    const q = pQ[idx];
-    return q && response?.answers?.[q.id] ? String(response.answers[q.id]) : "";
-  };
-
-  const qlabel = (q, fb) => q?.text || q?.title || q?.label || fb;
-
-  const maxRows = Math.max(5, 1);
-  const procRows = Array.from({ length: maxRows }, (_, i) => {
-    if (i === 0) {
-      const imgQ = ilQ.find((q) => q.id === "q_illustrations_images" || q.type === "file") || ilQ[0];
-      const imgAns = imgQ ? response?.answers?.[imgQ.id || imgQ._id] : null;
-      let imageUrls: string[] = [];
-      if (imgAns) {
-        if (Array.isArray(imgAns)) {
-          imageUrls = imgAns.map((item: any) => typeof item === "string" ? item : item.url).filter(Boolean);
-        } else if (typeof imgAns === "string") {
-          try {
-            const parsed = JSON.parse(imgAns);
-            if (Array.isArray(parsed)) {
-              imageUrls = parsed.map((item: any) => typeof item === "string" ? item : item.url).filter(Boolean);
-            } else if (parsed.url) {
-              imageUrls = [parsed.url];
-            } else {
-              imageUrls = [imgAns];
-            }
-          } catch {
-            imageUrls = [imgAns];
-          }
-        } else if (typeof imgAns === "object" && imgAns.url) {
-          imageUrls = [imgAns.url];
-        }
-      }
-
-      const importance = prQ[1] ? getAnswerString(prQ[1].id) : "";
-      const cells = PROC_COLS.map((col) => {
-        const q = prQ[col.idx];
-        return q ? getAnswerString(q.id) : "";
-      });
-      return { empty: false, sn: i + 1, importance, cells, imageUrls };
-    }
-    return { empty: true, sn: i + 1 };
-  });
-
-  // ─── shared style strings (inline objects for JSX) ───────────────────────
   const cellBase = {
-    border: "1px solid #999",
-    padding: "1px 2px",
-    fontSize: "6pt",
-    lineHeight: 1.2,
-    overflowWrap: "break-word",
-    overflow: "hidden",
+    border: "1px solid #999", padding: "1px 2px", fontSize: "6pt",
+    lineHeight: 1.2, overflowWrap: "break-word", overflow: "hidden",
   };
   const hdrCell = { ...cellBase, background: "#d9d9d9", fontWeight: 700, textAlign: "center", verticalAlign: "middle" };
   const valCell = { ...cellBase, background: "#fff", verticalAlign: "middle" };
   const lblCell = { ...cellBase, background: "#e8e8e8", fontWeight: 700, verticalAlign: "middle" };
   const boldBorder = { border: "2px solid #000" };
+  const live = (v: string) => (v && v !== "—") ? "#15803d" : "#999";
+
+  const BORDER = "1px solid #999";
+  const BORDER2 = "2px solid #000";
+
+  const C: React.CSSProperties = { border: BORDER, padding: "1px 1.5px", fontSize: "7pt", verticalAlign: "top", wordBreak: "break-word", lineHeight: "1.4" };
+  const H: React.CSSProperties = { ...C, background: "#d9d9d9", fontWeight: 700, textAlign: "center", verticalAlign: "middle", fontSize: "6.5pt" };
+  const L: React.CSSProperties = { ...C, background: "#e8e8e8", fontWeight: 700, fontSize: "6.5pt", verticalAlign: "middle", lineHeight: "1" };
+  const V: React.CSSProperties = { ...C, background: "#fff", verticalAlign: "middle" };
+  const T: React.CSSProperties = { width: "100%", borderCollapse: "collapse" as const, tableLayout: "fixed" as const, fontSize: "7pt", lineHeight: "1" };
+
 
   return (
     <div style={{ width: "100%", minWidth: 900, fontFamily: "Arial,sans-serif", fontSize: "7pt", background: "#fff", color: "#000", overflowX: "auto" }}>
 
-      {/* ── RETENTION BAR ── */}
+      {/* RETENTION BAR */}
       <table style={{ width: "100%", borderCollapse: "collapse", border: "2px solid #000" }}>
         <tbody>
           <tr>
@@ -386,485 +578,465 @@ function OPSTemplate({ form, response, submissionHistory = [] }: OPSTemplateProp
         </tbody>
       </table>
 
-      {/* ── TOP HEADER TABLE ──
-          Column layout (15 logical cols after logo):
-          C1=logo(rowspan8) | C2=dept-lbl | C3=dept-val | C4=line-lbl | C5=line-val
-          C6=Op.Std / "Your Work" (colspan 3) | C7=S.No | C8=Trouble | C9=YourTask
-          C10=Prepared | C11=Checked | C12=Approved | C13=No | C14=DD/MM/YY | C15=Revision
-          C16=Format/Control/QR (rowspan8)
-      */}
-      <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
+      <table style={{ ...T, border: BORDER2, borderTop: "none", }}>
         <colgroup>
-          {/* C1 Logo */}
+          <col style={{ width: "5.5%" }} />
+          <col style={{ width: "3.5%" }} />
           <col style={{ width: "5%" }} />
-          {/* C2-C5 Dept/Line labels+values */}
-          <col style={{ width: "5%" }} />
+          <col style={{ width: "3.5%" }} />
           <col style={{ width: "8%" }} />
-          <col style={{ width: "5%" }} />
-          <col style={{ width: "9%" }} />
-          {/* C6 Op.Std title + "Your Work" header (colspan3 => C6+C7+C8) */}
-          <col style={{ width: "16%" }} />
-          {/* C7 S.No */}
-          <col style={{ width: "3%" }} />
-          {/* C8 Trouble */}
-          <col style={{ width: "13%" }} />
-          {/* C9 Your task */}
+          <col style={{ width: "7%" }} />
+          <col style={{ width: "4%" }} />
           <col style={{ width: "11%" }} />
-          {/* C10-C12 Prepared/Checked/Approved */}
+          <col style={{ width: "9%" }} />
           <col style={{ width: "6%" }} />
           <col style={{ width: "6%" }} />
           <col style={{ width: "6%" }} />
-          {/* C13-C15 No / DD MM YY / Revision */}
-          <col style={{ width: "3%" }} />
-          <col style={{ width: "5%" }} />
+          <col style={{ width: "4%" }} />
+          <col style={{ width: "4%" }} />
           <col style={{ width: "8%" }} />
-          {/* C16 Format/Control/QR */}
-          <col style={{ width: "8%" }} />
+          <col style={{ width: "9%" }} />
         </colgroup>
         <tbody>
+          <tr style={{ height: 4 }}> {/* Reduced from 14 */}
+            <td rowSpan={8} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 0, background: "#1d4ed8" }}> {/* Reduced padding */}
+              <img src={ASSETS.logo} alt="Logo" style={{ width: "100%", maxHeight: 80, objectFit: "contain" }} /> {/* Reduced from 80 */}
+            </td>
+            <td style={{ ...L, marginBottom: 0, lineHeight: "1.5" }}>{label(headerQuestions, 0, "Dept. / Section")} :</td>
+            <td style={{ ...V, fontWeight: 700, color: live(deptCombined), marginBottom: 0, lineHeight: "1.5", }}>
+              {deptCombined || "—"}
+            </td>
+            <td style={{ ...L, marginBottom: 0, lineHeight: "1.5" }}>{label(headerQuestions, 1, "Line / Zones")} :</td>
+            <td style={{ ...V, fontWeight: 700, color: live(lineCombined), marginBottom: 0, lineHeight: "1.5" }}>
+              {lineCombined || "—"}
+            </td>
+            <td colSpan={4} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 2 }}> {/* Reduced padding */}
+              <div style={{ fontSize: "9pt", fontWeight: 700, letterSpacing: 1 }}>Operation Standard</div> {/* Reduced from 14pt */}
+            </td>
+            {/* Prepared, Checked, Approved — plain empty cells (no ruled lines) */}
+            {Array.from({ length: 3 }).map((_, idx) => (
+              <td key={`empty-${idx}`} rowSpan={7} style={{ border: BORDER2, verticalAlign: "top", padding: 0 }} />
+            ))}
+            {Array.from({ length: 3 }).map((_, idx) => {
+              const colIdx = idx + 4; // This will give indices 4,5,6 instead of 0,1,2
+              const allEntries: Array<{ no: number; date: string; issuanceDetails: string; responseIndex: number }> = [];
+              (sameFormatResponses.length > 0 ? sameFormatResponses : [response]).forEach((resp, respIdx) => {
+                const history = resp.answers?.__submissionHistory || [];
+                history.forEach((entry: any, entryIdx: number) => {
+                  allEntries.push({
+                    no: entry.no || entryIdx + 1,
+                    date: entry.date,
+                    issuanceDetails: entry.issuanceDetails,
+                    responseIndex: respIdx,
+                  });
+                });
+              });
 
-          {/* ── ROW 1: Dept / Line / "Operation Standard" title ──
-              Columns: C1(logo rs8) | C2(dept-lbl) | C3(dept-val) | C4(line-lbl) | C5(line-val)
-                       | C6+C7+C8+C9(Op.Std colspan4 rs2) | C10(prep rs7) | C11(chk rs7) | C12(app rs7)
-                       | C13(no rs7) | C14(dd rs7) | C15(rev rs7) | C16(fmt rs8)
-          */}
-          <tr>
-            {/* C1 Logo – rowspan 8 */}
-            <td rowSpan={8} style={{ ...boldBorder, textAlign: "center", verticalAlign: "middle", padding: 2 }}>
-              <img src={ASSETS.logo} alt="Logo" style={{ maxWidth: "100%", maxHeight: 80, objectFit: "contain" }}
-                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-            </td>
-            {/* C2 Dept label */}
-            <td style={lblCell}>{qlabel(hQ[0], "Dept. / Section")} :</td>
-            {/* C3 Dept value */}
-            <td style={{ ...valCell, fontWeight: 700 }}>{getHeaderValue(0)}</td>
-            {/* C4 Line label */}
-            <td style={lblCell}>{qlabel(hQ[1], "Line / Zonesss")} :</td>
-            {/* C5 Line value */}
-            <td style={{ ...valCell, fontWeight: 700 }}>{getHeaderValue(1)}</td>
-            {/* C6+C7+C8+C9 "Operation Standard" – colspan 4, rowspan 1 only (row2 uses same cols for "Your Work") */}
-            <td colSpan={4} style={{ ...boldBorder, textAlign: "center", verticalAlign: "middle", padding: 2 }}>
-              <span style={{ fontSize: "13pt", fontWeight: 700, letterSpacing: 1 }}>Operation Standard</span>
-            </td>
-            {/* C10-C12 Prepared/Checked/Approved — blank content area, rowspan 7 */}
-            <td rowSpan={7} style={{ ...boldBorder, background: "#fff", verticalAlign: "top", padding: 2 }}></td>
-            <td rowSpan={7} style={{ ...boldBorder, background: "#fff", verticalAlign: "top", padding: 2 }}></td>
-            <td rowSpan={7} style={{ ...boldBorder, background: "#fff", verticalAlign: "top", padding: 2 }}></td>
-            {/* C13-C15 No/Date/Revision — lined sub-table, rowspan 7 */}
-            <td rowSpan={7} style={{ ...boldBorder, background: "#fff", padding: 0, verticalAlign: "top" }}>
-              <table style={{ width: "100%", height: "100%", borderCollapse: "collapse" }}>
-                {Array(8).fill(null).map((_, i) => (
-                  <tr key={i}><td style={{ borderBottom: "1px solid #ccc", height: 11, padding: "0 2px", textAlign: "center", fontSize: "6pt" }}>
-                    {submissionHistory[i] ? i + 1 : "\u00A0"}
-                  </td></tr>
-                ))}
-              </table>
-            </td>
-            <td rowSpan={7} style={{ ...boldBorder, background: "#fff", padding: 0, verticalAlign: "top" }}>
-              <table style={{ width: "100%", height: "100%", borderCollapse: "collapse" }}>
-                {Array(8).fill(null).map((_, i) => (
-                  <tr key={i}><td style={{ borderBottom: "1px solid #ccc", height: 11, padding: "0 2px", textAlign: "center", fontSize: "6pt" }}>
-                    {submissionHistory[i] ? submissionHistory[i].date : "\u00A0"}
-                  </td></tr>
-                ))}
-              </table>
-            </td>
-            <td rowSpan={7} style={{ ...boldBorder, background: "#fff", padding: 0, verticalAlign: "top" }}>
-              <table style={{ width: "100%", height: "100%", borderCollapse: "collapse" }}>
-                {Array(8).fill(null).map((_, i) => (
-                  <tr key={i}><td style={{ borderBottom: "1px solid #ccc", height: 11, padding: "0 2px", fontSize: "6pt", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {submissionHistory[i] ? submissionHistory[i].issuanceDetails : "\u00A0"}
-                  </td></tr>
-                ))}
-              </table>
-            </td>
-            {/* C16 Format/Control/QR – rowspan 8 */}
-            <td rowSpan={8} style={{ ...boldBorder, verticalAlign: "top", padding: "3px 4px", fontSize: "6pt" }}>
-              <div style={{ fontWeight: 700, color: "#c00", marginBottom: 1, marginTop: 2 }}>{qlabel(iQ[0], "Format No.")} :</div>
-              <div style={{ fontWeight: 700, fontSize: "7pt", marginBottom: 2 }}>{getInstructionValue(0) || "—"}</div>
-              <div style={{ borderTop: "1px solid #999", margin: "2px 0" }}></div>
-              <div style={{ fontWeight: 700, color: "#c00", marginBottom: 1 }}>{qlabel(iQ[1], "Control No.")} :</div>
-              <div style={{ fontWeight: 700, fontSize: "7pt", marginBottom: 2 }}>{getInstructionValue(1) || "—"}</div>
-              <div style={{ borderTop: "1px solid #999", margin: "2px 0" }}></div>
+              // CHANGE THIS: Sort DESCENDING (newest first, oldest last)
+              allEntries.sort((a, b) =>
+                a.date && b.date
+                  ? new Date(b.date).getTime() - new Date(a.date).getTime()  // DESCENDING - newest first
+                  : b.no - a.no  // DESCENDING by number if no date
+              );
+
+              const isMerged = sameFormatResponses.length > 1;
+              const totalEntries = allEntries.length;
+
+              return (
+                <td key={idx} rowSpan={7} style={{ border: BORDER2, verticalAlign: "top", padding: 0, background: "#fff" }}>
+                  <table style={{ width: "100%", height: "100%", borderCollapse: "collapse" }}>
+                    {Array.from({ length: 15 }).map((_, i) => {
+                      // Now i=0 gives the NEWEST entry because sort is descending
+                      const startRow = 15 - totalEntries;
+                      const entry =
+                        i >= startRow
+                          ? allEntries[i - startRow]
+                          : null;
+                      let display: string = "\u00A0";
+                      if (entry) {
+                        if (colIdx === 4) display = String(entry.no);      // Column 4 gets "No."
+                        else if (colIdx === 5) {                          // Column 5 gets "DD/MM/YY"
+                          try {
+                            display = new Date(entry.date).toLocaleDateString("en-GB", {
+                              day: "2-digit", month: "2-digit", year: "2-digit"
+                            });
+                          } catch { display = entry.date || "\u00A0"; }
+                        }
+                        else display = entry.issuanceDetails || "\u00A0"; // Column 6 gets "Issuance details"
+                      }
+                      return (
+                        <tr key={i}>
+                          <td style={{
+                            borderBottom: "1px solid #ccc",
+                            height: 12,
+                            padding: "0 2px",
+                            fontSize: "5.5pt",
+                            textAlign: "center",
+                            color: entry ? "#15803d" : "transparent",
+                            fontWeight: entry ? 700 : 400,
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}>
+                            {display}
+                            {isMerged && entry?.responseIndex !== undefined && (
+                              <span style={{ fontSize: "4pt", marginLeft: 1, color: "#b45309" }}>
+                                R{entry.responseIndex + 1}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </table>
+                </td>
+              );
+            })}
+            <td rowSpan={8} style={{ border: BORDER2, verticalAlign: "top", padding: "2px 3px", fontSize: "5.5pt" }}>
+              {/* Format No. - Use actual question text from form */}
+
+              <div style={{ fontWeight: 700, color: "#c00", lineHeight: "1", marginBottom: 2, }}>
+                {label(docControlQuestions, 4, "Format No. AP")} :
+              </div>
+              <div style={{ fontWeight: 700, fontSize: "7pt", lineHeight: "1.5", marginBottom: 1, color: live(formatNoCombined) }}>
+                {formatNoCombined || "—"}
+              </div>
+
+
+              <div style={{ borderTop: "0.5px solid #999", margin: "2px 0" }} />
+
+              {/* Control No. - Use actual question text from form */}
+              <div style={{ fontWeight: 700, color: "#c00", lineHeight: "1", marginBottom: 1, }}>
+                {label(docControlQuestions, 5, "Control No. AP")} :
+              </div>
+              <div style={{ fontWeight: 700, fontSize: "7pt", marginBottom: 1, lineHeight: "1.5", color: live(controlNoCombined) }}>
+                {controlNoCombined || "—"}
+              </div>
+
+              <div style={{ borderTop: "0.5px solid #999", margin: "2px 0" }} />
+
+              {/* QR Code - This might be a static label or from form */}
               <div style={{ fontWeight: 700, marginBottom: 1 }}>QR Code :</div>
-              <img src={ASSETS.qr} alt="QR" style={{ width: 70, height: 60, marginLeft: 23, objectFit: "contain" }}
-                onError={(e) => { e.target.style.display = "none"; }} />
+              <img src={ASSETS.qr} alt="QR" style={{ width: 55, height: 50, objectFit: "contain" }} />
             </td>
           </tr>
 
-          {/* ── ROW 2: Model / Process-Station / "Your Work When Trouble…" spanning same 4 cols ── */}
-          <tr>
-            {/* C2 Model label */}
-            <td style={lblCell}>{qlabel(hQ[2], "Model")} :</td>
-            {/* C3 Model value */}
-            <td style={{ ...valCell, fontWeight: 700 }}>{getHeaderValue(2)}</td>
-            {/* C4 Process label */}
-            <td style={lblCell}>{qlabel(hQ[3], "Process / Station")} :</td>
-            {/* C5 Process value */}
-            <td style={{ ...valCell, fontWeight: 700 }}>{getHeaderValue(3)}</td>
-            {/* C6+C7+C8+C9 "Your Work When Trouble…" — same colspan 4 as Op.Std above */}
-            <td colSpan={4} style={{ ...hdrCell, fontSize: "7pt", padding: "3px 6px" }}>
+          <tr style={{ height: 4 }}> {/* Reduced from 13 */}
+            <td style={{ ...L, lineHeight: "1.5" }}>{label(headerQuestions, 2, "Model AP")}</td>
+            <td style={{ ...V, fontWeight: 700, color: live(modelCombined) }}>
+              {modelCombined || "—"}
+            </td>
+            <td style={{ ...L, lineHeight: "1.5" }}>{label(headerQuestions, 3, "Process / Station AP")} :</td>
+            <td style={{ ...V, fontWeight: 700, color: live(stationCombined) }}>
+              {stationCombined || "—"}
+            </td>
+            <td colSpan={4} style={{ ...H, border: BORDER2, fontSize: "5.5pt" }}> {/* Reduced from 6.5pt */}
               Your Work When Trouble Stopped The Production Line
             </td>
-            {/* C10-C15 consumed by rowspan-7 from row1 */}
           </tr>
 
-          {/* ── ROW 3: Rejection | Meas.Instr.label | Gauge text | Stop poster | S.No hdr | Trouble hdr | YourTask hdr ── */}
-          <tr>
-            {/* C2+C3 Rejection Handling — rowspan 6 (rows 3–8) */}
-            <td rowSpan={6} colSpan={2} style={{ ...boldBorder, padding: "2px 3px", verticalAlign: "top", fontSize: "5.5pt", lineHeight: 1.3 }}>
-              <div style={{ fontWeight: 700, marginBottom: 2, fontSize: "10px" }}>REJECTION HANDLING :-</div>
-              <div style={{ fontSize: "9px" }}>Clearly Identify Rejected / NG parts. Keep them properly with proper identification at defined Location.</div>
+          <tr style={{ height: 4 }}> {/* Reduced from 13 */}
+            <td rowSpan={6} colSpan={2} style={{ border: BORDER2, verticalAlign: "top", fontSize: "5pt", padding: "2px 3px" }}> {/* Reduced padding */}
+              <div style={{ fontWeight: 900, marginBottom: 5, fontSize: 8 }}>REJECTION HANDLING :-</div>
+              <div style={{ marginBottom: 2, fontSize: 7 }}>Clearly Identify Rejected / NG parts.</div>
+              <div style={{ lineHeight: "1.5", fontSize: 7 }}>Keep them properly with proper identification at defined Location.</div>
             </td>
-            {/* C4 "Measuring Instruments or Gauges" label — rowspan 6 */}
-            <td rowSpan={6} style={{ ...boldBorder, padding: 2, textAlign: "center", verticalAlign: "middle", fontWeight: 700, fontSize: "10px" }}>
+            <td rowSpan={6} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", fontWeight: 700, fontSize: "6pt", padding: 1, lineHeight: 1.5 }}> {/* Reduced padding */}
               Measuring<br />Instruments<br />or Gauges
             </td>
-            {/* C5 Gauge text instructions — rowspan 6 */}
-            <td rowSpan={6} style={{ ...boldBorder, padding: 0, verticalAlign: "top", fontSize: "6.5pt", lineHeight: 1.2 }}>
-              <div style={{ padding: "5px 4px", borderBottom: "1px solid #bbb", lineHeight: "1.3" }}>Always use Calibrated Measuring Instruments / Gauges (Ensure Calibration status before using the instrument).</div>
-              <div style={{ padding: "5px 4px", borderBottom: "1px solid #bbb", lineHeight: "1.3" }}>Ensure Zero setting before use.</div>
-              <div style={{ padding: "5px 4px", borderBottom: "1px solid #bbb", lineHeight: "1.3" }}>Do Not Use Unidentified Measuring Tool / Gauges.</div>
-              <div style={{ padding: "5px 4px", lineHeight: "1.3" }}>In case of any abnormality, inform Line leader and Quality Engineer to take action for suspected NG parts.</div>
-            </td>
-            {/* C6 Stop poster — rowspan 6 */}
-            <td rowSpan={6} style={{ ...boldBorder, textAlign: "center", verticalAlign: "middle", padding: 1 }}>
-              <img src={ASSETS.stop} alt="Stop Call Wait"
-                style={{ maxWidth: "100%", height: "160px", objectFit: "contain", marginLeft: "25px" }}
-                onError={(e) => { e.target.style.display = "none"; }} />
-            </td>
-            {/* C7 S.No — rowspan 6: header + 5 data rows, using inner table to split header from data */}
-            <td rowSpan={6} style={{ ...boldBorder, verticalAlign: "top", padding: 0, fontSize: "6pt" }}>
-              <div style={{ background: "#d9d9d9", fontWeight: 700, textAlign: "center", padding: "1px 2px", borderBottom: "1px solid #999" }}>S.No.</div>
-              <div style={{ borderBottom: "1px solid #999", textAlign: "center", padding: "1px 0" }}>1</div>
-              <div style={{ borderBottom: "1px solid #999", textAlign: "center", padding: "1px 0" }}>2</div>
-              <div style={{ borderBottom: "1px solid #999", textAlign: "center", padding: "1px 0" }}>3</div>
-              <div style={{ borderBottom: "1px solid #999", textAlign: "center", padding: "1px 0" }}>4</div>
-              <div style={{ textAlign: "center", padding: "1px 0" }}>5</div>
-            </td>
-            {/* C8 Trouble — rowspan 6: header + 5 data rows */}
-            <td rowSpan={6} style={{ ...boldBorder, verticalAlign: "top", padding: 0, fontSize: "6pt" }}>
-              <div style={{ background: "#d9d9d9", fontWeight: 700, textAlign: "center", padding: "1px 2px", borderBottom: "1px solid #999" }}>Trouble</div>
-              {TROUBLE_ROWS.map((t, i) => (
-                <div key={i} style={{ borderBottom: i < 4 ? "1px solid #999" : "none", padding: "1px 3px" }}>{t}</div>
+            <td rowSpan={6} style={{ border: BORDER2, verticalAlign: "top", fontSize: "5pt", padding: 0 }}>
+              {[
+                "Always use Calibrated Measuring Instruments / Gauges.",
+                "Ensure Zero setting before use.",
+                "Do Not Use Unidentified Measuring Tool / Gauges.",
+                "In case of any abnormality, inform Line leader and Quality Engineer.",
+              ].map((txt, i, arr) => (
+                <div key={i} style={{ padding: "2px 1px", borderBottom: i < arr.length - 1 ? "0.5px solid #ccc" : "none", lineHeight: "1.5" }}>{txt}</div> // Reduced padding
               ))}
             </td>
-            {/* C9 Your task — rowspan 6: header label + task text below */}
-            <td rowSpan={6} style={{ ...boldBorder, verticalAlign: "top", padding: 0, fontSize: "6pt" }}>
-              <div style={{ background: "#d9d9d9", fontWeight: 700, textAlign: "center", padding: "1px 2px", borderBottom: "1px solid #999" }}>Your task</div>
-              <div style={{ padding: "30px 3px", textAlign: "center", lineHeight: 1.5, fontSize: "6.5pt" }}>
-                Stop The Line<br />
-                Inform the Zone Leader<br />
-                Write on card if mentioned in OPS
+            <td rowSpan={6} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 2 }}> {/* Reduced padding */}
+              <img src={ASSETS.stop} alt="Stop Call Wait" style={{ maxWidth: "100%", height: 90, objectFit: "contain" }} /> {/* Reduced from 180 */}
+            </td>
+            <td style={{ ...H, }}>S. No.</td>
+            <td style={H}>Trouble</td>
+            <td style={H}>Your task</td>
+          </tr>
+
+          <tr style={{ height: 4 }}> {/* Reduced from 12 */}
+            <td style={{ ...C, textAlign: "center" }}>1</td>
+            <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[0]}</td> {/* Reduced from 6pt */}
+            <td rowSpan={5} style={{ fontSize: "5.5pt", textAlign: "center", verticalAlign: "middle", lineHeight: "2" }}> {/* Reduced from 5.5pt */}
+              Stop The Line<br />Inform the Zone Leader<br />Write on card if mentioned in OPS
+            </td>
+          </tr>
+          <tr style={{ height: 7 }}>
+            <td style={{ ...C, textAlign: "center" }}>2</td>
+            <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[1]}</td>
+          </tr>
+          <tr style={{ height: 7 }}>
+            <td style={{ ...C, textAlign: "center" }}>3</td>
+            <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[2]}</td>
+          </tr>
+          <tr style={{ height: 7 }}>
+            <td style={{ ...C, textAlign: "center" }}>4</td>
+            <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[3]}</td>
+          </tr>
+          <tr style={{ height: 7 }}>
+            <td style={{ ...C, textAlign: "center" }}>5</td>
+            <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[4]}</td>
+            <td style={{ ...H, border: BORDER2, fontSize: "6pt" }}>Prepared</td>
+            <td style={{ ...H, fontSize: "6pt" }}>Checked</td>
+            <td style={{ ...H, fontSize: "6pt" }}>Approved</td>
+            <td style={{ ...H, fontSize: "6pt" }}>No.</td>
+            <td style={{ ...H, fontSize: "6pt" }}>DD/MM/YY</td>
+            <td style={{ ...H, border: BORDER2, fontSize: "6pt" }}>Issuance / Revision details</td>
+          </tr>
+        </tbody>
+      </table>
+
+
+
+
+      {/* GENERAL INSTRUCTIONS - REDUCED HEIGHT */}
+      {/* General Instructions Body - COMPACT */}
+      <table style={{ ...T, border: BORDER2, borderTop: "none" }}>
+        <colgroup>
+          <col style={{ width: "10%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "9%" }} />
+          <col style={{ width: "10%" }} />
+          <col style={{ width: "15%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "13%" }} />
+          <col style={{ width: "12%" }} />
+        </colgroup>
+        <tbody>
+          <tr>
+            <td style={H}>FIFO System</td>
+            <td style={H}>Non Lubrication Rule</td>
+            <td style={{ ...H, fontSize: "5pt" }}>Always wear PPEs / Proper uniform</td> {/* Reduced from 5.5pt */}
+            <td style={{ ...H, fontSize: "5pt" }}>Wear PPEs as per<br />station requirements</td>
+            <td style={H}>Shift Timings</td>
+            <td style={H}>Environmental Issues</td>
+            <td style={H}>Safety Issues</td>
+            <td style={H}>5S Guidelines</td>
+            <td style={H}>Process Instructions</td>
+          </tr>
+          <tr>
+            <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}> {/* Reduced font */}
+              <div style={{ fontWeight: 800, marginBottom: 1, fontSize: "6pt" }}>FIFO System</div> {/* Reduced margin */}
+              {DEF_FIFO.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "2", fontSize: "6pt" }}>{l}</div>)} {/* Reduced margin */}
+            </td>
+            <td style={{ ...C, verticalAlign: "top", padding: 0 }}>
+              <div style={{ padding: "2px 3px", borderBottom: "0.5px solid #ccc", fontSize: "6pt", lineHeight: "2" }}>{DEF_NONLUB}</div> {/* Reduced padding */}
+              <div style={{ display: "flex", borderBottom: "0.5px solid #ccc" }}>
+                <div style={{ flex: 1, borderRight: "0.5px solid #ccc", padding: "1px 2px", textAlign: "center", fontWeight: 700, fontSize: "5pt", background: "#d9d9d9", lineHeight: "2" }}>No mobile on shopfloor</div>
+                <div style={{ flex: 1, padding: "1px 2px", textAlign: "center", fontWeight: 700, fontSize: "5pt", background: "#d9d9d9", lineHeight: "2" }}>Do not run on shopfloor</div>
+              </div>
+              <div style={{ display: "flex" }}>
+                <div style={{ flex: 1, borderRight: "0.5px solid #ccc", padding: 2, textAlign: "center" }}> {/* Reduced padding */}
+                  <img src={ASSETS.noMob} alt="No Mobile" style={{ width: 60, height: 90, objectFit: "contain" }} /> {/* Reduced from 72x72 */}
+                </div>
+                <div style={{ flex: 1, padding: 2, textAlign: "center" }}>
+                  <img src={ASSETS.noRun} alt="No Run" style={{ width: 60, height: 90, objectFit: "contain" }} />
+                </div>
               </div>
             </td>
-            {/* C10-C15 consumed by rowspan-7 from row1 */}
-          </tr>
-
-          {/* ── ROW 4: Trouble 1 ── (S.No/Trouble/YourTask all consumed by rowspan-6) */}
-          <tr></tr>
-
-          {/* ── ROW 5: Trouble 2 ── */}
-          <tr></tr>
-
-          {/* ── ROW 6: Trouble 3 ── */}
-          <tr></tr>
-
-          {/* ── ROW 7: Trouble 4 ── */}
-          <tr></tr>
-
-          {/* ── ROW 8: Trouble 5 + Prepared/Checked/Approved labels + No/Date/Revision labels ──
-              C2+C3 Rejection (rowspan6 ends), C4 Meas (rowspan6 ends), C5 Gauge (rowspan6 ends),
-              C6 Stop (rowspan6 ends), C7 S.No, C8 Trouble, C9 YourTask(rowspan6 ends),
-              C10=Prepared, C11=Checked, C12=Approved, C13=No, C14=DD/MM/YY, C15=Revision,
-              C16 Format/QR (rowspan8 ends) */}
-          <tr>
-            {/* C7+C8+C9 all consumed by rowspan-6 */}
-            {/* C10-C15 rowspan-7 ends here — output their header labels */}
-            <td style={{ ...hdrCell, fontSize: "6pt" }}>Prepared</td>
-            <td style={{ ...hdrCell, fontSize: "6pt" }}>Checked</td>
-            <td style={{ ...hdrCell, fontSize: "6pt" }}>Approved</td>
-            <td style={{ ...hdrCell, fontSize: "6pt" }}>No.</td>
-            <td style={{ ...hdrCell, fontSize: "6pt" }}>DD /MM/<br />YY</td>
-            <td style={{ ...hdrCell, fontSize: "6pt" }}>Issuance / Revision details</td>
-          </tr>
-
-        </tbody>
-      </table>
-
-      {/* ── GENERAL INSTRUCTIONS TITLE ── */}
-      <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "1px solid #999" }}>
-        <tbody>
-          <tr>
-            <td style={{ padding: "2px 6px", fontWeight: 700, fontSize: "8pt", textAlign: "center", background: "#d9d9d9" }}>
-              General Instructions
+            <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 2 }}> {/* Reduced padding */}
+              <img src={ASSETS.ppeG} alt="Full PPE Uniform" style={{ width: "100%", height: 140, objectFit: "contain" }} /> {/* Reduced from 190 */}
+            </td>
+            <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 2 }}>
+              <img src={ASSETS.ppeGl} alt="Station PPE" style={{ width: "100%", maxHeight: 140, objectFit: "contain" }} /> {/* Reduced from 190 */}
+            </td>
+            <td style={{ ...C, textAlign: "center", verticalAlign: "top", padding: 2, marginTop: 6 }}> {/* Reduced padding */}
+              <img src={ASSETS.shift} alt="Shift Timings" style={{ width: "100%", maxHeight: 160, objectFit: "contain" }} /> {/* Reduced from 190 */}
+            </td>
+            <td style={{ ...C, verticalAlign: "top", fontSize: "5.5pt" }}>
+              <div style={{ fontWeight: 700, color: "#166534", marginBottom: 2 }}>Environmental Issues</div> {/* Reduced margin */}
+              {DEF_ENV.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 1, fontSize: "6pt", lineHeight: "2" }}>{l}</div>)} {/* Reduced margin */}
+            </td>
+            <td style={{ ...C, verticalAlign: "top", fontSize: "5.5pt" }}>
+              <div style={{ fontWeight: 700, color: "#991b1b", marginBottom: 2 }}>Safety Issues</div>
+              {DEF_SAFE.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "2", fontSize: "6pt" }}>{l}</div>)}
+            </td>
+            <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 2 }}>
+              <img src={ASSETS.fiveS} alt="5S Guidelines" style={{ width: "100%", maxHeight: 100, objectFit: "fill" }} /> {/* Reduced from 140 */}
+            </td>
+            <td style={{ ...C, verticalAlign: "top", fontSize: "6pt" }}>
+              {DEF_PROC_INS.map((l, i) => (
+                <div key={i} style={{
+                  marginBottom: "0px",
+                  lineHeight: "2"  // THIS is the fix for wrapped line spacing
+                }}>
+                  {l}
+                </div>
+              ))} {/* Reduced margin */}
             </td>
           </tr>
         </tbody>
       </table>
 
-      {/* ── GENERAL INSTRUCTIONS TABLE ── */}
+      {/* PROCESS STEPS TABLE - FULLY DYNAMIC WITH 14 COLUMNS FROM processQuestions */}
       <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
         <colgroup>
-          <col style={{ width: "11%" }} />
-          <col style={{ width: "5%" }} />
-          <col style={{ width: "5%" }} />
-          <col style={{ width: "6%" }} />
-          <col style={{ width: "6%" }} />
-          <col style={{ width: "14%" }} />
-          <col style={{ width: "7%" }} />
-          <col style={{ width: "7%" }} />
-          <col style={{ width: "16%" }} />
-          <col style={{ width: "14%" }} />
-        </colgroup>
-        <thead>
-          <tr>
-            <th style={hdrCell}>FIFO System</th>
-            <th colSpan={2} style={{ ...hdrCell, fontSize: "7pt" }}>Non Lubrication Rule:</th>
-            <th style={{ ...hdrCell, fontSize: "6pt" }}>Always wear PPEs /<br />Proper uniform</th>
-            <th style={{ ...hdrCell, fontSize: "6pt" }}>Wear PPEs as per your<br />station's requirements</th>
-            <th style={hdrCell}>Shift Timings</th>
-            <th colSpan={2} style={hdrCell}>EMS &amp; Safety Guidelines</th>
-            <th style={hdrCell}>5S Guidelines</th>
-            <th style={hdrCell}>Process Instructions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr style={{ verticalAlign: "top" }}>
-            {/* FIFO */}
-            <td style={{ ...cellBase, padding: 4, verticalAlign: "top" }}>
-              <div style={{ fontWeight: 700, marginBottom: 3 }}>FIFO System</div>
-              <div style={{ whiteSpace: "pre-line", fontSize: "6.5pt" }}>{getInstructionValue(4) || DEF_FIFO}</div>
-            </td>
-
-            {/* Non-Lub + No Mobile / No Run images – colspan 2 */}
-            <td colSpan={2} style={{ ...cellBase, padding: 0, verticalAlign: "top" }}>
-              <table style={{ width: "100%", height: "100%", borderCollapse: "collapse" }}>
-                <tbody>
-                  <tr>
-                    <td colSpan={2} style={{ borderBottom: "1px solid #999", padding: 4, textAlign: "center", fontSize: "6.5pt" }}>
-                      {getInstructionValue(5) || DEF_NONLUB}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style={{ borderBottom: "1px solid #999", borderRight: "1px solid #999", padding: 3, textAlign: "center", fontWeight: 700, fontSize: "6pt", background: "#d9d9d9" }}>
-                      Do not use mobile on the shopfloor
-                    </td>
-                    <td style={{ borderBottom: "1px solid #999", padding: 3, textAlign: "center", fontWeight: 700, fontSize: "6pt", background: "#d9d9d9" }}>
-                      Do not run on the shopfloor
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style={{ borderRight: "1px solid #999", padding: 4, textAlign: "center", verticalAlign: "middle" }}>
-                      <img src={ASSETS.noMob} alt="No Mobile" style={{ maxWidth: "100%", maxHeight: 75, objectFit: "contain" }} onError={(e) => { e.target.style.display = "none"; }} />
-                    </td>
-                    <td style={{ padding: 4, textAlign: "center", verticalAlign: "middle" }}>
-                      <img src={ASSETS.noRun} alt="No Running" style={{ maxWidth: "100%", maxHeight: 75, objectFit: "contain" }} onError={(e) => { e.target.style.display = "none"; }} />
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </td>
-
-            {/* PPE Uniform */}
-            <td style={{ ...cellBase, padding: 3, textAlign: "center", verticalAlign: "top" }}>
-              <img src={ASSETS.ppeG} alt="PPE Uniform" style={{ width: "100%", maxHeight: 130, objectFit: "contain", display: "block", marginTop: 14 }} onError={(e) => { e.target.style.display = "none"; }} />
-            </td>
-
-            {/* PPE Items */}
-            <td style={{ ...cellBase, padding: 3, textAlign: "center", verticalAlign: "top" }}>
-              <img src={ASSETS.ppeGl} alt="PPE Items" style={{ width: "100%", maxHeight: 130, objectFit: "contain", display: "block", marginTop: 14 }} onError={(e) => { e.target.style.display = "none"; }} />
-            </td>
-
-            {/* Shift Timings */}
-            <td style={{ ...cellBase, padding: 3, verticalAlign: "top" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "5.5pt" }}>
-                <thead>
-                  <tr style={{ background: "#d9d9d9" }}>
-                    <th style={{ border: "1px solid #aaa", padding: "1px 3px", textAlign: "left" }}>Activity</th>
-                    <th style={{ border: "1px solid #aaa", padding: "1px 3px", textAlign: "center" }}>A</th>
-                    <th style={{ border: "1px solid #aaa", padding: "1px 3px", textAlign: "center" }}>B</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {SHIFT_ROWS.map((r, i) => (
-                    <tr key={i}>
-                      <td style={{ border: "1px solid #aaa", padding: "1px 3px" }}>{r.act}</td>
-                      <td style={{ border: "1px solid #aaa", padding: "1px 3px", textAlign: "center" }}>{r.a}</td>
-                      <td style={{ border: "1px solid #aaa", padding: "1px 3px", textAlign: "center" }}>{r.b}</td>
-                    </tr>
-                  ))}
-                  <tr>
-                    <td colSpan={3} style={{ border: "1px solid #aaa", padding: "1px 3px", fontSize: "5pt", fontStyle: "italic" }}>
-                      Tea Break / Lunch / Dinner timings will be as per company timings.
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </td>
-
-            {/* EMS Environmental */}
-            <td style={{ ...cellBase, padding: 2, verticalAlign: "top" }}>
-              <div style={{ ...hdrCell, fontSize: "6pt", marginBottom: 2 }}>Environmental Issues</div>
-              <div style={{ whiteSpace: "pre-line", fontSize: "6.5pt" }}>{getInstructionValue(8) || DEF_ENV}</div>
-            </td>
-
-            {/* EMS Safety */}
-            <td style={{ ...cellBase, padding: 2, verticalAlign: "top" }}>
-              <div style={{ ...hdrCell, fontSize: "6pt", marginBottom: 2 }}>Safety Issues</div>
-              <div style={{ whiteSpace: "pre-line", fontSize: "6.5pt" }}>{getInstructionValue(9) || DEF_SAFE}</div>
-            </td>
-
-            {/* 5S Guidelines */}
-            <td style={{ ...cellBase, padding: 0, textAlign: "center", verticalAlign: "top" }}>
-              <img src={ASSETS.fiveS} alt="5S Guidelines" style={{ width: "100%", maxHeight: 180, objectFit: "fill", display: "block" }} onError={(e) => { e.target.style.display = "none"; }} />
-            </td>
-
-            {/* Process Instructions */}
-            <td style={{ ...cellBase, padding: 4, verticalAlign: "top", fontSize: "6.5pt" }}>
-              {DEF_PROC_INS.map((ins, i) => (
-                <div key={i} style={{ marginBottom: 2 }}>{getInstructionValue(10 + i) || ins}</div>
-              ))}
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      {/* ── PROCESS STEPS TABLE ── */}
-      <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
-        <colgroup>
-          <col style={{ width: "9%" }} />
-          <col style={{ width: "2.5%" }} />
-          <col style={{ width: "4%" }} />
           <col style={{ width: "8%" }} />
-          <col style={{ width: "6%" }} />
-          <col style={{ width: "5.5%" }} />
-          <col style={{ width: "9%" }} />
-          <col style={{ width: "5%" }} />
-          <col style={{ width: "6.5%" }} />
-          <col style={{ width: "5.5%" }} />
-          <col style={{ width: "4.5%" }} />
-          <col style={{ width: "5%" }} />
-          <col style={{ width: "4%" }} />
-          <col style={{ width: "4.5%" }} />
-          <col style={{ width: "4%" }} />
+          <col style={{ width: "2.5%" }} />
+          {processStepColumns.map((col, i) => <col key={i} style={{ width: col.width }} />)}
         </colgroup>
         <thead>
           <tr>
             <th style={{ ...hdrCell, background: "#ffff00", color: "#000" }}>
-              {form?.sections?.find((s) => s.id === SECTION_MAP.illustrations)?.title || "Illustrations & Process Details"}
+              {illustrationQuestions[0]?.text || illustrationQuestions[0]?.label || "Illustrations & Process Details"}
             </th>
-            <th style={hdrCell}>{qlabel(prQ[0], "SN")}</th>
-            <th style={hdrCell}>{qlabel(prQ[1], "★")}</th>
-            {PROC_COLS.map((c, i) => (
-              <th key={i} style={{ ...hdrCell, whiteSpace: "pre-line", lineHeight: 1.2 }}>{c.label}</th>
+            <th style={hdrCell}>SN</th>
+            {processStepColumns.map((col) => (
+              <th key={col.questionId} style={{ ...hdrCell, whiteSpace: "pre-line", lineHeight: 1.2 }}>
+                {col.label}
+              </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {procRows.map((row, ri) => {
-            const star = row.sn === 1 ? "★" : row.sn === 2 ? "★★" : row.sn === 3 ? "★★★" : "☆";
-            if (row.empty) {
-              return (
-                <tr key={ri} style={{ height: 56 }}>
-                  <td style={{ ...cellBase, background: "#ffff00" }}></td>
-                  <td style={{ ...hdrCell, fontWeight: 700, fontSize: "8pt" }}>{row.sn}</td>
-                  <td style={{ ...cellBase, textAlign: "center", color: "#ccc" }}>☆</td>
-                  {PROC_COLS.map((_, ci) => <td key={ci} style={{ ...cellBase, background: "#fff" }}></td>)}
-                </tr>
-              );
-            }
+          {isLoadingSameFormatResponses && (
+            <tr>
+              <td colSpan={2 + processStepColumns.length}
+                style={{ ...cellBase, textAlign: 'center', background: '#f0f9ff', color: '#3b82f6', fontStyle: 'italic', height: 50 }}>
+                ⏳ Loading responses…
+              </td>
+            </tr>
+          )}
+
+          {/* EACH RESPONSE GETS ITS OWN ROW */}
+          {!isLoadingSameFormatResponses && sameFormatResponses?.map((resp, respIdx) => {
+            // Get illustrations for this specific response
+            const illustrationImages = getResponseIllustrationImages(resp);
+
             return (
-              <tr key={ri} style={{ minHeight: 56, verticalAlign: "top" }}>
-                <td style={{ ...cellBase, background: "#ffff00", padding: 2, textAlign: "center", verticalAlign: "middle" }}>
-                  {row.imageUrls && row.imageUrls.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
-                      {row.imageUrls.map((url, idx) => (
-                        <img key={idx} src={url} alt={`Illustration ${idx + 1}`} style={{ maxWidth: "100%", maxHeight: 80, objectFit: "contain" }} />
+              <tr key={`resp-${respIdx}`} style={{ minHeight: 50 }}>
+                {/* Illustration column - images from THIS response only */}
+                <td style={{ ...cellBase, background: "#ffff00", textAlign: "center", verticalAlign: "middle", padding: 2, height: 50 }}>
+                  {illustrationImages.length > 0 ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', justifyContent: 'center' }}>
+                      {illustrationImages.map((url, idx) => (
+                        <img key={idx} src={url} alt={`Illustration ${idx + 1}`}
+                          style={{ width: 50, height: 40, objectFit: 'contain', cursor: 'pointer', border: '0.5px solid #ccc', borderRadius: 2 }}
+                          onClick={() => window.open(url, '_blank')} />
                       ))}
                     </div>
                   ) : (
-                    <div style={{ width: "100%", height: 56, display: "flex", alignItems: "center", justifyContent: "center", color: "#bbb", fontSize: 20 }}>📷</div>
+                    <div style={{ width: "100%", height: 40, display: "flex", alignItems: "center", justifyContent: "center", color: "#bbb", fontSize: 20 }}>📷</div>
                   )}
                 </td>
-                <td style={{ ...hdrCell, fontWeight: 700, fontSize: "8pt" }}>{row.sn}</td>
-                <td style={{ ...cellBase, textAlign: "center", verticalAlign: "middle", color: "#b8860b" }}>{star}</td>
-                {(row.cells).map((val, ci) => (
-                  <td key={ci} style={{ ...cellBase, padding: 3, verticalAlign: "top", background: "#fff", lineHeight: 1.3 }}>
-                    {val || <span style={{ color: "#ccc" }}>—</span>}
-                  </td>
-                ))}
+
+                {/* SN column - response number */}
+                <td style={{ ...cellBase, textAlign: "center", fontWeight: 700, fontSize: "9pt", verticalAlign: "middle" }}>
+                  {respIdx + 1}
+                </td>
+
+                {/* Process step answer cells - values from THIS response only */}
+                {processStepColumns.map((col) => {
+                  const rawVal = resp?.answers?.[col.questionId];
+                  let cellVal = "";
+                  if (rawVal !== null && rawVal !== undefined && rawVal !== "") {
+                    if (typeof rawVal === "object") {
+                      try { cellVal = JSON.stringify(rawVal); } catch { cellVal = String(rawVal); }
+                    } else {
+                      cellVal = String(rawVal);
+                    }
+                  }
+
+                  return (
+                    <td key={col.questionId} style={{
+                      ...cellBase,
+                      fontWeight: 500,
+                      color: cellVal ? '#000' : 'transparent',
+                      height: 50, minHeight: 50, padding: 3,
+                      verticalAlign: "top", background: "#fff", lineHeight: 1.3,
+                      textAlign: "left"
+                    }}>
+                      {cellVal || '\u00A0'}
+                    </td>
+                  );
+                })}
               </tr>
             );
           })}
+
+          {/* Blank filler rows to maintain minimum height (max 5 rows total) */}
+          {!isLoadingSameFormatResponses && sameFormatResponses && sameFormatResponses.length < 5 &&
+            Array.from({ length: 5 - sameFormatResponses.length }).map((_, i) => (
+              <tr key={`blank-${i}`} style={{ minHeight: 50 }}>
+                <td style={{ ...cellBase, background: "#ffff00", height: 50 }} />
+                <td style={{ ...cellBase, textAlign: 'center', fontWeight: 700, fontSize: '9pt', verticalAlign: 'middle', color: '#ccc' }}>
+                  {sameFormatResponses.length + 1 + i}
+                </td>
+                {processStepColumns.map(col => (
+                  <td key={col.questionId} style={{ ...cellBase, height: 50, background: "#fff" }}>&nbsp;</td>
+                ))}
+              </tr>
+            ))
+          }
         </tbody>
       </table>
 
-      {/* ── ABNORMALITY + PAST PROBLEMS ── */}
-      <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
-        <colgroup>
-          <col style={{ width: "14%" }} />
-          <col style={{ width: "86%" }} />
-        </colgroup>
+      {/* ABNORMALITY + PAST PROBLEMS */}
+      < table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
         <tbody>
           <tr>
-            <td rowSpan={2} style={{ ...cellBase, padding: 4, verticalAlign: "top", fontSize: "6.5pt" }}>
-              <div style={{ fontWeight: 700, marginBottom: 2 }}>{qlabel(pQ[0], "Abnormality handling route")} :</div>
+            <td rowSpan={2} style={{ ...cellBase, padding: 4, verticalAlign: "top", fontSize: "6.5pt", width: "12%" }}>
+              <div style={{ fontWeight: 700, marginBottom: 2 }}>
+                {label(pastProbsQuestions, 0, "Abnormality handling route")} :
+              </div>
               <div>In case of any abnormality inform the Zone In-Charge</div>
               <div style={{ marginTop: 2 }}>Flow of Communication :-</div>
               <div>Operator ▶ Team Member ▶ Section Mgr ▶ As required</div>
             </td>
             <td style={{ ...lblCell, padding: "2px", textAlign: "center", fontSize: "7pt" }}>
-              {qlabel(pQ[1], "Past Problem Details")}
+              {label(pastProbsQuestions, 1, "Past Problem Details")}
             </td>
           </tr>
           <tr>
-            <td style={{ ...cellBase, padding: 4, verticalAlign: "top", minHeight: 60, height: 60, fontSize: "7pt", background: "#fff" }}>
-              {getPastProblemValue(1) || <span style={{ color: "#ccc", fontStyle: "italic" }}>No data recorded</span>}
+            <td style={{
+              ...cellBase, padding: 4, verticalAlign: "top", minHeight: 60, height: 60, fontSize: "7pt", background: "#fff",
+              fontStyle: pastProblemMerged.isMerged ? "italic" : "normal",
+              color: pastProblemMerged.value ? (pastProblemMerged.isMerged ? "#b45309" : "#000") : "#bbb"
+            }}>
+              {pastProblemMerged.value || <span style={{ color: "#ccc", fontStyle: "italic" }}>No data recorded</span>}
+              {pastProblemMerged.isMerged && (
+                <div style={{ fontSize: "5.5pt", color: "#9a6700", marginTop: 2 }}>
+                  ({sameFormatResponses.length} responses merged)
+                </div>
+              )}
             </td>
           </tr>
         </tbody>
       </table>
 
-      {/* ── ASSOCIATE NAME & SIGN ── */}
-      {(() => {
-        const ACOLS = 22;
-        return (
-          <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
-            <colgroup>
-              <col style={{ width: "5%" }} />
-              {Array.from({ length: ACOLS }, (_, i) => (
-                <col key={i} style={{ width: `${(95 / ACOLS).toFixed(2)}%` }} />
-              ))}
-            </colgroup>
-            <tbody>
-              <tr>
-                <td style={{ ...lblCell, padding: 3, textAlign: "center", fontSize: "6.5pt", verticalAlign: "middle" }}>
-                  Associate Name<br />&amp; Emp. Code
-                </td>
-                {Array.from({ length: ACOLS }, (_, i) => (
-                  <td key={i} style={{ ...cellBase, textAlign: "center", height: 22, background: "#fff" }}></td>
-                ))}
-              </tr>
-              <tr>
-                <td style={{ ...lblCell, padding: 3, textAlign: "center", fontSize: "6.5pt", verticalAlign: "middle" }}>
-                  Sign &amp; Date
-                </td>
-                {Array.from({ length: ACOLS }, (_, i) => (
-                  <td key={i} style={{ ...cellBase, textAlign: "center", height: 26, background: "#fff" }}></td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
-        );
-      })()}
-
-      {/* ── PAGE NUMBER ── */}
+      {/* ASSOCIATE NAME & SIGN */}
       <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
         <colgroup>
-          <col style={{ width: "82%" }} />
-          <col style={{ width: "18%" }} />
+          <col style={{ width: "5%" }} />
+          {Array.from({ length: 22 }).map((_, i) => <col key={i} style={{ width: `${(95 / 22).toFixed(2)}%` }} />)}
         </colgroup>
+        <tbody>
+          <tr>
+            <td style={{ ...lblCell, textAlign: "center", fontSize: "5.5pt", border: boldBorder, verticalAlign: "middle" }}>
+              Associate Name &amp; Emp. Code
+            </td>
+            {Array.from({ length: 22 }).map((_, i) => <td key={i} style={{ border: "1px solid #999", height: 22 }} />)}
+          </tr>
+          <tr>
+            <td style={{ ...lblCell, textAlign: "center", fontSize: "5.5pt", border: boldBorder, verticalAlign: "middle" }}>
+              Sign &amp; Date
+            </td>
+            {Array.from({ length: 22 }).map((_, i) => <td key={i} style={{ border: "1px solid #999", height: 26 }} />)}
+          </tr>
+        </tbody>
+      </table>
+
+      {/* PAGE NUMBER */}
+      <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
         <tbody>
           <tr>
             <td style={{ ...cellBase, padding: 2 }}>{form?.title || "Operation Standard"}</td>
@@ -872,10 +1044,10 @@ function OPSTemplate({ form, response, submissionHistory = [] }: OPSTemplateProp
           </tr>
         </tbody>
       </table>
-
     </div>
   );
 }
+
 export default function ResponseDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -918,7 +1090,149 @@ export default function ResponseDetailsPage() {
   const [popupIssuanceDetails, setPopupIssuanceDetails] = useState("");
   const [pendingUpdate, setPendingUpdate] = useState<any>(null);
   const [submissionHistory, setSubmissionHistory] = useState<any[]>([]);
+  const opsPrintRef = useRef<HTMLDivElement>(null);
 
+  // Add these state variables near your other state declarations (around line 140)
+  const [allResponses, setAllResponses] = useState<any[]>([]);
+  const [sameFormatResponses, setSameFormatResponses] = useState<any[]>([]);
+  const [isLoadingSameFormatResponses, setIsLoadingSameFormatResponses] = useState(false);
+
+
+  // Add this after setting form state (around line 200-250)
+  const effectiveOpsMapping = useMemo(() => {
+    if (!form?.sections) return null;
+
+    const mapping = {
+      headerSectionId: "sec_basic_info",
+      generalInstructionsSectionId: "sec_doc_control",
+      pastProblemsSectionId: "sec_abnormalities_handling",
+      processStepsSectionId: "sec_process_steps",
+      associateSignSectionId: "sec_associate_sign",
+      illustrationsSectionId: "sec_illustrations",
+    };
+
+    return mapping;
+  }, [form]);
+
+  // Helper to get questions from a section
+  const getQuestionsFromSection = useCallback((sectionId: string | undefined) => {
+    if (!form || !sectionId) return [];
+    const section = form.sections?.find((s: any) => s.id === sectionId || s._id === sectionId);
+    if (!section) return [];
+    return (section.questions || []).filter((q: any) => !q.showWhen?.questionId);
+  }, [form]);
+
+  // Get the instructions questions (from sec_doc_control section)
+  const instructionsQuestions = useMemo(() => {
+    return getQuestionsFromSection("sec_doc_control");
+  }, [getQuestionsFromSection]);
+
+  // Get the header questions (from sec_basic_info section)
+  const headerQuestionsForFormat = useMemo(() => {
+    return getQuestionsFromSection("sec_basic_info");
+  }, [getQuestionsFromSection]);
+
+
+  // Add this function to fetch all responses for the same form
+  const fetchAllResponsesForForm = useCallback(async () => {
+    if (!form) return [];
+
+    try {
+      const responsesData = await apiClient.getResponses();
+      const formIdentifier = response?.questionId || response?.formId;
+
+      // Filter responses for the same form
+      const formResponses = responsesData.responses.filter((r: any) => {
+        const rFormId = r.questionId || r.formId;
+        return rFormId === formIdentifier || String(rFormId) === String(formIdentifier);
+      });
+
+      setAllResponses(formResponses);
+      return formResponses;
+    } catch (err) {
+      console.error("Failed to fetch all responses:", err);
+      return [];
+    }
+  }, [form, response]);
+
+  // Add this function to get the Format No value from a response
+  // Add this function to get the Format No value from a response
+  const getFormatNoFromResponse = useCallback((resp: any): string => {
+    if (!form) return "";
+
+    // Get the instructions section (sec_doc_control)
+    const instructionsSection = form.sections?.find(
+      (s: any) => s.id === "sec_doc_control"
+    );
+
+    // Format No is typically the first question in this section
+    const formatQuestion = instructionsSection?.questions?.[0];
+
+    if (!formatQuestion) return "";
+
+    const formatAnswer = resp.answers?.[formatQuestion.id];
+    if (formatAnswer === undefined || formatAnswer === null || formatAnswer === "") return "";
+    return String(formatAnswer);
+  }, [form]);
+  const [isGroupedView, setIsGroupedView] = useState(false);
+  const [groupedResponses, setGroupedResponses] = useState<any[]>([]);
+
+
+
+  // Update the filterSameFormatResponses function
+  const filterSameFormatResponses = useCallback(async () => {
+    if (!response || !form) return;
+
+    setIsLoadingSameFormatResponses(true);
+
+    try {
+      // If we're in grouped view, use the grouped responses directly
+      if (isGroupedView && groupedResponses.length > 0) {
+        // Sort by creation date (oldest first)
+        const sorted = [...groupedResponses].sort((a: any, b: any) => {
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        });
+        setSameFormatResponses(sorted);
+        setIsLoadingSameFormatResponses(false);
+        return;
+      }
+
+      // Original logic for single response
+      let formResponses = allResponses;
+      if (formResponses.length === 0) {
+        formResponses = await fetchAllResponsesForForm();
+      }
+
+      const currentFormatNo = getFormatNoFromResponse(response);
+
+      if (!currentFormatNo) {
+        setSameFormatResponses([response]);
+        return;
+      }
+
+      const filtered = formResponses.filter((resp: any) => {
+        const formatNo = getFormatNoFromResponse(resp);
+        return formatNo === currentFormatNo;
+      });
+
+      const sorted = filtered.sort((a: any, b: any) => {
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      });
+
+      setSameFormatResponses(sorted);
+    } catch (err) {
+      console.error("Failed to filter same format responses:", err);
+      setSameFormatResponses([response]);
+    } finally {
+      setIsLoadingSameFormatResponses(false);
+    }
+  }, [response, form, allResponses, fetchAllResponsesForForm, getFormatNoFromResponse, isGroupedView, groupedResponses]);
+  // Call this after fetching the response and form
+  useEffect(() => {
+    if (response && form) {
+      filterSameFormatResponses();
+    }
+  }, [response, form]);
 
 
   const [pdfProgress, setPdfProgress] = useState<{
@@ -1041,6 +1355,9 @@ export default function ResponseDetailsPage() {
     }
     return labels;
   }, [form]);
+  // Add these state variables near other state declarations (around line 140)
+  const [groupModelNo, setGroupModelNo] = useState("");
+  // In ResponseDetailsPage.tsx, update the fetchResponseDetails function:
 
   const fetchResponseDetails = async () => {
     try {
@@ -1048,53 +1365,95 @@ export default function ResponseDetailsPage() {
       if (!id) {
         throw new Error("Response ID is required");
       }
-      const responsesData = await apiClient.getResponses();
-      const selectedResponse = responsesData.responses.find(
-        (r: any) => r._id === id || r.id === id || String(r._id) === id || String(r.id) === id
-      );
 
-      if (!selectedResponse) {
-        console.error("Response not found. Looking for ID:", id);
-        console.error("Available response IDs:", responsesData.responses.map((r: any) => ({ _id: r._id, id: r.id })));
-        throw new Error(`Response with ID "${id}" not found.`);
+      // Try to get state from multiple sources
+      let navigationState = location.state;
+
+      // Also check window.history.state
+      if (!navigationState && window.history.state?.usr) {
+        navigationState = window.history.state.usr;
+        console.log("Got state from window.history.state:", navigationState);
       }
 
-      const formIdentifier = selectedResponse.questionId || selectedResponse.formId;
-      if (!formIdentifier) {
-        throw new Error("Missing form identifier for response");
+      // If still no state, check sessionStorage
+      let groupedData = null;
+      if (!navigationState?.groupedResponses) {
+        const storageKey = `grouped_${id}`;
+        const stored = sessionStorage.getItem(storageKey);
+        if (stored) {
+          groupedData = JSON.parse(stored);
+          console.log("Got grouped data from sessionStorage:", groupedData);
+          sessionStorage.removeItem(storageKey); // Clean up
+        }
       }
 
-      const formData = await apiClient.getForm(formIdentifier);
-      const selectedForm = formData.form;
+      const hasGroupedResponses = navigationState?.groupedResponses || groupedData?.groupedResponses;
 
-      if (selectedForm?.sections) {
-        selectedForm.sections.forEach((section: any) => {
-          if (section.questions) {
-            section.questions.forEach((question: any) => {
-              if (!Array.isArray(question.followUpQuestions)) {
-                question.followUpQuestions = [];
-              }
-            });
-          }
+      console.log("=== RESPONSE DETAILS PAGE ===");
+      console.log("Navigation state:", navigationState);
+      console.log("Grouped data from storage:", groupedData);
+      console.log("Has groupedResponses:", !!hasGroupedResponses);
+
+      if (hasGroupedResponses && hasGroupedResponses.length > 0) {
+        // Use the grouped responses
+        const grouped = navigationState?.groupedResponses || groupedData?.groupedResponses;
+        console.log("Setting grouped responses:", grouped.length);
+        setGroupedResponses(grouped);
+        setIsGroupedView(true);
+        setGroupModelNo(navigationState?.modelNo || groupedData?.modelNo || "");
+
+        // Use the first response as the main response for metadata
+        const mainResponse = grouped[0];
+
+        const formIdentifier = mainResponse.questionId || mainResponse.formId;
+        if (!formIdentifier) {
+          throw new Error("Missing form identifier for response");
+        }
+
+        const formData = await apiClient.getForm(formIdentifier);
+        const selectedForm = formData.form;
+
+        // Get submissionHistory from first response's answers
+        const history = mainResponse.answers?.__submissionHistory || [];
+
+        setResponse(mainResponse);
+        setForm(selectedForm);
+        setSubmissionHistory(history);
+
+        // Set sameFormatResponses directly from grouped responses
+        const sorted = [...grouped].sort((a: any, b: any) => {
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
         });
+        setSameFormatResponses(sorted);
+
+        console.log("Set sameFormatResponses with", sorted.length, "responses");
+
+      } else {
+        // Original single response logic
+        console.log("No grouped responses found, loading single response");
+        const responsesData = await apiClient.getResponses();
+        const selectedResponse = responsesData.responses.find(
+          (r: any) => r._id === id || r.id === id || String(r._id) === id || String(r.id) === id
+        );
+
+        if (!selectedResponse) {
+          throw new Error(`Response with ID "${id}" not found.`);
+        }
+
+        const formIdentifier = selectedResponse.questionId || selectedResponse.formId;
+        const formData = await apiClient.getForm(formIdentifier);
+        const selectedForm = formData.form;
+        const history = selectedResponse.answers?.__submissionHistory || [];
+
+        setResponse(selectedResponse);
+        setForm(selectedForm);
+        setSubmissionHistory(history);
+        setGroupedResponses([selectedResponse]);
+        setIsGroupedView(false);
+        setGroupModelNo("");
+        setSameFormatResponses([selectedResponse]);
       }
 
-      if (!Array.isArray(selectedForm.followUpQuestions)) {
-        selectedForm.followUpQuestions = [];
-      }
-
-      // Get submissionHistory from answers.__submissionHistory
-      const history = selectedResponse.answers?.__submissionHistory || [];
-
-      console.log("=== SUBMISSION HISTORY DEBUG ===");
-      console.log("Found submissionHistory in answers.__submissionHistory:", history);
-
-      // Also add history to the response object for consistency
-      selectedResponse.submissionHistory = history;
-
-      setResponse(selectedResponse);
-      setForm(selectedForm);
-      setSubmissionHistory(history);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load response");
       console.error("Error loading response details:", err);
@@ -1271,6 +1630,160 @@ export default function ResponseDetailsPage() {
       showError("Failed to delete response");
     }
   };
+  const handlePrintOPS = useCallback(() => {
+    const printContent = () => {
+      const el = opsPrintRef.current;
+      if (!el) return;
+
+      const pw = window.open("", "_blank", "width=1600,height=1000");
+      if (!pw) {
+        alert("Please allow popups to save as PDF.");
+        return;
+      }
+
+      // Serialize all inline styles from computed styles for every element
+      const cloneWithComputedStyles = (source: Element, target: Element) => {
+        const computed = window.getComputedStyle(source);
+        const el = target as HTMLElement;
+        const src = source as HTMLElement;
+
+        // Copy critical layout properties explicitly
+        const props = [
+          'width', 'min-width', 'max-width',
+          'height', 'min-height',
+          'display', 'position',
+          'font-size', 'font-family', 'font-weight', 'line-height',
+          'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+          'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+          'border', 'border-top', 'border-right', 'border-bottom', 'border-left',
+          'border-collapse', 'border-spacing',
+          'background-color', 'color',
+          'text-align', 'vertical-align',
+          'white-space', 'overflow', 'overflow-wrap', 'word-break',
+          'flex-direction', 'flex-wrap', 'align-items', 'justify-content', 'gap',
+          'box-sizing', 'table-layout',
+        ];
+
+        props.forEach(prop => {
+          try {
+            const val = computed.getPropertyValue(prop);
+            if (val) el.style.setProperty(prop, val, 'important');
+          } catch { }
+        });
+
+        // For tables, also capture exact pixel widths of cells
+        if (source.tagName === 'TD' || source.tagName === 'TH' || source.tagName === 'COL') {
+          const rect = source.getBoundingClientRect();
+          el.style.setProperty('width', `${rect.width}px`, 'important');
+          el.style.setProperty('min-width', `${rect.width}px`, 'important');
+          el.style.setProperty('max-width', `${rect.width}px`, 'important');
+        }
+
+        if (source.tagName === 'IMG') {
+          const imgSrc = source as HTMLImageElement;
+          const imgTarget = target as HTMLImageElement;
+          imgTarget.src = imgSrc.currentSrc || imgSrc.src;
+          const rect = imgSrc.getBoundingClientRect();
+          el.style.setProperty('width', `${rect.width}px`, 'important');
+          el.style.setProperty('height', `${rect.height}px`, 'important');
+        }
+
+        // Recurse children
+        Array.from(source.children).forEach((child, i) => {
+          if (target.children[i]) {
+            cloneWithComputedStyles(child, target.children[i]);
+          }
+        });
+      };
+
+      const clone = el.cloneNode(true) as HTMLElement;
+      cloneWithComputedStyles(el, clone);
+
+      // Get total rendered dimensions
+      const rect = el.getBoundingClientRect();
+
+      pw.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>OPS - ${form?.title || 'Operation Standard'}</title>
+<style>
+  @page {
+    size: A3 landscape;
+    margin: 3mm;
+  }
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+  html {
+    zoom: ${(410 / (rect.width / (96 / 25.4))).toFixed(4)};
+  }
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    font-family: Arial, Helvetica, sans-serif !important;
+    background: #fff !important;
+  }
+  table {
+    border-collapse: collapse !important;
+    table-layout: fixed !important;
+  }
+  img {
+    -webkit-print-color-adjust: exact !important;
+  }
+</style>
+</head>
+<body>
+${clone.outerHTML}
+</body>
+</html>`);
+
+      pw.document.close();
+
+      // Wait for all images to load
+      const images = Array.from(pw.document.querySelectorAll('img'));
+      let loaded = 0;
+
+      const doPrint = () => {
+        pw.focus();
+        setTimeout(() => pw.print(), 500);
+      };
+
+      if (images.length === 0) {
+        setTimeout(doPrint, 400);
+      } else {
+        let triggered = false;
+        const checkDone = () => {
+          loaded++;
+          if (loaded >= images.length && !triggered) {
+            triggered = true;
+            doPrint();
+          }
+        };
+        images.forEach(img => {
+          if (img.complete) {
+            checkDone();
+          } else {
+            img.onload = checkDone;
+            img.onerror = checkDone;
+          }
+        });
+        // Safety fallback
+        setTimeout(() => {
+          if (!triggered) { triggered = true; doPrint(); }
+        }, 4000);
+      }
+    };
+
+    if (viewMode !== "ops") {
+      setViewMode("ops");
+      setTimeout(printContent, 700);
+    } else {
+      printContent();
+    }
+  }, [viewMode, form]);
 
   const handleDownloadPDF = async (type?: 'yes-only' | 'no-only' | 'na-only' | 'both' | 'section' | 'default' | 'responses-view') => {
     if (!response || !form) return;
@@ -2754,6 +3267,13 @@ export default function ResponseDetailsPage() {
 
           <div className="flex items-center gap-2 flex-wrap">
             <button
+              onClick={handlePrintOPS}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all"
+            >
+              <Printer className="h-3 w-3" /> Save as PDF (A3)
+            </button>
+
+            <button
               onClick={handleEditResponse}
               className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-white rounded-lg transition-all duration-200 hover:opacity-90"
               style={{ backgroundColor: "#2563eb" }}
@@ -4156,11 +4676,17 @@ export default function ResponseDetailsPage() {
             </div>
           )
         ) : viewMode === "ops" ? (
-          <OPSTemplate
-            form={form}
-            response={response}
-            submissionHistory={submissionHistory}
-          />
+          <div ref={opsPrintRef} data-ops-template="true">
+            <OPSTemplate
+              form={form}
+              response={response}
+              submissionHistory={submissionHistory}
+              sameFormatResponses={sameFormatResponses}
+              isLoadingSameFormatResponses={isLoadingSameFormatResponses}
+              formatQuestionId={instructionsQuestions?.[0]?.id}
+              controlQuestionId={instructionsQuestions?.[1]?.id}
+            />
+          </div>
         ) : (
           <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">

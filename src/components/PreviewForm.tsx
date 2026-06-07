@@ -52,9 +52,6 @@ interface PreviewFormProps {
 // ─────────────────────────────────────────────────────────────────────────────
 // OPS Template — matches screenshots pixel-for-pixel
 // ─────────────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────────
-// OPS Template — matches screenshots pixel-for-pixel
-// ─────────────────────────────────────────────────────────────────────────────
 interface OPSTemplateProps {
   form: Form | null;
   answers: Record<string, any>;
@@ -389,7 +386,7 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint, highlightedFie
             {[3, 4, 5].map(i => (
               <td key={i} rowSpan={7} style={{ border: BORDER2, verticalAlign: "top", padding: 0, background: "#fff" }}>
                 <table style={{ width: "100%", height: "100%", borderCollapse: "collapse" }}>
-                  {Array.from({ length: 8 }).map((_, rIndex) => {
+                  {Array.from({ length: 12 }).map((_, rIndex) => {
                     const entry = submissionHistory?.[rIndex];
                     let displayValue: string | number = "";
                     if (entry) {
@@ -407,7 +404,7 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint, highlightedFie
                       <tr key={rIndex}>
                         <td style={{
                           borderBottom: "1px solid #ccc",
-                          height: 11,
+                          height: 12,
                           padding: "0 2px",
                           fontSize: "5.5pt",
                           textAlign: "center",
