@@ -715,7 +715,6 @@ export default function AllResponses() {
         </div>
       </div>
 
-      {/* Group Header - Shows Model No once */}
       {/* Grouped Responses by Model No */}
       <div className="space-y-6">
         {filteredGroups.map((groupItem) => (
@@ -743,7 +742,7 @@ export default function AllResponses() {
               </button>
             </div>
 
-            {/* Merged Answers - Single Card for the entire group */}
+            {/* Merged Answers - Single Card for the entire group 
             <div className="p-6">
               <div className="bg-gradient-to-br from-blue-50/70 to-indigo-50/50 dark:from-blue-900/15 dark:to-indigo-900/10 rounded-xl border border-blue-100 dark:border-blue-800/30 p-5">
                 <div className="mb-3 pb-2 border-b border-blue-200 dark:border-blue-700">
@@ -776,7 +775,7 @@ export default function AllResponses() {
                   })}
                 </div>
               </div>
-            </div>
+            </div>*/}
           </div>
         ))}
 

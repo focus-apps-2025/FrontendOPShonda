@@ -222,17 +222,18 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint, highlightedFie
   };
 
   const columnFields = [
-    { field: 'importance', defaultLabel: 'Item Importance', width: '7%' },
-    { field: 'activity', defaultLabel: 'What / Activity', width: '10%' },
-    { field: 'method', defaultLabel: 'Method (How)', width: '8%' },
-    { field: 'frequency', defaultLabel: 'Frequency / When', width: '6%' },
-    { field: 'standard', defaultLabel: 'Standard (Spec./Criteria)', width: '10%' },
-    { field: 'responsibility', defaultLabel: 'Responsibility', width: '6%' },
-    { field: 'equipment', defaultLabel: 'Equipment / Measuring Eq.', width: '7%' },
-    { field: 'abnormalities', defaultLabel: 'Possible Abnormalities', width: '8%' },
+    { field: 'importance', defaultLabel: 'Item Importance', width: '5%' },
+    { field: 'activity', defaultLabel: 'What / Activity', width: '8%' },
+    { field: 'method', defaultLabel: 'Method (How)', width: '12%' },
+    { field: 'frequency', defaultLabel: 'Frequency / When', width: '5%' },
+    { field: 'standard', defaultLabel: 'Standard (Spec./Criteria)', width: '12%' },
+    { field: 'responsibility', defaultLabel: 'Responsibility', width: '5%' },
+    { field: 'equipment', defaultLabel: 'Equipment / Measuring Eq.', width: '5%' },
+    { field: 'abnormalities', defaultLabel: 'Possible Abnormalities', width: '6%' },
     { field: 'reactionPlan', defaultLabel: 'Reaction Plan', width: '6%' },
     { field: 'partNameQty', defaultLabel: 'Part Name & QTY', width: '6%' },
-    { field: 'ppe', defaultLabel: 'PPEs required', width: '8%' },
+    { field: 'ppe', defaultLabel: 'PPEs required', width: '5%' },
+    { field: 'document', defaultLabel: 'Required/Document', width: '6%' },
     { field: 'remarks', defaultLabel: 'Remarks', width: '6%' },
   ];
 
@@ -624,7 +625,7 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint, highlightedFie
         </colgroup>
         <thead>
           <tr>
-            <th style={{ ...H, background: "#ffff00", color: "#000" }}>
+            <th style={{ ...H, background: "#ffffffff", color: "#000" }}>
               {getQuestionText(illustrationQuestions, 0, "Illustrations &\nProcess Details")}
             </th>
             <th style={H}>SN</th>
@@ -683,11 +684,9 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint, highlightedFie
             );
           })}
 
-
-
           {/* ── Current / new response row ── */}
           <tr>
-            <td style={{ ...C, background: "#ffff00", textAlign: "center", verticalAlign: "middle", padding: 2, minHeight: 50, height: 50 }}>
+            <td style={{ ...C, background: "#ffffffff", textAlign: "center", verticalAlign: "middle", padding: 2, minHeight: 50, height: 50 }}>
               {hasImg && (
                 <div
                   style={{
@@ -739,7 +738,7 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint, highlightedFie
           {/* ── Extra blank rows to maintain minimum height ── */}
           {Array.from({ length: Math.max(0, PROC_ROWS - historicalAnswers.length - 1) }).map((_, i) => (
             <tr key={`blank-${i}`}>
-              <td style={{ ...C, background: "#ffff00", height: 50, minHeight: 50 }} />
+              <td style={{ ...C, background: "#ffffffff", height: 50, minHeight: 50 }} />
               <td style={{ ...C, textAlign: 'center', fontWeight: 700, fontSize: '9pt', verticalAlign: 'middle', color: '#ccc' }}>
                 {historicalAnswers.length + 2 + i}
               </td>

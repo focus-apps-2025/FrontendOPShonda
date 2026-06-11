@@ -368,6 +368,7 @@ export function convertOPSToFormQuestions(parsedData: any): {
     { key: 'reactionPlan', label: 'Reaction Plan', type: 'paragraph' as const },
     { key: 'partNameQty', label: 'Part Name & QTY', type: 'text' as const },
     { key: 'ppe', label: 'PPEs required', type: 'checkbox' as const, options: ["Helmet", "Safety Goggles", "Ear Plugs", "Mask", "Apron", "Cotton Gloves", "Rubber Gloves", "Safety Shoes"] },
+    { key: 'document', label: 'Required/Document', type: 'text' as const },
     { key: 'remarks', label: 'Remarks', type: 'paragraph' as const },
   ];
 
@@ -381,7 +382,7 @@ export function convertOPSToFormQuestions(parsedData: any): {
 
     const question: any = {
       id: `q_step${stepNum}_${field.key}`,
-      text: `Step ${stepNum} - ${headerText.replace(/[\r\n]+/g, ' ').trim()}`,
+      text: `${headerText.replace(/[\r\n]+/g, ' ').trim()}`,
       type: field.type,
       required: field.key === 'activity' || field.key === 'standard',
       description: `Enter ${headerText.toLowerCase()} for Step ${stepNum}`,
@@ -425,18 +426,18 @@ export function convertOPSToFormQuestions(parsedData: any): {
     } as any);
   }
 
-  if (parsedData.abnormalityHeaders?.pastProblemDetails) {
-    section4Questions.push({
-      id: "q_past_problem_details",
-      text: parsedData.abnormalityHeaders.pastProblemDetails,
-      type: "paragraph",
-      required: false,
-      description: `Enter past problem details`,
-      suggestion: parsedData.abnormalitySection?.pastProblemDetails || "",
-      followUpQuestions: [],
-      sectionId: "sec_abnormality",
-    } as any);
-  }
+  // if (parsedData.abnormalityHeaders?.pastProblemDetails) {
+  //   section4Questions.push({
+  //     id: "q_past_problem_details",
+  //     text: parsedData.abnormalityHeaders.pastProblemDetails,
+  //     type: "paragraph",
+  //     required: false,
+  //     description: `Enter past problem details`,
+  //     suggestion: parsedData.abnormalitySection?.pastProblemDetails || "",
+  //     followUpQuestions: [],
+  //     sectionId: "sec_abnormality",
+  //   } as any);
+  // }
 
   if (section4Questions.length > 0) {
     sections.push({

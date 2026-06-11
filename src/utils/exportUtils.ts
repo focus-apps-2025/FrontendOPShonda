@@ -2144,12 +2144,12 @@ export async function downloadFormImportTemplate(images: OpsFormImages = {}, par
       cellStyle(r === 11, 20, "center", "center", false, topB, botB, "thin", "thin"));
   }
 
-  mergeAndSet(ws, "CE2:CM4", (config.basicInfoLabels?.formatNo || "Format No.  : ") + "q_format_no",
+  mergeAndSet(ws, "CE2:CM4", (config.basicInfoLabels?.formatNo || "Format No.  : "),
     cellStyle(true, 20, "left", "center", false, "medium", "thin", "thin", "medium"));
-  mergeAndSet(ws, "CE5:CM8", (config.basicInfoLabels?.controlNo || "Control No. : ") + "q_control_no",
+  mergeAndSet(ws, "CE5:CM8", (config.basicInfoLabels?.controlNo || "Control No. : "),
     cellStyle(true, 20, "left", "center", false, "thin", "thin", "thin", "medium"));
   // QR Code cell
-  mergeAndSet(ws, "CE9:CM11", "q_qr_code:",
+  mergeAndSet(ws, "CE9:CM11", "Qr_Code:",
     cellStyle(true, 20, "left", "center", false, "thin", null, "thin", "medium"));
 
   // ── ROW 12: Section header bar ─────────────────────────────────────────────
@@ -2380,7 +2380,7 @@ export async function downloadFormImportTemplate(images: OpsFormImages = {}, par
     config.abnormalityHandlingRoute || "Abnormality handling route : \nIn case of any abnormality inform the Zone In-Charge\n" +
     "Flow of Communication :-\nOperator  ► Team Member ► Section Mgr ► As required",
     cellStyle(true, 26, "left", "center", true, "medium", "thin", "medium", "thin"));
-  mergeAndSet(ws, "U66:CM69", config.abnormalityDetailsLabel || "Past Problem Details",
+  mergeAndSet(ws, "U66:CM69", "Past Problem Details",
     cellStyle(true, 26, "center", "top", false, "medium", "thin", "thin", "medium"));
 
   for (let r = 67; r <= 69; r++) {
