@@ -365,7 +365,7 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint, highlightedFie
         </colgroup>
         <tbody>
           <tr style={{ height: 4 }}> {/* Reduced from 14 */}
-            <td rowSpan={8} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 0, background: "#1d4ed8" }}> {/* Reduced padding */}
+            <td rowSpan={8} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 0, background: "#ffffffff" }}> {/* Reduced padding */}
               <img src={LOGO} alt="Logo" style={{ width: "100%", maxHeight: 80, objectFit: "contain" }} /> {/* Reduced from 80 */}
             </td>
             <td style={{ ...L, marginBottom: 0, lineHeight: "1.5" }}>{getQuestionText(headerQuestions, 0, "Dept. / Section")} :</td>

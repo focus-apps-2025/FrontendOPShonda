@@ -788,8 +788,8 @@ function OPSTemplate({
                   </colgroup>
                   <tbody>
                     <tr style={{ height: 2 }}>
-                      <td rowSpan={8} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 0, background: "#1d4ed8" }}>
-                        <img src={ASSETS.logo} alt="Logo" style={{ width: "100%", height: 80, objectFit: "contain" }} />
+                      <td rowSpan={8} style={{ border: BORDER2, textAlign: "center", verticalAlign: "top", padding: 0, background: "#ffffffff" }}>
+                        <img src={ASSETS.logo} alt="Logo" style={{ width: "100%", height: 70, objectFit: "contain" }} />
                       </td>
                       <td style={{ ...L, lineHeight: "1.5", width: "2%" }}>{label(headerQuestions, 0, "Dept. / Section")} :</td>
                       <td style={{ ...V, fontWeight: 700, color: live(deptC), lineHeight: "1.2", width: "10%" }}>{deptC || "—"}</td>
@@ -1539,7 +1539,7 @@ function OPSTemplate({
 
   return (
     <div style={{ width: "100%", minWidth: 900, fontFamily: "Arial,sans-serif", fontSize: "7pt", background: "#fff", color: "#000", overflowX: "auto" }}>
-      <div style={{ marginBottom: "10px", display: "flex", justifyContent: "flex-end", gap: "8px", padding: "5px" }}>
+      <div data-no-print="true" style={{ marginBottom: "10px", display: "flex", justifyContent: "flex-end", gap: "8px", padding: "5px" }}>
         <select
           value={selectedLang}
           onChange={(e) => handleTranslateOPS(e.target.value)}
@@ -1750,7 +1750,7 @@ function OPSTemplate({
               ))}
             </td>
             <td rowSpan={6} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 2 }}> {/* Reduced padding */}
-              <img src={ASSETS.stop} alt="Stop Call Wait" style={{ maxWidth: "100%", height: 55, objectFit: "contain" }} /> {/* Reduced from 180 */}
+              <img src={ASSETS.stop} alt="Stop Call Wait" style={{ width: "100%", height: "100%", objectFit: "contain" }} /> {/* Reduced from 180 */}
             </td>
             <td style={{ ...H, }}>S. No.</td>
             <td style={H}>Trouble</td>
@@ -2184,7 +2184,7 @@ function OPSTemplate({
       )}
 
       {/* FULLSCREEN PREVIEW BUTTON - Add near the print button area */}
-      <div style={{ marginTop: "10px", marginBottom: "10px", textAlign: "center" }}>
+      <div data-no-print="true" style={{ marginTop: "10px", marginBottom: "10px", textAlign: "center" }}>
         <button
           onClick={() => setShowFullscreenPreview(true)}
           style={{
@@ -2205,6 +2205,7 @@ function OPSTemplate({
           Fullscreen Preview (Slideshow)
         </button>
       </div>
+
 
       {/* Render fullscreen preview modal */}
       {showFullscreenPreview && <FullscreenPreview />}
@@ -2801,6 +2802,7 @@ export default function ResponseDetailsPage() {
     }
   };
   const handlePrintOPS = useCallback(() => {
+
     const printContent = () => {
       const el = opsPrintRef.current;
       if (!el) return;
@@ -2867,7 +2869,12 @@ export default function ResponseDetailsPage() {
       };
 
       const clone = el.cloneNode(true) as HTMLElement;
+
+      // Apply styles FIRST (while clone structure matches source)
       cloneWithComputedStyles(el, clone);
+
+      // THEN remove UI elements (after styles, so index mismatch doesn't matter)
+      clone.querySelectorAll('[data-no-print="true"]').forEach(node => (node as HTMLElement).remove());
 
       // Get total rendered dimensions
       const rect = el.getBoundingClientRect();
@@ -4440,7 +4447,7 @@ ${clone.outerHTML}
               onClick={handlePrintOPS}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all"
             >
-              <Printer className="h-3 w-3" /> Save as PDF (A3)
+              <Printer className="h-3 w-3" /> PDF(A3)
             </button>
 
             <button
