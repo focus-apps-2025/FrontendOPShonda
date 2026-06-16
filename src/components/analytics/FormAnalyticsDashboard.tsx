@@ -29,6 +29,7 @@ import {
   Trash2,
   Eye,
   MoreHorizontal,
+  Save,
   X,
   Share2,
   Mail,
@@ -75,7 +76,6 @@ import FilePreview from "../FilePreview";
 import TableColumnFilter from "./TableColumnFilter";
 import ShareAnalyticsModal from "./ShareAnalyticsModal";
 import AutoSendModal from "../forms/AutoSendModal";
-
 import { useTheme } from "../../context/ThemeContext";
 
 ChartJS.register(
@@ -1844,6 +1844,419 @@ const renderMessageWithImages = (message: string) => {
     </div>
   );
 };
+const OPSMasterListTable = ({
+  form,
+  filteredResponses,
+  responseStatuses,
+  getResponseTimestamp,
+}: {
+  form: Form | null;
+  filteredResponses: Response[];
+  responseStatuses: Record<string, string>;
+  getResponseTimestamp: (r: Response) => string | undefined;
+}) => {
+  const [headerTitle, setHeaderTitle] = useState(form?.title || "Master List of OPS");
+  const [division, setDivision] = useState("");
+  const [department, setDepartment] = useState("");
+  const [headerDate, setHeaderDate] = useState(
+    new Date().toLocaleDateString("en-GB", {
+      day: "2-digit", month: "2-digit", year: "2-digit",
+    }).replace(/\//g, ".")
+  );
+  const [docCode, setDocCode] = useState("03010-QMHO-F0-002");
+
+  // Find key question IDs
+  const chassisQId = useMemo(() => {
+    if (!form?.sections) return null;
+    for (const section of form.sections) {
+      for (const q of section.questions || []) {
+        if (
+          q.type === "chassis" || q.type === "chassisWithZone" ||
+          q.type === "chassisWithoutZone" || q.type === "zone-in" ||
+          q.type === "zone-out" || q.text?.toLowerCase().includes("chassis") ||
+          q.trackResponseRank
+        ) return q.id;
+      }
+    }
+    return null;
+  }, [form]);
+
+  const modelQId = useMemo(() => {
+    if (!form?.sections) return null;
+    for (const section of form.sections) {
+      for (const q of section.questions || []) {
+        if (q.text?.toLowerCase().includes("model")) return q.id;
+      }
+    }
+    return null;
+  }, [form]);
+
+  const descQId = useMemo(() => {
+    if (!form?.sections) return null;
+    for (const section of form.sections) {
+      for (const q of section.questions || []) {
+        if (
+          q.text?.toLowerCase().includes("description") ||
+          q.text?.toLowerCase().includes("process") ||
+          q.text?.toLowerCase().includes("station") ||
+          q.text?.toLowerCase().includes("operation")
+        ) return q.id;
+      }
+    }
+    return null;
+  }, [form]);
+
+  const docQId = useMemo(() => {
+    if (!form?.sections) return null;
+    for (const section of form.sections) {
+      for (const q of section.questions || []) {
+        if (
+          q.text?.toLowerCase().includes("document") ||
+          q.text?.toLowerCase().includes("doc no") ||
+          q.text?.toLowerCase().includes("control")
+        ) return q.id;
+      }
+    }
+    return null;
+  }, [form]);
+
+  const getStrVal = (response: Response, qId: string | null): string => {
+    if (!qId) return "";
+    const val = response.answers?.[qId];
+    if (!val) return "";
+    if (typeof val === "object") {
+      return (val as any).chassisNumber || (val as any).status || "";
+    }
+    return String(val).trim();
+  };
+
+  // 
+
+  // Each submission becomes a row with L-shape pattern
+  // 
+  const tableRows = useMemo(() => {
+    // Sort all responses oldest → newest
+    const sorted = [...filteredResponses].sort((a, b) => {
+      const tA = new Date(getResponseTimestamp(a) || 0).getTime();
+      const tB = new Date(getResponseTimestamp(b) || 0).getTime();
+      return tA - tB;
+    });
+
+    // Group by MODEL ONLY
+    const modelMap = new Map<string, {
+      model: string;
+      submissions: Response[];
+    }>();
+
+    sorted.forEach((response) => {
+      // Determine model
+      let model = "";
+      if (chassisQId) {
+        const val = response.answers?.[chassisQId];
+        if (typeof val === "object" && val?.chassisNumber) model = val.chassisNumber;
+        else if (typeof val === "string") model = val.trim();
+      }
+      if (!model && modelQId) model = getStrVal(response, modelQId);
+      if (!model) model = "Unknown";
+
+      if (model === "Unknown") return;
+
+      if (!modelMap.has(model)) {
+        modelMap.set(model, {
+          model,
+          submissions: [],
+        });
+      }
+      modelMap.get(model)!.submissions.push(response);
+    });
+
+    // Build rows - EACH submission becomes a row with L-shape
+    let sl = 1;
+    const rows: Array<{
+      sl: number;
+      model: string;
+      controlNo: string;
+      description: string;
+      revDates: (string | null)[];
+      remarks: string;
+    }> = [];
+
+    modelMap.forEach(({ model, submissions }) => {
+      // Sort submissions by date (oldest first) for this model
+      const sortedSubs = [...submissions].sort((a, b) => {
+        const tA = new Date(getResponseTimestamp(a) || 0).getTime();
+        const tB = new Date(getResponseTimestamp(b) || 0).getTime();
+        return tA - tB;
+      });
+
+      // Get ALL dates from ALL submissions for this model
+      const allDates = sortedSubs.map((resp) => {
+        const ts = getResponseTimestamp(resp);
+        if (!ts) return null;
+        const d = new Date(ts);
+        return [
+          String(d.getDate()).padStart(2, "0"),
+          String(d.getMonth() + 1).padStart(2, "0"),
+          String(d.getFullYear()).slice(2),
+        ].join("-");
+      });
+
+      // For each submission, create a row with L-shape
+      sortedSubs.forEach((resp, idx) => {
+        const revDates: (string | null)[] = [null, null, null, null, null, null];
+
+        // L-SHAPE: Fill columns 0 through idx with dates from submissions 0 through idx
+        for (let j = 0; j <= Math.min(idx, 5); j++) {
+          if (j < allDates.length && allDates[j]) {
+            revDates[j] = allDates[j];
+          }
+        }
+
+        // Get control number (Document No.) for this specific submission
+        const controlNo = getStrVal(resp, docQId) || resp.id.substring(0, 8);
+
+        // Get description for this specific submission
+        const description = getStrVal(resp, descQId);
+
+        // Get remark from submission history issuance details
+        const history = resp.answers?.__submissionHistory || [];
+        let remark = "";
+
+        // Get the issuance details from submission history for this specific submission
+        if (history.length > 0 && history[idx]?.issuanceDetails) {
+          remark = history[idx].issuanceDetails;
+        } else if (idx === 0) {
+          remark = "Initial Preparation";
+        } else {
+          remark = `Revision ${idx}`;
+        }
+
+        rows.push({
+          sl: sl++,
+          model,
+          controlNo,
+          description,
+          revDates,
+          remarks: remark,
+        });
+      });
+    });
+
+    // Sort by model name
+    rows.sort((a, b) => a.model.localeCompare(b.model));
+
+    return rows;
+  }, [filteredResponses, chassisQId, modelQId, descQId, docQId]);
+
+  const b = "1px solid #2563eb";
+  const cell: React.CSSProperties = {
+    border: b,
+    padding: "5px 8px",
+    fontSize: "12px",
+    color: "var(--color-text-primary)",
+    verticalAlign: "middle",
+    wordBreak: "break-word",
+  };
+  const hCell: React.CSSProperties = {
+    ...cell,
+    background: "var(--color-background-secondary)",
+    fontWeight: 500,
+    textAlign: "center" as const,
+  };
+  const inp: React.CSSProperties = {
+    background: "transparent",
+    border: "none",
+    outline: "none",
+    width: "100%",
+    fontSize: "12px",
+    color: "var(--color-text-primary)",
+    fontFamily: "inherit",
+  };
+
+  const handlePrint = () => {
+    const el = document.getElementById("ops-master-list-table");
+    if (!el) return;
+    const html = `<html><head><style>
+      body{font-family:Arial,sans-serif;margin:12px}
+      table{border-collapse:collapse;width:100%;font-size:11px}
+      td,th{border:1px solid #2563eb;padding:4px 8px;vertical-align:middle}
+      input{background:transparent;border:none;font-size:11px;font-family:Arial,sans-serif;width:100%}
+    </style></head><body>${el.innerHTML}</body></html>`;
+    const w = window.open("", "_blank");
+    w?.document.write(html);
+    w?.document.close();
+    w?.print();
+  };
+
+  return (
+    <div className="space-y-3">
+      <div
+        className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-3 overflow-x-auto"
+        id="ops-master-list-table"
+      >
+        <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "880px", tableLayout: "fixed" }}>
+          <colgroup>
+            <col style={{ width: "60px" }} />   {/* S.L */}
+            <col style={{ width: "180px" }} />   {/* Model */}
+            <col style={{ width: "180px" }} />  {/* Description */}
+            <col style={{ width: "240px" }} />  {/* Doc No */}
+            <col style={{ width: "100px" }} />   {/* Rev 0 */}
+            <col style={{ width: "100px" }} />   {/* Rev 1 */}
+            <col style={{ width: "100px" }} />   {/* Rev 2 */}
+            <col style={{ width: "100px" }} />   {/* Rev 3 */}
+            <col style={{ width: "100px" }} />   {/* Rev 4 */}
+            <col style={{ width: "100px" }} />   {/* Rev 5 */}
+            <col style={{ width: "auto" }} />   {/* Remarks */}
+          </colgroup>
+
+          <tbody>
+            {/* ── ROW 1: HMSI | Title | DocCode ── */}
+            <tr>
+              <td style={{ ...cell, textAlign: "center", fontWeight: 500, fontSize: "13px" }}>
+                HMSI
+              </td>
+              <td style={cell} />
+              <td colSpan={8} style={{ ...cell, textAlign: "center" }}>
+                <input
+                  value={headerTitle}
+                  onChange={(e) => setHeaderTitle(e.target.value)}
+                  style={{ ...inp, textAlign: "center", fontWeight: 500, fontSize: "13px" }}
+                  placeholder="Enter title..."
+                />
+              </td>
+              <td colSpan={0} style={{ ...cell, textAlign: "right", fontWeight: 500, fontSize: "11px" }}>
+                <input
+                  value={docCode}
+                  onChange={(e) => setDocCode(e.target.value)}
+                  style={{ ...inp, textAlign: "right", fontSize: "11px" }}
+                  placeholder="Doc code..."
+                />
+              </td>
+            </tr>
+
+            {/* ── ROW 2: Division | Department | (empty) | DATE ── */}
+            <tr>
+              <td colSpan={4} style={cell}>
+                <span style={{ fontWeight: 500 }}>Division : </span>
+                <input
+                  value={division}
+                  onChange={(e) => setDivision(e.target.value)}
+                  style={{ ...inp, display: "inline", width: "calc(100% - 68px)" }}
+                  placeholder="Enter division..."
+                />
+              </td>
+              <td colSpan={6} style={cell}>
+                <span style={{ fontWeight: 500 }}>Department : </span>
+                <input
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                  style={{ ...inp, display: "inline", width: "calc(100% - 90px)" }}
+                  placeholder="Enter department..."
+                />
+              </td>
+              <td colSpan={1} style={{ ...cell, textAlign: "right", fontWeight: 500, fontSize: "11px" }}>
+                <span>DATE: </span>
+                <input
+                  value={headerDate}
+                  onChange={(e) => setHeaderDate(e.target.value)}
+                  style={{ ...inp, display: "inline", width: "70px", textAlign: "right" }}
+                  placeholder="DD.MM.YY"
+                />
+              </td>
+            </tr>
+
+            {/* ── ROW 3: Column headers (rowspan) + "Revision Number" spanning cols 5-10 ── */}
+            <tr>
+              <td rowSpan={2} style={hCell}>S.L</td>
+              <td rowSpan={2} style={hCell}>Model</td>
+              <td rowSpan={2} style={hCell}>Description</td>
+              <td rowSpan={2} style={hCell}>Document No.</td>
+              <td colSpan={6} style={hCell}>Revision Number</td>
+              <td rowSpan={2} style={hCell}>Remarks</td>
+            </tr>
+
+            {/* ── ROW 4: Sub-headers 0-5 ── */}
+            <tr>
+              {[0, 1, 2, 3, 4, 5].map((n) => (
+                <td key={n} style={hCell}>{n}</td>
+              ))}
+            </tr>
+
+            {/* ── DATA ROWS ── */}
+            {tableRows.length === 0
+              ? Array.from({ length: 5 }).map((_, i) => (
+                <tr key={`empty-${i}`} style={{ height: "38px" }}>
+                  <td style={{ ...cell, textAlign: "center" }}>{i + 1}</td>
+                  {Array.from({ length: 10 }).map((__, j) => (
+                    <td key={j} style={cell} />
+                  ))}
+                </tr>
+              ))
+              : tableRows.map((row) => (
+                <tr
+                  key={`${row.model}-${row.sl}`}
+                  style={{
+                    height: "38px",
+                  }}
+                >
+                  {/* S.L */}
+                  <td style={{ ...cell, textAlign: "center" }}>{row.sl}</td>
+
+                  {/* Model */}
+                  <td style={{ ...cell, textAlign: "center", color: "#2563eb", fontWeight: 500 }}>
+                    {row.model}
+                  </td>
+
+                  {/* Description */}
+                  <td style={cell}>{row.description}</td>
+
+                  {/* Document / Control No */}
+                  <td style={{ ...cell, textAlign: "center", fontFamily: "monospace", fontSize: "11px" }}>
+                    {row.controlNo}
+                  </td>
+
+                  {/* Revision dates 0–5 - L-SHAPE pattern */}
+                  {row.revDates.map((date, i) => (
+                    <td
+                      key={i}
+                      style={{
+                        ...cell,
+                        textAlign: "center",
+                        fontSize: "11px",
+                        color: date ? "#2563eb" : "transparent",
+                        background: date
+                          ? "rgba(37,99,235,0.10)"
+                          : "transparent",
+                        fontWeight: date ? "600" : "normal",
+                      }}
+                    >
+                      {date ?? ""}
+                    </td>
+                  ))}
+
+                  {/* Remarks - shows issuance details from submission history */}
+                  <td style={{ ...cell, fontSize: "11px" }}>
+                    {row.remarks}
+                  </td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex items-center justify-between px-1">
+
+        <button
+          onClick={handlePrint}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors"
+        >
+          <Download className="w-3.5 h-3.5" />
+          Print / Export
+        </button>
+      </div>
+    </div>
+  );
+};
 
 export default function FormAnalyticsDashboard() {
   const [selectedForm, setSelectedForm] = useState<Form | null>(null);
@@ -2145,7 +2558,7 @@ export default function FormAnalyticsDashboard() {
     null,
   );
   const [analyticsView, setAnalyticsView] = useState<
-    "question" | "section" | "table" | "responses" | "dashboard" | "comparison"
+    "question" | "section" | "table" | "responses" | "dashboard" | "comparison" | "opsTable"
   >(isGuest ? "dashboard" : user?.role === "inspector" ? "responses" : "dashboard");
   const [tableViewType, setTableViewType] = useState<"question" | "section">(
     "question",
@@ -3159,6 +3572,77 @@ export default function FormAnalyticsDashboard() {
     }
   };
 
+
+  // Add these state variables for the confirm update popup
+  const [showEditConfirmPopup, setShowEditConfirmPopup] = useState(false);
+  const [popupDate, setPopupDate] = useState("");
+  const [popupIssuanceDetails, setPopupIssuanceDetails] = useState("");
+  const [pendingEditAnswers, setPendingEditAnswers] = useState<Record<string, any> | null>(null);
+
+
+
+  // New function to handle the actual save after confirmation
+  const handleConfirmEditSave = async () => {
+    if (!editingResponseId || !pendingEditAnswers) {
+      setShowEditConfirmPopup(false);
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+
+      // Get existing submission history
+      const existingResponse = responses.find(r => r.id === editingResponseId);
+      const existingHistory = existingResponse?.answers?.__submissionHistory || [];
+
+      // Create new history entry
+      const newHistoryEntry = {
+        date: popupDate,
+        issuanceDetails: popupIssuanceDetails
+      };
+      const newHistory = [...existingHistory, newHistoryEntry];
+
+      // Update answers with new history
+      const updatedAnswers = {
+        ...pendingEditAnswers,
+        __submissionHistory: newHistory
+      };
+
+      // Save to API
+      await apiClient.updateResponse(editingResponseId, {
+        answers: updatedAnswers,
+        status: editFormStatus,
+        notes: editFormNotes,
+      });
+
+      // Update local state
+      setResponses(
+        responses.map((r) =>
+          r.id === editingResponseId
+            ? {
+              ...r,
+              answers: updatedAnswers,
+              status: editFormStatus,
+              notes: editFormNotes,
+            }
+            : r,
+        ),
+      );
+
+      setEditingResponseId(null);
+      setEditFormData({});
+      setEditFormStatus("Accepted");
+      setEditFormNotes("");
+      setShowEditConfirmPopup(false);
+      setPendingEditAnswers(null);
+      showToast("Response updated successfully with revision history!", "success");
+    } catch (err) {
+      console.error("Error updating response:", err);
+      showToast("Failed to update response. Please try again.", "error");
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const filteredResponses = useMemo(() => {
     let result = baseFilteredResponses;
@@ -5933,38 +6417,11 @@ export default function FormAnalyticsDashboard() {
   const handleSaveEdit = async () => {
     if (!editingResponseId) return;
 
-    try {
-      setIsSaving(true);
-      await apiClient.updateResponse(editingResponseId, {
-        answers: editFormData,
-        status: editFormStatus,
-        notes: editFormNotes,
-      });
-
-      setResponses(
-        responses.map((r) =>
-          r.id === editingResponseId
-            ? {
-              ...r,
-              answers: editFormData,
-              status: editFormStatus,
-              notes: editFormNotes,
-            }
-            : r,
-        ),
-      );
-
-      setEditingResponseId(null);
-      setEditFormData({});
-      setEditFormStatus("Accepted");
-      setEditFormNotes("");
-      showToast("Response updated successfully!", "success");
-    } catch (err) {
-      console.error("Error updating response:", err);
-      showToast("Failed to update response. Please try again.", "error");
-    } finally {
-      setIsSaving(false);
-    }
+    // Show popup instead of saving directly
+    setPopupDate(new Date().toLocaleDateString("en-GB"));
+    setPopupIssuanceDetails(`Updated response`);
+    setPendingEditAnswers(editFormData);
+    setShowEditConfirmPopup(true);
   };
 
   const handleCancelEdit = () => {
@@ -6435,6 +6892,16 @@ export default function FormAnalyticsDashboard() {
               >
                 <FileText className="w-4 h-4" />
                 Sections
+              </button>
+              <button
+                onClick={() => setAnalyticsView("opsTable")}
+                className={`px-3 py-2.5 font-semibold transition-all duration-200 flex items-center gap-2 border-b-2 whitespace-nowrap text-sm ${analyticsView === "opsTable"
+                  ? "text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400"
+                  : "text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200"
+                  }`}
+              >
+                <Table className="w-4 h-4" />
+                OPS Table
               </button>
               {/* <button
                   onClick={() => setAnalyticsView("table")}
@@ -9259,6 +9726,14 @@ export default function FormAnalyticsDashboard() {
         </div>
       )}
 
+      {analyticsView === "opsTable" && (
+        <OPSMasterListTable
+          form={form}
+          filteredResponses={filteredResponses}
+          responseStatuses={responseStatuses}
+          getResponseTimestamp={getResponseTimestamp}
+        />
+      )}
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -10006,7 +10481,77 @@ export default function FormAnalyticsDashboard() {
                     </div>
                   );
                 })()}
+
+
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Confirm Update Popup for Edit Response */}
+      {showEditConfirmPopup && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 max-w-md w-full border border-gray-200 dark:border-gray-700 animate-in fade-in zoom-in duration-300">
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-blue-600" />
+              Confirm Update
+            </h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Date (DD/MM/YY)
+                </label>
+                <input
+                  type="text"
+                  value={popupDate}
+                  onChange={(e) => setPopupDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="e.g. 15/06/26"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Issuance / Revision Details
+                </label>
+                <input
+                  type="text"
+                  value={popupIssuanceDetails}
+                  onChange={(e) => setPopupIssuanceDetails(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Enter revision details"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowEditConfirmPopup(false);
+                  setPendingEditAnswers(null);
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmEditSave}
+                disabled={isSaving}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
+              >
+                {isSaving ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    Confirm Update
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

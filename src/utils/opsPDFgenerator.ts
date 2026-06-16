@@ -273,8 +273,7 @@ const TRANSLATE_COL_POSITIONS = new Set([0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11]);
 // ═══════════════════════════════════════════════════════════════
 
 // Helper to get question title by ID or index from questions array
-// Helper to get question title from question object
-// Helper to get question label from question object
+
 function getQuestionLabel(question: any, fallback: string): string {
   if (!question) return fallback;
   // Question objects use 'text' property for the label

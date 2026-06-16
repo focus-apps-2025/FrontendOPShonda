@@ -389,26 +389,25 @@ function OPSTemplate({
   const paginatedSubmissionHistory = useMemo(() => {
     const allHistoryEntries: Array<{ no: number; date: string; issuanceDetails: string; responseIndex: number }> = [];
 
-    paginatedResponses.forEach((resp, respIdx) => {   // <-- was sameFormatResponses
+    paginatedResponses.forEach((resp, respIdx) => {
       const history = resp.answers?.__submissionHistory || [];
       history.forEach((entry: any, entryIdx: number) => {
         allHistoryEntries.push({
           no: entry.no || entryIdx + 1,
           date: entry.date,
           issuanceDetails: entry.issuanceDetails,
-          responseIndex: respIdx,
+          responseIndex: respIdx,  // This is the response number (0-based)
         });
       });
     });
 
+    // Sort by responseIndex (Response number) - HIGHEST FIRST (newest response at top)
     allHistoryEntries.sort((a, b) => {
-      if (a.date && b.date) return new Date(b.date).getTime() - new Date(a.date).getTime();
-      return b.no - a.no;
+      return b.responseIndex - a.responseIndex; // Descending: Response 4,3,2,1
     });
 
-    // No pagination offset needed — already scoped to current 5 responses
     return allHistoryEntries.slice(0, submissionHistoryPerPage);
-  }, [paginatedResponses]);                          // <-- dependency updated
+  }, [paginatedResponses]);                       // <-- dependency updated
 
   const totalHistoryEntries = useMemo(() => {
     let count = 0;
@@ -418,6 +417,7 @@ function OPSTemplate({
     return count;
   }, [paginatedResponses]);
   const totalPages = Math.ceil(sameFormatResponses.length / responsesPerPage);
+
 
   // Handle page change
   const handlePageChange = (page: number) => {
@@ -431,749 +431,334 @@ function OPSTemplate({
       }
     }, 100);
   };
-  const FullscreenPreview = () => {
-    const totalPreviewPages = totalPages;
 
-    const goToPrevPage = () => {
-      if (currentPreviewPage > 1) {
-        setCurrentPreviewPage(p => p - 1);
-        setCurrentPage(p => p - 1);
+  const opsContainerRef = useRef<HTMLDivElement>(null);
+
+  // Function to fullscreen only the OPS template
+  const toggleOpsFullscreen = () => {
+    const elem = opsContainerRef.current;
+    if (!elem) return;
+
+    if (!document.fullscreenElement) {
+      // Enter fullscreen on just the OPS template
+      if (elem.requestFullscreen) {
+        elem.requestFullscreen();
+      } else if (elem.webkitRequestFullscreen) {
+        elem.webkitRequestFullscreen();
+      } else if (elem.msRequestFullscreen) {
+        elem.msRequestFullscreen();
       }
-    };
-
-    const goToNextPage = () => {
-      if (currentPreviewPage < totalPreviewPages) {
-        setCurrentPreviewPage(p => p + 1);
-        setCurrentPage(p => p + 1);
+    } else {
+      // Exit fullscreen
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+      } else if (document.msExitFullscreen) {
+        document.msExitFullscreen();
       }
-    };
+    }
+  };
 
-    useEffect(() => {
-      const handleKey = (e: KeyboardEvent) => {
-        if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown') goToNextPage();
-        if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') goToPrevPage();
-        if (e.key === 'Escape') setShowFullscreenPreview(false);
-      };
-      window.addEventListener('keydown', handleKey);
-      return () => window.removeEventListener('keydown', handleKey);
-    }, [currentPreviewPage]);
+  const [isSlideshowMode, setIsSlideshowMode] = useState(false);
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+  const [isAutoPlaying, setIsAutoPlaying] = useState(true); // Auto-play enabled by default
+  const [slideInterval, setSlideInterval] = useState<NodeJS.Timeout | null>(null);
 
-    const previewPaginatedResponses = useMemo(() => {
-      const start = (currentPreviewPage - 1) * responsesPerPage;
-      return sameFormatResponses.slice(start, start + responsesPerPage);
-    }, [sameFormatResponses, currentPreviewPage]);
+  // Function to start slideshow fullscreen
+  const startSlideshowFullscreen = () => {
+    setIsSlideshowMode(true);
+    setIsAutoPlaying(true);
+    setCurrentSlideIndex(currentPage - 1); // Start from current page
 
-    const previewPaginatedHistory = useMemo(() => {
-      const allHistoryEntries: Array<{ no: number; date: string; issuanceDetails: string; responseIndex: number }> = [];
-      previewPaginatedResponses.forEach((resp, respIdx) => {
-        const history = resp.answers?.__submissionHistory || [];
-        history.forEach((entry: any, entryIdx: number) => {
-          allHistoryEntries.push({
-            no: entry.no || entryIdx + 1,
-            date: entry.date,
-            issuanceDetails: entry.issuanceDetails,
-            responseIndex: respIdx,
-          });
-        });
-      });
-      allHistoryEntries.sort((a, b) => {
-        if (a.date && b.date) return new Date(b.date).getTime() - new Date(a.date).getTime();
-        return b.no - a.no;
-      });
-      return allHistoryEntries.slice(0, submissionHistoryPerPage);
-    }, [previewPaginatedResponses]);
-
-    const pastProblemMergedPreview = useMemo(() => {
-      if (!pastProbsQuestions[0]) return { value: "", isMerged: false };
-      const values: string[] = [];
-      previewPaginatedResponses.forEach(resp => {
-        const raw = resp?.answers?.[pastProbsQuestions[0]?.id || pastProbsQuestions[0]?._id];
-        if (raw) values.push(String(raw));
-      });
-      const uniqueValues = Array.from(new Set(values));
-      return { value: uniqueValues.join(", "), isMerged: uniqueValues.length > 1 && previewPaginatedResponses.length > 1 };
-    }, [previewPaginatedResponses, pastProbsQuestions]);
-
-    const [zoomLevel, setZoomLevel] = useState(1);
-    const OPS_NATURAL_WIDTH = 1587;
-
-    // ── Slide area ref for scroll-reset on page change ──
-    const slideScrollRef = useRef<HTMLDivElement>(null);
-    useEffect(() => {
-      if (slideScrollRef.current) slideScrollRef.current.scrollTop = 0;
-    }, [currentPreviewPage]);
-
-    // ── Compute zoom to fill the available slide area ──
-    const slideAreaRef = useRef<HTMLDivElement>(null);
-    useEffect(() => {
-      const compute = () => {
-        if (slideAreaRef.current) {
-          const availW = slideAreaRef.current.clientWidth - 32; // 16px padding each side
-          setZoomLevel(Math.min(availW / OPS_NATURAL_WIDTH, 1));
+    setTimeout(() => {
+      const elem = opsContainerRef.current;
+      if (elem && !document.fullscreenElement) {
+        if (elem.requestFullscreen) {
+          elem.requestFullscreen();
+        } else if (elem.webkitRequestFullscreen) {
+          elem.webkitRequestFullscreen();
+        } else if (elem.msRequestFullscreen) {
+          elem.msRequestFullscreen();
         }
-      };
-      compute();
-      const ro = new ResizeObserver(compute);
-      if (slideAreaRef.current) ro.observe(slideAreaRef.current);
-      return () => ro.disconnect();
-    }, []);
-    useEffect(() => {
+      }
+    }, 100);
+  };
+
+
+  // Auto-play slideshow
+  // Auto-play slideshow - Change PAGES every 5 seconds
+  useEffect(() => {
+    if (isSlideshowMode && isAutoPlaying && totalPages > 1) {
       const interval = setInterval(() => {
-        if (currentPreviewPage < totalPreviewPages) {
-          goToNextPage();
+        if (currentPage < totalPages) {
+          handlePageChange(currentPage + 1);
         } else {
-          setCurrentPreviewPage(1);
-          setCurrentPage(1);
+          handlePageChange(1); // Loop back to first page
         }
-      }, 3000);
+      }, 5000);
+
+      setSlideInterval(interval);
       return () => clearInterval(interval);
-    }, [currentPreviewPage, totalPreviewPages]);
-    // ── Shared cell styles (same as main OPSTemplate) ──
-    const BORDER = "1px solid #999";
-    const BORDER2 = "2px solid #000";
-    const C: React.CSSProperties = { border: BORDER, padding: "1px 1.5px", fontSize: "7pt", verticalAlign: "top", wordBreak: "break-word", lineHeight: "1.4" };
-    const H: React.CSSProperties = { ...C, background: "#d9d9d9", fontWeight: 700, textAlign: "center", verticalAlign: "middle", fontSize: "6.5pt" };
-    const L: React.CSSProperties = { ...C, background: "#e8e8e8", fontWeight: 700, fontSize: "6.5pt", verticalAlign: "middle", lineHeight: "1" };
-    const V: React.CSSProperties = { ...C, background: "#fff", verticalAlign: "middle" };
-    const T: React.CSSProperties = { width: "100%", borderCollapse: "collapse", tableLayout: "fixed", fontSize: "7pt", lineHeight: "1" };
-    const hdrCell = { ...C, background: "#d9d9d9", fontWeight: 700, textAlign: "center", verticalAlign: "middle" };
-    const cellBase = { border: "1px solid #999", padding: "1px 2px", fontSize: "6pt", lineHeight: 1.2, overflowWrap: "break-word", overflow: "hidden" };
-    const lblCell = { ...cellBase, background: "#e8e8e8", fontWeight: 700, verticalAlign: "middle" };
-    const boldBorder = { border: "2px solid #000" };
-    const live = (v: string) => (v && v !== "—") ? "#15803d" : "#999";
+    }
+  }, [isSlideshowMode, isAutoPlaying, currentPage, totalPages]);
+  // Exit slideshow
+  // Exit slideshow
+  const exitSlideshow = () => {
+    if (slideInterval) {
+      clearInterval(slideInterval);
+      setSlideInterval(null);
+    }
+    setIsSlideshowMode(false);
+    setIsAutoPlaying(true);
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    }
+  };
 
-    // ── Computed header values for this preview page ──
-    const deptC = getCombinedHeaderAnswer(headerQuestions, 0, previewPaginatedResponses);
-    const lineC = getCombinedHeaderAnswer(headerQuestions, 1, previewPaginatedResponses);
-    const modelC = getCombinedHeaderAnswer(headerQuestions, 2, previewPaginatedResponses);
-    const stationC = getCombinedHeaderAnswer(headerQuestions, 3, previewPaginatedResponses);
-    const formatNoC = getCombinedHeaderAnswer(docControlQuestions, 0, previewPaginatedResponses);
-    const controlNoC = getCombinedHeaderAnswer(docControlQuestions, 1, previewPaginatedResponses);
+  // Pause auto-play
+  const pauseAutoPlay = () => {
+    setIsAutoPlaying(false);
+    if (slideInterval) {
+      clearInterval(slideInterval);
+      setSlideInterval(null);
+    }
+  };
 
-    const DEF_FIFO = `1. Bin/trolley must be changed only after complete usage of all material in it.\n2. Empty bin/trolley should be replaced with new one.\n3. Don't top up partially filled bin.\n4. Follow FIFO on line during Process.\n5. Do not use next bin / Trolley material until running not consumed.`;
-    const DEF_NONLUB = "Do not use any lubrication if not specified in OPS / Process Sheet.";
-    const DEF_ENV = `1. Do waste segregation.\n2. Switch off idle lights & machines.\n3. Ensure 3R Principal in daily activities.\n4. If there was any leakage, communicate to Sub Leader.`;
-    const DEF_SAFE = `1. Follow POS sheet in case of any Chemical.\n2. Follow MSDS/SDS in case of any emergency regarding chemical.\n3. Follow your PPE's.`;
-    const DEF_PROC_INS = [
-      "1. Do Exercise at Shift Start.",
-      "2. Do Not Use Fallen Electrical/Functional Parts.",
-      "3. Ensure Model / Variant Change.",
-      "4. Report in case of part / hardware fallen inside vehicle.",
-      "5. TQ Wrench Arrow Mark should be in correct direction.",
-      "6. Put Fallen Hardware in Red Bin for Zone In-Charge judgement.",
-      "7. Take approval from SH / HOD before changing process sequence.",
-      "8. Zone In-Charge is overall responsible to ensure work is as per OPS.",
-      "9. Contaminant parts should be covered properly.",
-    ];
-    const TROUBLE_ROWS = [
-      "Equipment Trouble / Machine Break Down",
-      "A Trouble You Are Responsible For",
-      "Empty Marshal Carrier",
-      "Stock Out / Material Shortage",
-      "A Trouble From Different Section",
-    ];
+  // Resume auto-play
+  const resumeAutoPlay = () => {
+    setIsAutoPlaying(true);
+  };
+  const nextSlide = () => {
+    if (currentSlideIndex < paginatedResponses.length - 1) {
+      setCurrentSlideIndex(currentSlideIndex + 1);
+    }
+  };
 
-    const getPreviewIllustrationImages = (resp: any): string[] => {
-      const imgQ = illustrationQuestions.find(
-        (q: any) => q.type === "file" || q.type === "image" ||
-          (q.id || "").toLowerCase().includes("image") ||
-          (q.id || "").toLowerCase().includes("illust")
-      ) || illustrationQuestions[0];
-      if (!imgQ || !resp?.answers) return [];
-      const imgVal = resp.answers[imgQ.id || imgQ._id];
-      if (!imgVal) return [];
-      if (Array.isArray(imgVal)) return imgVal.map((item: any) => typeof item === "string" ? item : item?.url).filter(Boolean);
-      if (typeof imgVal === "string") {
-        try {
-          const parsed = JSON.parse(imgVal);
-          if (Array.isArray(parsed)) return parsed.map((item: any) => typeof item === "string" ? item : item?.url).filter(Boolean);
-          if (parsed?.url) return [parsed.url];
-        } catch { }
-        return [imgVal];
+  const prevSlide = () => {
+    if (currentSlideIndex > 0) {
+      setCurrentSlideIndex(currentSlideIndex - 1);
+    }
+  };
+
+
+  // Keyboard navigation for slideshow
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isSlideshowMode || !document.fullscreenElement) return;
+
+      switch (e.key) {
+        case 'ArrowRight':
+        case 'ArrowDown':
+        case 'PageDown':
+          e.preventDefault();
+          nextSlide();
+          break;
+        case 'ArrowLeft':
+        case 'ArrowUp':
+        case 'PageUp':
+          e.preventDefault();
+          prevSlide();
+          break;
+        case 'Home':
+          e.preventDefault();
+          setCurrentSlideIndex(0);
+          break;
+        case 'End':
+          e.preventDefault();
+          setCurrentSlideIndex(paginatedResponses.length - 1);
+          break;
+        case 'Escape':
+          exitSlideshow();
+          break;
       }
-      if (typeof imgVal === "object" && imgVal?.url) return [imgVal.url];
-      return [];
     };
 
-    // Progress dots — show up to 15, then use counter
-    const MAX_DOTS = 15;
-    const showDots = totalPreviewPages <= MAX_DOTS;
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isSlideshowMode, currentSlideIndex, paginatedResponses.length]);
+
+  // Listen for fullscreen change
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement && isSlideshowMode) {
+        setIsSlideshowMode(false);
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('msfullscreenchange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('msfullscreenchange', handleFullscreenChange);
+    };
+  }, [isSlideshowMode]);
+
+
+
+
+  // Slideshow controls
+  const SlideshowControls = () => {
+    if (!isSlideshowMode) return null;
 
     return (
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          zIndex: 10000,
-          background: "#1a1a2e",           // deep navy — like PPT presenter bg
-          display: "flex",
-          flexDirection: "column",
-          fontFamily: "Arial, sans-serif",
-          userSelect: "none",
-        }}
-      >
-        {/* ══════════════════════════════════════════
-          TOP BAR  — mimics PPT presenter toolbar
-      ══════════════════════════════════════════ */}
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 20px",
-          height: 52,
-          background: "#16213e",
-          borderBottom: "1px solid #0f3460",
-          flexShrink: 0,
-          gap: 12,
-        }}>
-          {/* Left: title */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-            <div style={{
-              width: 32, height: 32, borderRadius: 6,
-              background: "#0f3460",
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="3" width="20" height="14" rx="2" />
-                <line x1="8" y1="21" x2="16" y2="21" />
-                <line x1="12" y1="17" x2="12" y2="21" />
-              </svg>
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <p style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                OPS Template — {form?.title || "Operation Standard"}
-              </p>
-              <p style={{ color: "#64748b", fontSize: 11, margin: 0 }}>
-                {previewPaginatedResponses.length} response{previewPaginatedResponses.length !== 1 ? 's' : ''} on this slide
-              </p>
-            </div>
-          </div>
-
-          {/* Center: slide counter + nav */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button
-              onClick={goToPrevPage}
-              disabled={currentPreviewPage === 1}
-              title="Previous slide (←)"
-              style={{
-                width: 30, height: 30, borderRadius: 6,
-                background: currentPreviewPage === 1 ? "transparent" : "#0f3460",
-                border: "1px solid " + (currentPreviewPage === 1 ? "#1e293b" : "#1d4ed8"),
-                cursor: currentPreviewPage === 1 ? "not-allowed" : "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                opacity: currentPreviewPage === 1 ? 0.3 : 1,
-                transition: "all 0.15s",
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="15 18 9 12 15 6" />
-              </svg>
-            </button>
-
-            <div style={{
-              background: "#0f3460",
-              border: "1px solid #1d4ed8",
-              borderRadius: 6,
-              padding: "4px 14px",
-              display: "flex", alignItems: "center", gap: 6,
-            }}>
-              <span style={{ color: "#93c5fd", fontSize: 13, fontWeight: 700 }}>{currentPreviewPage}</span>
-              <span style={{ color: "#475569", fontSize: 12 }}>/</span>
-              <span style={{ color: "#64748b", fontSize: 13 }}>{totalPreviewPages}</span>
-            </div>
-
-            <button
-              onClick={goToNextPage}
-              disabled={currentPreviewPage === totalPreviewPages}
-              title="Next slide (→)"
-              style={{
-                width: 30, height: 30, borderRadius: 6,
-                background: currentPreviewPage === totalPreviewPages ? "transparent" : "#0f3460",
-                border: "1px solid " + (currentPreviewPage === totalPreviewPages ? "#1e293b" : "#1d4ed8"),
-                cursor: currentPreviewPage === totalPreviewPages ? "not-allowed" : "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                opacity: currentPreviewPage === totalPreviewPages ? 0.3 : 1,
-                transition: "all 0.15s",
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Right: keyboard hint + close */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ color: "#334155", fontSize: 11, whiteSpace: "nowrap" }}>← → navigate · Esc close</span>
-            <button
-              onClick={() => { setShowFullscreenPreview(false); setCurrentPreviewPage(currentPage); }}
-              title="Close (Esc)"
-              style={{
-                width: 32, height: 32, borderRadius: 6,
-                background: "transparent",
-                border: "1px solid #334155",
-                cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                color: "#94a3b8",
-                fontSize: 16,
-                transition: "all 0.15s",
-              }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#7f1d1d"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#ef4444"; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#334155"; }}
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-
-        {/* ══════════════════════════════════════════
-          MAIN AREA  — slide canvas
-      ══════════════════════════════════════════ */}
-        <div
-          ref={slideAreaRef}
+      <div style={{
+        position: 'fixed',
+        bottom: 30,
+        left: 0,
+        right: 0,
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: '12px',
+        zIndex: 10000,
+        background: 'rgba(0,0,0,0.85)',
+        padding: '12px 24px',
+        borderRadius: '50px',
+        width: 'fit-content',
+        margin: '0 auto',
+        backdropFilter: 'blur(10px)',
+      }}>
+        <button
+          onClick={prevSlide}
+          disabled={currentSlideIndex === 0}
           style={{
-            flex: 1,
-            overflow: "hidden",
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "center",
-            padding: "20px 16px 8px",
-            background: "#1a1a2e",
+            padding: '8px 16px',
+            backgroundColor: currentSlideIndex === 0 ? '#555' : '#3b82f6',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: currentSlideIndex === 0 ? 'not-allowed' : 'pointer',
+            fontSize: '14px',
+            fontWeight: 'bold',
           }}
         >
-          {/* Slide shadow frame — mimics PPT slide card */}
-          <div
-            style={{
-              background: "#fff",
-              boxShadow: "0 8px 40px rgba(0,0,0,0.6), 0 2px 8px rgba(0,0,0,0.4)",
-              borderRadius: 3,
-              overflow: "auto",
-              maxHeight: "100%",
-              width: OPS_NATURAL_WIDTH * zoomLevel,
-              flexShrink: 0,
-            }}
-            ref={slideScrollRef}
-          >
-            {/* The actual OPS content at zoom scale */}
-            <div
-              style={{
-                width: OPS_NATURAL_WIDTH,
-                transformOrigin: "top left",
-                transform: `scale(${zoomLevel})`,
-                // When scaled down, the layout space collapses — compensate with negative margin:
-                marginBottom: `${-(OPS_NATURAL_WIDTH * (1 - zoomLevel) * 0.8)}px`,
-              }}
-            >
-              {/* ── SLIDE CONTENT (same structure as main OPSTemplate) ── */}
-              <div style={{ width: "100%", fontFamily: "Arial,sans-serif", fontSize: "7pt", background: "#fff", color: "#000" }}>
+          ◀ Prev
+        </button>
 
-                {/* RETENTION BAR */}
-                <table style={{ width: "100%", borderCollapse: "collapse", border: "2px solid #000" }}>
-                  <tbody><tr>
-                    <td style={{ padding: "1px 6px", textAlign: "right", fontWeight: 700, fontSize: "6.5pt" }}>
-                      Retention Period : 20 years after Model is discontinued
-                    </td>
-                  </tr></tbody>
-                </table>
-
-                {/* HEADER TABLE */}
-                <table style={{ ...T, border: BORDER2, borderTop: "none" }}>
-                  <colgroup>
-                    <col style={{ width: "5.5%" }} /><col style={{ width: "3.5%" }} /><col style={{ width: "5%" }} />
-                    <col style={{ width: "3.5%" }} /><col style={{ width: "8%" }} /><col style={{ width: "7%" }} />
-                    <col style={{ width: "4%" }} /><col style={{ width: "11%" }} /><col style={{ width: "9%" }} />
-                    <col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} />
-                    <col style={{ width: "4%" }} /><col style={{ width: "4%" }} /><col style={{ width: "8%" }} />
-                    <col style={{ width: "9%" }} />
-                  </colgroup>
-                  <tbody>
-                    <tr style={{ height: 2 }}>
-                      <td rowSpan={8} style={{ border: BORDER2, textAlign: "center", verticalAlign: "top", padding: 0, background: "#ffffffff" }}>
-                        <img src={ASSETS.logo} alt="Logo" style={{ width: "100%", height: 70, objectFit: "contain" }} />
-                      </td>
-                      <td style={{ ...L, lineHeight: "1.5", width: "2%" }}>{label(headerQuestions, 0, "Dept. / Section")} :</td>
-                      <td style={{ ...V, fontWeight: 700, color: live(deptC), lineHeight: "1.2", width: "10%" }}>{deptC || "—"}</td>
-                      <td style={{ ...L, lineHeight: "1.5", width: "2.5%" }}>{label(headerQuestions, 1, "Line / Zones")} :</td>
-                      <td style={{ ...V, fontWeight: 700, color: live(lineC), lineHeight: "1.2", width: "12%" }}>{lineC || "—"}</td>
-                      <td colSpan={4} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 2 }}>
-                        <div style={{ fontSize: "9pt", fontWeight: 700, letterSpacing: 1 }}>Operation Standard</div>
-                      </td>
-                      {Array.from({ length: 3 }).map((_, idx) => (
-                        <td key={`empty-${idx}`} rowSpan={7} style={{ border: BORDER2, verticalAlign: "top", padding: 0 }} />
-                      ))}
-                      {Array.from({ length: 3 }).map((_, idx) => {
-                        const colIdx = idx + 4;
-                        return (
-                          <td key={idx} rowSpan={7} style={{ border: BORDER2, verticalAlign: "top", padding: 0, background: "#fff" }}>
-                            <table style={{ width: "100%", height: "100%", borderCollapse: "collapse" }}>
-                              {Array.from({ length: 5 }).map((_, i) => {
-                                const entry = i < previewPaginatedHistory.length ? previewPaginatedHistory[i] : null;
-                                let display = "\u00A0";
-                                if (entry) {
-                                  if (colIdx === 4) display = String(entry.no);
-                                  else if (colIdx === 5) {
-                                    try { display = new Date(entry.date).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "2-digit" }); }
-                                    catch { display = entry.date || "\u00A0"; }
-                                  } else { display = entry.issuanceDetails || "\u00A0"; }
-                                }
-                                return (
-                                  <tr key={i}>
-                                    <td style={{ borderBottom: "1px solid #ccc", height: 36, padding: "0 2px", fontSize: "5.5pt", textAlign: "center", color: entry ? "#15803d" : "transparent", fontWeight: entry ? 700 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                      {display}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </table>
-                          </td>
-                        );
-                      })}
-
-
-                      <td rowSpan={8} style={{ border: BORDER2, verticalAlign: "top", padding: "2px 3px", fontSize: "6.5pt" }}>
-                        <div style={{ fontWeight: 700, color: "#c00", lineHeight: "1", marginBottom: 2 }}>{label(docControlQuestions, 4, "Format No. AP")} :</div>
-                        <div style={{ fontWeight: 700, fontSize: "7pt", lineHeight: "1.2", marginBottom: 1, color: live(formatNoC) }}>{formatNoC || "—"}</div>
-                        <div style={{ borderTop: "0.5px solid #999", margin: "2px 0" }} />
-                        <div style={{ fontWeight: 700, color: "#c00", lineHeight: "1", marginBottom: 1 }}>{label(docControlQuestions, 5, "Control No. AP")} :</div>
-                        <div style={{ fontWeight: 700, fontSize: "7pt", marginBottom: 1, lineHeight: "1.2", color: live(controlNoC) }}>{controlNoC || "—"}</div>
-                        <div style={{ borderTop: "0.5px solid #999", margin: "2px 0" }} />
-                        <div style={{ fontWeight: 700, marginBottom: 1 }}>QR Code :</div>
-                        <img src={ASSETS.qr} alt="QR" style={{ width: 40, height: 36, objectFit: "contain" }} />
-                      </td>
-                    </tr>
-                    <tr style={{ height: 4 }}>
-                      <td style={{ ...L, lineHeight: "1.5" }}>{label(headerQuestions, 2, "Model AP")}</td>
-                      <td style={{ ...V, fontWeight: 700, color: live(modelC) }}>{modelC || "—"}</td>
-                      <td style={{ ...L, lineHeight: "1.2" }}>{label(headerQuestions, 3, "Process / Station AP")} :</td>
-                      <td style={{ ...V, fontWeight: 700, color: live(stationC) }}>{stationC || "—"}</td>
-                      <td colSpan={4} style={{ ...H, border: BORDER2, fontSize: "5.5pt" }}>Your Work When Trouble Stopped The Production Line</td>
-                    </tr>
-                    <tr style={{ height: 2 }}>
-                      <td rowSpan={6} colSpan={2} style={{ border: BORDER2, verticalAlign: "top", fontSize: "5pt", padding: "2px 3px" }}>
-                        <div style={{ fontWeight: 900, marginBottom: 5, fontSize: 8 }}>REJECTION HANDLING :-</div>
-                        <div style={{ marginBottom: 2, fontSize: 7 }}>Clearly Identify Rejected / NG parts.</div>
-                        <div style={{ lineHeight: "1.5", fontSize: 7 }}>Keep them properly with proper identification at defined Location.</div>
-                      </td>
-                      <td rowSpan={6} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", fontWeight: 700, fontSize: "6pt", padding: 1, lineHeight: 1.5 }}>Measuring<br />Instruments<br />or Gauges</td>
-                      <td rowSpan={6} style={{ border: BORDER2, verticalAlign: "top", fontSize: "5pt", padding: 0 }}>
-                        {["Always use Calibrated Measuring Instruments / Gauges.", "Ensure Zero setting before use.", "Do Not Use Unidentified Measuring Tool / Gauges.", "In case of any abnormality, inform Line leader and Quality Engineer."].map((txt, i, arr) => (
-                          <div key={i} style={{ padding: "2px 1px", borderBottom: i < arr.length - 1 ? "0.5px solid #ccc" : "none", lineHeight: "1.5" }}>{txt}</div>
-                        ))}
-                      </td>
-                      <td rowSpan={6} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 2 }}>
-                        <img src={ASSETS.stop} alt="Stop Call Wait" style={{ maxWidth: "100%", height: 90, objectFit: "contain" }} />
-                      </td>
-                      <td style={{ ...H }}>S. No.</td>
-                      <td style={H}>Trouble</td>
-                      <td style={H}>Your task</td>
-                    </tr>
-                    <tr style={{ height: 4 }}>
-                      <td style={{ ...C, textAlign: "center" }}>1</td>
-                      <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[0]}</td>
-                      <td rowSpan={5} style={{ fontSize: "5pt", textAlign: "center", verticalAlign: "middle", lineHeight: "1.4" }}>Stop The Line<br />Inform the Zone Leader<br />Write on card if mentioned in OPS</td>
-                    </tr>
-                    {TROUBLE_ROWS.slice(1).map((row, i) => (
-                      <tr key={i} style={{ height: 7 }}>
-                        <td style={{ ...C, textAlign: "center" }}>{i + 2}</td>
-                        <td style={{ ...C, fontSize: "5.5pt" }}>{row}</td>
-                        {i === 3 && (
-                          <>
-                            <td style={{ ...H, border: BORDER2, fontSize: "6pt" }}>Prepared</td>
-                            <td style={{ ...H, fontSize: "6pt" }}>Checked</td>
-                            <td style={{ ...H, fontSize: "6pt" }}>Approved</td>
-                            <td style={{ ...H, fontSize: "6pt" }}>No.</td>
-                            <td style={{ ...H, fontSize: "6pt" }}>DD/MM/YY</td>
-                            <td style={{ ...H, border: BORDER2, fontSize: "6pt" }}>Issuance / Revision details</td>
-                          </>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-
-                <table style={{ ...T, border: BORDER2, borderTop: "none", }}>
-                  <tbody>
-                    <tr>
-                      <td style={{ padding: "1px 6px", fontWeight: 700, fontSize: "8pt", textAlign: "center", background: "#d9d9d9" }}> {/* Reduced padding and font */}
-                        General Instructions
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-
-                {/* General Instructions Body - COMPACT */}
-                <table style={{ ...T, border: BORDER2, borderTop: "none" }}>
-                  <colgroup>
-                    <col style={{ width: "10%" }} />
-                    <col style={{ width: "8%" }} />
-                    <col style={{ width: "9%" }} />
-                    <col style={{ width: "8%" }} />
-                    <col style={{ width: "17%" }} />
-                    <col style={{ width: "8%" }} />
-                    <col style={{ width: "8%" }} />
-                    <col style={{ width: "13%" }} />
-                    <col style={{ width: "12%" }} />
-                  </colgroup>
-                  <tbody>
-                    <tr>
-                      <td style={H}>FIFO System</td>
-                      <td style={H}>Non Lubrication Rule</td>
-                      <td style={{ ...H, fontSize: "5pt" }}>Always wear PPEs / Proper uniform</td> {/* Reduced from 5.5pt */}
-                      <td style={{ ...H, fontSize: "5pt" }}>Wear PPEs as per<br />station requirements</td>
-                      <td style={H}>Shift Timings</td>
-                      <td style={H}>Environmental Issues</td>
-                      <td style={H}>Safety Issues</td>
-                      <td style={H}>5S Guidelines</td>
-                      <td style={H}>Process Instructions</td>
-                    </tr>
-                    <tr>
-                      <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
-                        <div style={{ fontWeight: 800, marginBottom: 0, fontSize: "5.5pt" }}>FIFO System</div>
-                        {DEF_FIFO.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "1.4", fontSize: "5.5pt" }}>{l}</div>)}
-                      </td>
-                      <td style={{ ...C, verticalAlign: "top", padding: 0 }}>
-                        <div style={{ padding: "1px 2px", borderBottom: "0.5px solid #ccc", fontSize: "5pt", lineHeight: "1.4" }}>{DEF_NONLUB}</div>
-                        <div style={{ display: "flex", borderBottom: "0.5px solid #ccc" }}>
-                          <div style={{ flex: 1, borderRight: "0.5px solid #ccc", padding: "1px 2px", textAlign: "center", fontWeight: 700, fontSize: "4.5pt", background: "#d9d9d9", lineHeight: "1.4" }}>No mobile on shopfloor</div>
-                          <div style={{ flex: 1, padding: "1px 2px", textAlign: "center", fontWeight: 700, fontSize: "4.5pt", background: "#d9d9d9", lineHeight: "1.4" }}>Do not run on shopfloor</div>
-                        </div>
-                        <div style={{ display: "flex" }}>
-                          <div style={{ flex: 1, borderRight: "0.5px solid #ccc", padding: 1, textAlign: "center" }}>
-                            <img src={ASSETS.noMob} alt="No Mobile" style={{ width: 44, height: 55, objectFit: "contain" }} />
-                          </div>
-                          <div style={{ flex: 1, padding: 1, textAlign: "center" }}>
-                            <img src={ASSETS.noRun} alt="No Run" style={{ width: 44, height: 55, objectFit: "contain" }} />
-                          </div>
-                        </div>
-                      </td>
-                      <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 1 }}>
-                        <img src={ASSETS.ppeG} alt="Full PPE Uniform" style={{ width: "100%", height: 95, objectFit: "contain" }} />
-                      </td>
-                      <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 1 }}>
-                        <img src={ASSETS.ppeGl} alt="Station PPE" style={{ width: "100%", maxHeight: 95, objectFit: "contain" }} />
-                      </td>
-                      <td style={{ ...C, textAlign: "center", verticalAlign: "top", padding: 1 }}>
-                        <img src={ASSETS.shift} alt="Shift Timings" style={{ width: "100%", height: 90, objectFit: "contain" }} />
-                      </td>
-                      <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
-                        <div style={{ fontWeight: 700, color: "#166534", marginBottom: 1, fontSize: "5pt" }}>Environmental Issues</div>
-                        {DEF_ENV.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, fontSize: "5pt", lineHeight: "1.4" }}>{l}</div>)}
-                      </td>
-                      <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
-                        <div style={{ fontWeight: 700, color: "#991b1b", marginBottom: 1, fontSize: "5pt" }}>Safety Issues</div>
-                        {DEF_SAFE.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "1.4", fontSize: "5pt" }}>{l}</div>)}
-                      </td>
-                      <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 1 }}>
-                        <img src={ASSETS.fiveS} alt="5S Guidelines" style={{ width: "100%", height: 95, objectFit: "fill" }} />
-                      </td>
-                      <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
-                        {DEF_PROC_INS.map((l, i) => (
-                          <div key={i} style={{ marginBottom: 0, lineHeight: "1.4", fontSize: "5pt" }}>
-                            {l}
-                          </div>
-                        ))}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-                {/* PROCESS STEPS TABLE */}
-                <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: BORDER2, borderRight: BORDER2, borderBottom: BORDER2, tableLayout: "fixed" }}>
-                  <colgroup>
-                    <col style={{ width: "8%" }} />
-                    <col style={{ width: "2.5%" }} />
-                    {processStepColumns.map((col, i) => <col key={i} style={{ width: col.width }} />)}
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th style={{ ...hdrCell, background: "#ffff00", color: "#000" }}>
-                        {illustrationQuestions[0]?.text || illustrationQuestions[0]?.label || "Illustrations"}
-                      </th>
-                      <th style={hdrCell}>SN</th>
-                      {processStepColumns.map((col) => (
-                        <th key={col.questionId} style={{ ...hdrCell, whiteSpace: "pre-line", lineHeight: 1.2 }}>{col.label}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previewPaginatedResponses?.map((resp, respIdx) => {
-                      const globalIdx = (currentPreviewPage - 1) * responsesPerPage + respIdx;
-                      const illustrationImages = getPreviewIllustrationImages(resp);
-                      return (
-                        <tr key={`resp-${globalIdx}`} style={{ minHeight: 50 }}>
-                          <td style={{ ...cellBase, background: "#ffffffff", textAlign: "center", verticalAlign: "middle", padding: 2, height: 50 }}>
-                            {illustrationImages.length > 0 ? (
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
-                                {illustrationImages.map((url, idx) => (
-                                  <img key={idx} src={url} alt={`Illus ${idx + 1}`}
-                                    style={{ width: 50, height: 40, objectFit: 'contain', cursor: 'pointer', border: '0.5px solid #ccc', borderRadius: 2 }}
-                                    onClick={() => window.open(url, '_blank')} />
-                                ))}
-                              </div>
-                            ) : (
-                              <div style={{ width: "100%", height: 40, display: "flex", alignItems: "center", justifyContent: "center", color: "#bbb", fontSize: 20 }}>📷</div>
-                            )}
-                          </td>
-                          <td style={{ ...cellBase, textAlign: "center", fontWeight: 700, fontSize: "9pt", verticalAlign: "middle" }}>{globalIdx + 1}</td>
-                          {processStepColumns.map((col) => {
-                            const rawVal = resp?.answers?.[col.questionId];
-                            let cellVal = "";
-                            if (rawVal !== null && rawVal !== undefined && rawVal !== "") {
-                              if (typeof rawVal === "object") { try { cellVal = JSON.stringify(rawVal); } catch { cellVal = String(rawVal); } }
-                              else { cellVal = String(rawVal); }
-                            }
-                            return (
-                              <td key={col.questionId} style={{ ...cellBase, fontWeight: 500, color: cellVal ? '#000' : 'transparent', height: 50, minHeight: 50, padding: 3, verticalAlign: "top", background: "#fff", lineHeight: 1.3, textAlign: "left" }}>
-                                {cellVal || '\u00A0'}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    })}
-                    {previewPaginatedResponses && previewPaginatedResponses.length < responsesPerPage &&
-                      Array.from({ length: responsesPerPage - previewPaginatedResponses.length }).map((_, i) => (
-                        <tr key={`blank-${i}`} style={{ minHeight: 50 }}>
-                          <td style={{ ...cellBase, background: "#ffffffff", height: 50 }} />
-                          <td style={{ ...cellBase, textAlign: 'center', fontWeight: 700, fontSize: '9pt', verticalAlign: 'middle', color: '#ccc' }}>
-                            {(currentPreviewPage - 1) * responsesPerPage + previewPaginatedResponses.length + i + 1}
-                          </td>
-                          {processStepColumns.map(col => (
-                            <td key={col.questionId} style={{ ...cellBase, height: 50, background: "#fff" }}>&nbsp;</td>
-                          ))}
-                        </tr>
-                      ))
-                    }
-                  </tbody>
-                </table>
-
-                {/* ABNORMALITY + PAST PROBLEMS */}
-                <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: BORDER2, borderRight: BORDER2, borderBottom: BORDER2, tableLayout: "fixed" }}>
-                  <tbody>
-                    <tr>
-                      <td rowSpan={2} style={{ ...cellBase, padding: 4, verticalAlign: "top", fontSize: "6.5pt", width: "12%" }}>
-                        <div style={{ fontWeight: 700, marginBottom: 2 }}>{label(pastProbsQuestions, 0, "Abnormality handling route")} :</div>
-                        <div>In case of any abnormality inform the Zone In-Charge</div>
-                        <div style={{ marginTop: 2 }}>Flow of Communication :-</div>
-                        <div>Operator ▶ Team Member ▶ Section Mgr ▶ As required</div>
-                      </td>
-                      <td style={{ ...lblCell, padding: "2px", textAlign: "center", fontSize: "7pt" }}>{label(pastProbsQuestions, 1, "Past Problem Details")}</td>
-                    </tr>
-                    <tr>
-                      <td style={{ ...cellBase, padding: 4, verticalAlign: "top", minHeight: 60, height: 60, fontSize: "7pt", background: "#fff", fontStyle: pastProblemMergedPreview.isMerged ? "italic" : "normal", color: pastProblemMergedPreview.value ? (pastProblemMergedPreview.isMerged ? "#b45309" : "#000") : "#bbb" }}>
-                        {pastProblemMergedPreview.value || <span style={{ color: "#ccc", fontStyle: "italic" }}>No data recorded</span>}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-                {/* PAGE NUMBER */}
-                <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER2 }}>
-                  <tbody><tr>
-                    <td style={{ ...cellBase, padding: 2 }}>{form?.title || "Operation Standard"}</td>
-                    <td style={{ ...hdrCell as any, padding: 3, fontSize: "8.5pt" }}>
-                      Page Number : {currentPreviewPage} / {totalPreviewPages}
-                    </td>
-                  </tr></tbody>
-                </table>
-
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ══════════════════════════════════════════
-          BOTTOM BAR  — progress dots + info strip
-      ══════════════════════════════════════════ */}
-        {/* ══════════════════════════════════════════
-  BOTTOM BAR — dynamic progress indicator
-══════════════════════════════════════════ */}
         <div style={{
-          height: 44,
-          background: "#16213e",
-          borderTop: "1px solid #0f3460",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 6,
-          flexShrink: 0,
-          padding: "0 16px",
+          color: 'white',
+          fontSize: '14px',
+          fontWeight: 'bold',
+          background: 'rgba(0,0,0,0.6)',
+          padding: '6px 16px',
+          borderRadius: '20px',
         }}>
-          {totalPreviewPages <= 20 ? (
-            // Show dots when 20 pages or less
-            Array.from({ length: totalPreviewPages }, (_, i) => i + 1).map(pageNum => {
-              const isActive = pageNum === currentPreviewPage;
-              return (
-                <button
-                  key={pageNum}
-                  onClick={() => { setCurrentPreviewPage(pageNum); setCurrentPage(pageNum); }}
-                  title={`Slide ${pageNum}`}
-                  style={{
-                    width: isActive ? 28 : 8,
-                    height: 8,
-                    borderRadius: 4,
-                    background: isActive ? "#3b82f6" : "#1e3a5f",
-                    border: isActive ? "none" : "1px solid #1d4ed8",
-                    cursor: "pointer",
-                    padding: 0,
-                    transition: "all 0.2s",
-                    flexShrink: 0,
-                  }}
-                />
-              );
-            })
-          ) : (
-            // For more than 20 pages: show mini progress bar + page selector dropdown
-            <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", maxWidth: 500 }}>
-              <span style={{ color: "#64748b", fontSize: 11, whiteSpace: "nowrap" }}>
-                Page
-              </span>
-              <select
-                value={currentPreviewPage}
-                onChange={(e) => {
-                  const newPage = parseInt(e.target.value);
-                  setCurrentPreviewPage(newPage);
-                  setCurrentPage(newPage);
-                }}
-                style={{
-                  background: "#0f3460",
-                  border: "1px solid #1d4ed8",
-                  borderRadius: 6,
-                  padding: "4px 8px",
-                  color: "#93c5fd",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  outline: "none",
-                }}
-              >
-                {Array.from({ length: totalPreviewPages }, (_, i) => i + 1).map(pageNum => (
-                  <option key={pageNum} value={pageNum} style={{ background: "#16213e", color: "#fff" }}>
-                    {pageNum}
-                  </option>
-                ))}
-              </select>
-              <span style={{ color: "#64748b", fontSize: 11, whiteSpace: "nowrap" }}>
-                of {totalPreviewPages}
-              </span>
-
-              <div style={{ flex: 1, height: 4, background: "#0f3460", borderRadius: 2, overflow: "hidden" }}>
-                <div style={{
-                  height: "100%",
-                  width: `${(currentPreviewPage / totalPreviewPages) * 100}%`,
-                  background: "#3b82f6",
-                  borderRadius: 2,
-                  transition: "width 0.3s ease",
-                }} />
-              </div>
-
-              <span style={{ color: "#334155", fontSize: 11, whiteSpace: "nowrap", minWidth: 45 }}>
-                {Math.round((currentPreviewPage / totalPreviewPages) * 100)}%
-              </span>
-            </div>
-          )}
+          {currentSlideIndex + 1} / {paginatedResponses.length}
         </div>
+
+        <button
+          onClick={nextSlide}
+          disabled={currentSlideIndex === paginatedResponses.length - 1}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: currentSlideIndex === paginatedResponses.length - 1 ? '#555' : '#3b82f6',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: currentSlideIndex === paginatedResponses.length - 1 ? 'not-allowed' : 'pointer',
+            fontSize: '14px',
+            fontWeight: 'bold',
+          }}
+        >
+          Next ▶
+        </button>
+
+        {/* Auto-Play Controls */}
+        {isAutoPlaying ? (
+          <button
+            onClick={pauseAutoPlay}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#f59e0b',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: 'bold',
+            }}
+          >
+            ⏸ Pause
+          </button>
+        ) : (
+          <button
+            onClick={resumeAutoPlay}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#10b981',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: 'bold',
+            }}
+          >
+            ▶ Play
+          </button>
+        )}
+
+        <button
+          onClick={exitSlideshow}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: '#dc2626',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: 'bold',
+          }}
+        >
+          ✖ Exit
+        </button>
+
+        {isAutoPlaying && (
+          <div style={{
+            position: 'absolute',
+            bottom: -5,
+            left: 0,
+            height: '3px',
+            width: `${(timeRemaining / 5) * 100}%`,
+            backgroundColor: '#3b82f6',
+            transition: 'width 1s linear',
+            borderRadius: '2px',
+          }} />
+        )}
       </div>
     );
   };
+  // Keyboard navigation for slideshow
+
+  const [timeRemaining, setTimeRemaining] = useState(5);
+  useEffect(() => {
+    if (isSlideshowMode && isAutoPlaying && paginatedResponses.length > 1) {
+      let timeLeft = 5;
+      const interval = setInterval(() => {
+        timeLeft--;
+        setTimeRemaining(timeLeft);
+
+        if (timeLeft <= 0) {
+          timeLeft = 5;
+          setCurrentSlideIndex((prev) => {
+            if (prev >= paginatedResponses.length - 1) {
+              return 0;
+            }
+            return prev + 1;
+          });
+        }
+      }, 1000);
+
+      setSlideInterval(interval);
+      return () => clearInterval(interval);
+    }
+  }, [isSlideshowMode, isAutoPlaying, paginatedResponses.length]);
+
   // ============================================================
   // MERGED VALUE HELPER - Same answer = show once, Different = italic+small
   // ============================================================
@@ -1401,32 +986,46 @@ function OPSTemplate({
   // PROCESS STEP COLUMNS - FROM processQuestions (14 columns)
   // ============================================================
   const processStepColumns = useMemo(() => {
+    // PREDEFINED WIDTHS in correct order
+    const columnDefinitions = [
+      { field: 'importance', defaultLabel: 'Item Importance', width: '5%' },
+      { field: 'activity', defaultLabel: 'What / Activity', width: '8%' },
+      { field: 'method', defaultLabel: 'Method (How)', width: '15%' },
+      { field: 'frequency', defaultLabel: 'Frequency / When', width: '5%' },
+      { field: 'standard', defaultLabel: 'Standard (Spec./Criteria)', width: '16%' },
+      { field: 'responsibility', defaultLabel: 'Responsibility', width: '5%' },
+      { field: 'equipment', defaultLabel: 'Equipment / Measuring Eq.', width: '5%' },
+      { field: 'abnormalities', defaultLabel: 'Possible Abnormalities', width: '7%' },
+      { field: 'reactionPlan', defaultLabel: 'Reaction Plan', width: '7%' },
+      { field: 'partNameQty', defaultLabel: 'Part Name & QTY', width: '5%' },
+      { field: 'ppe', defaultLabel: 'PPEs required', width: '5%' },
+      { field: 'document', defaultLabel: 'Required/Document', width: '6%' },
+      { field: 'remarks', defaultLabel: 'Remarks', width: '12%' },  // 19% to make total 100%
+    ];
+
     if (processQuestions.length === 0) {
-      // Fallback hardcoded columns if no process questions found
-      return [
-        { field: 'importance', defaultLabel: 'Item Importance', width: '5%' },
-        { field: 'activity', defaultLabel: 'What / Activity', width: '8%' },
-        { field: 'method', defaultLabel: 'Method (How)', width: '12%' },
-        { field: 'frequency', defaultLabel: 'Frequency / When', width: '5%' },
-        { field: 'standard', defaultLabel: 'Standard (Spec./Criteria)', width: '12%' },
-        { field: 'responsibility', defaultLabel: 'Responsibility', width: '5%' },
-        { field: 'equipment', defaultLabel: 'Equipment / Measuring Eq.', width: '5%' },
-        { field: 'abnormalities', defaultLabel: 'Possible Abnormalities', width: '6%' },
-        { field: 'reactionPlan', defaultLabel: 'Reaction Plan', width: '6%' },
-        { field: 'partNameQty', defaultLabel: 'Part Name & QTY', width: '6%' },
-        { field: 'ppe', defaultLabel: 'PPEs required', width: '5%' },
-        { field: 'document', defaultLabel: 'Required/Document', width: '6%' },
-        { field: 'remarks', defaultLabel: 'Remarks', width: '6%' },
-      ];
+      // Return fallback with proper widths
+      return columnDefinitions.map(def => ({
+        ...def,
+        questionId: def.field, // Use field as questionId for fallback
+      }));
     }
 
-    // Map each question in process section to a column
-    return processQuestions.map((q: any, idx: number) => ({
-      questionId: q.id || q._id,
-      label: q.text || q.label || q.id,
-      width: q.columnWidth || `${Math.max(6, Math.floor(80 / Math.max(processQuestions.length, 1)))}%`,
-      originalIndex: idx, // Store original index for translation
-    }));
+    // Map process questions to columns with hardcoded widths
+    // Use the index to assign width from columnDefinitions
+    return processQuestions.map((q: any, idx: number) => {
+      // Get width from columnDefinitions by index, or default to 6%
+      const width = idx < columnDefinitions.length
+        ? columnDefinitions[idx].width
+        : '6%';
+
+      return {
+        questionId: q.id || q._id,
+        label: q.text || q.label || q.id,
+        width: width,  // ← USING HARDCODED WIDTH
+        originalIndex: idx,
+      };
+    });
   }, [processQuestions]);
 
   // ============================================================
@@ -1564,652 +1163,1120 @@ function OPSTemplate({
             Translating...
           </span>
         )}
-      </div>
 
-      {/* RETENTION BAR */}
-      <table style={{ width: "100%", borderCollapse: "collapse", border: "2px solid #000" }}>
-        <tbody>
-          <tr>
-            <td style={{ padding: "1px 6px", textAlign: "right", fontWeight: 700, fontSize: "6.5pt" }}>
-              Retention Period : 20 years after Model is discontinued
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      <table style={{ ...T, border: BORDER2, borderTop: "none", }}>
-        <colgroup>
-          <col style={{ width: "5.5%" }} />
-          <col style={{ width: "3.5%" }} />
-          <col style={{ width: "5%" }} />
-          <col style={{ width: "3.5%" }} />
-          <col style={{ width: "8%" }} />
-          <col style={{ width: "7%" }} />
-          <col style={{ width: "4%" }} />
-          <col style={{ width: "11%" }} />
-          <col style={{ width: "9%" }} />
-          <col style={{ width: "6%" }} />
-          <col style={{ width: "6%" }} />
-          <col style={{ width: "6%" }} />
-          <col style={{ width: "4%" }} />
-          <col style={{ width: "4%" }} />
-          <col style={{ width: "8%" }} />
-          <col style={{ width: "9%" }} />
-        </colgroup>
-        <tbody>
-          <tr style={{ height: 4 }}> {/* Reduced from 14 */}
-            <td rowSpan={8} style={{ border: BORDER2, padding: 0, background: "#ffffffff" }}> {/* Reduced padding */}
-              <img src={ASSETS.logo} alt="Logo" style={{ width: "35.93mm", height: "16.5mm", verticalAlign: "top" }} /> {/* Reduced from 80 */}
-            </td>
-            <td style={{ ...L, marginBottom: 0, lineHeight: "1.5", width: "2%" }}>{label(headerQuestions, 0, "Dept. / Section")} :</td>
-            <td style={{ ...V, fontWeight: 700, color: live(deptCombined), marginBottom: 0, lineHeight: "1.2", width: "10%" }}>
-              {deptCombined || "—"}
-            </td>
-            <td style={{ ...L, marginBottom: 0, lineHeight: "1.5", width: "2.5%" }}>{label(headerQuestions, 1, "Line / Zones")} :</td>
-            <td style={{ ...V, fontWeight: 700, color: live(lineCombined), marginBottom: 0, lineHeight: "1.2", width: "12%" }}>
-              {lineCombined || "—"}
-            </td>
-            <td colSpan={4} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 2 }}> {/* Reduced padding */}
-              <div style={{ fontSize: "9pt", fontWeight: 700, letterSpacing: 1 }}>Operation Standard</div> {/* Reduced from 14pt */}
-            </td>
-            {/* Prepared, Checked, Approved — plain empty cells (no ruled lines) */}
-            {Array.from({ length: 3 }).map((_, idx) => (
-              <td key={`empty-${idx}`} rowSpan={7} style={{ border: BORDER2, verticalAlign: "top", padding: 0 }} />
-            ))}
-            {/* SUBMISSION HISTORY - Paginated */}
-            {Array.from({ length: 3 }).map((_, idx) => {
-              const colIdx = idx + 4;
-
-              // Determine how many rows to render — at least 5, or all entries if more
-              const rowCount = Math.max(5, paginatedSubmissionHistory.length);
-
-              return (
-                <td key={idx} rowSpan={7} style={{ border: BORDER2, verticalAlign: "top", padding: 0, background: "#fff" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}> {/* ← Remove height: "100%" */}
-                    {Array.from({ length: rowCount }).map((_, i) => {
-                      const emptyRows = rowCount - paginatedSubmissionHistory.length;
-
-                      const entry =
-                        i >= emptyRows
-                          ? paginatedSubmissionHistory[
-                          paginatedSubmissionHistory.length - 1 - (i - emptyRows)
-                          ]
-                          : null;
-
-                      let display: string = "\u00A0";
-
-                      if (entry) {
-                        if (colIdx === 4) display = String(entry.no);
-                        else if (colIdx === 5) {
-                          try {
-                            display = new Date(entry.date).toLocaleDateString("en-GB", {
-                              day: "2-digit",
-                              month: "2-digit",
-                              year: "2-digit",
-                            });
-                          } catch {
-                            display = entry.date || "\u00A0";
-                          }
-                        } else {
-                          display = entry.issuanceDetails || "\u00A0";
-                        }
-                      }
-
-                      return (
-                        <tr key={i}>
-                          <td
-                            style={{
-                              borderBottom: "1px solid #ccc",
-                              height: 30,           // ← Each row stays 36px
-                              minHeight: 30,        // ← Enforce minimum
-                              padding: "0 2px",
-                              fontSize: "5pt",
-                              textAlign: "center",
-                              color: entry ? "#15803d" : "transparent",
-                              fontWeight: entry ? 700 : 400,
-                              whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                            }}
-                          >
-                            {display}
-                            {entry?.responseIndex !== undefined &&
-                              sameFormatResponses.length > 1 && (
-                                <span style={{ fontSize: "4pt", marginLeft: 1, color: "#b45309" }}>
-                                  R{entry.responseIndex + 1}
-                                </span>
-                              )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </table>
-                </td>
-              );
-            })}
-            <td rowSpan={8} style={{ border: BORDER2, verticalAlign: "top", padding: "2px 3px", fontSize: "5.5pt" }}>
-              {/* Format No. - Use actual question text from form */}
-
-              <div style={{ fontWeight: 700, color: "#c00", lineHeight: "1", marginBottom: 2, }}>
-                {label(docControlQuestions, 4, "Format No. AP")} :
-              </div>
-              <div style={{ fontWeight: 700, fontSize: "7pt", lineHeight: "1.2", marginBottom: 1, color: live(formatNoCombined) }}>
-                {formatNoCombined || "—"}
-              </div>
-
-
-              <div style={{ borderTop: "0.5px solid #999", margin: "2px 0" }} />
-
-              {/* Control No. - Use actual question text from form */}
-              <div style={{ fontWeight: 700, color: "#c00", lineHeight: "1", marginBottom: 1, }}>
-                {label(docControlQuestions, 5, "Control No. AP")} :
-              </div>
-              <div style={{ fontWeight: 700, fontSize: "7pt", marginBottom: 1, lineHeight: "1.2", color: live(controlNoCombined) }}>
-                {controlNoCombined || "—"}
-              </div>
-
-              <div style={{ borderTop: "0.5px solid #999", margin: "2px 0" }} />
-
-              {/* QR Code - This might be a static label or from form */}
-              <div style={{ fontWeight: 700, marginBottom: 1 }}>QR Code :</div>
-              <img src={ASSETS.qr} alt="QR" style={{ width: 55, height: 30, objectFit: "contain" }} />
-            </td>
-          </tr>
-
-          <tr style={{ height: 4 }}> {/* Reduced from 13 */}
-            <td style={{ ...L, lineHeight: "1.5" }}>{label(headerQuestions, 2, "Model AP")}</td>
-            <td style={{ ...V, fontWeight: 700, color: live(modelCombined) }}>
-              {modelCombined || "—"}
-            </td>
-            <td style={{ ...L, lineHeight: "1.5" }}>{label(headerQuestions, 3, "Process / Station AP")} :</td>
-            <td style={{ ...V, fontWeight: 700, color: live(stationCombined), lineHeight: "1.2" }}>
-              {stationCombined || "—"}
-            </td>
-            <td colSpan={4} style={{ ...H, border: BORDER2, fontSize: "5.5pt" }}> {/* Reduced from 6.5pt */}
-              Your Work When Trouble Stopped The Production Line
-            </td>
-          </tr>
-
-          <tr style={{ height: 4 }}> {/* Reduced from 13 */}
-            <td rowSpan={6} colSpan={2} style={{ border: BORDER2, verticalAlign: "top", fontSize: "5pt", padding: "2px 3px" }}> {/* Reduced padding */}
-              <div style={{ fontWeight: 900, marginBottom: 5, fontSize: 8 }}>REJECTION HANDLING :-</div>
-              <div style={{ marginBottom: 2, fontSize: 7 }}>Clearly Identify Rejected / NG parts.</div>
-              <div style={{ lineHeight: "1.5", fontSize: 7 }}>Keep them properly with proper identification at defined Location.</div>
-            </td>
-            <td rowSpan={6} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", fontWeight: 700, fontSize: "6pt", padding: 1, lineHeight: 1.5 }}> {/* Reduced padding */}
-              Measuring<br />Instruments<br />or Gauges
-            </td>
-            <td rowSpan={6} style={{ border: BORDER2, verticalAlign: "top", fontSize: "5pt", padding: 0 }}>
-              {[
-                "Always use Calibrated Measuring Instruments / Gauges.",
-                "Ensure Zero setting before use.",
-                "Do Not Use Unidentified Measuring Tool / Gauges.",
-                "In case of any abnormality, inform Line leader and Quality Engineer.",
-              ].map((txt, i, arr) => (
-                <div key={i} style={{ padding: "2px 1px", borderBottom: i < arr.length - 1 ? "0.5px solid #ccc" : "none", lineHeight: "1.5" }}>{txt}</div> // Reduced padding
-              ))}
-            </td>
-            <td rowSpan={6} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 2 }}> {/* Reduced padding */}
-              <img src={ASSETS.stop} alt="Stop Call Wait" style={{ width: "100%", height: "100%", objectFit: "contain" }} /> {/* Reduced from 180 */}
-            </td>
-            <td style={{ ...H, }}>S. No.</td>
-            <td style={H}>Trouble</td>
-            <td style={H}>Your task</td>
-          </tr>
-
-          <tr style={{ height: 4 }}> {/* Reduced from 12 */}
-            <td style={{ ...C, textAlign: "center" }}>1</td>
-            <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[0]}</td> {/* Reduced from 6pt */}
-            <td rowSpan={5} style={{ fontSize: "5.5pt", textAlign: "center", verticalAlign: "middle", lineHeight: "2" }}> {/* Reduced from 5.5pt */}
-              Stop The Line<br />Inform the Zone Leader<br />Write on card if mentioned in OPS
-            </td>
-          </tr>
-          <tr style={{ height: 7 }}>
-            <td style={{ ...C, textAlign: "center" }}>2</td>
-            <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[1]}</td>
-          </tr>
-          <tr style={{ height: 7 }}>
-            <td style={{ ...C, textAlign: "center" }}>3</td>
-            <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[2]}</td>
-          </tr>
-          <tr style={{ height: 7 }}>
-            <td style={{ ...C, textAlign: "center" }}>4</td>
-            <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[3]}</td>
-          </tr>
-          <tr style={{ height: 7 }}>
-            <td style={{ ...C, textAlign: "center" }}>5</td>
-            <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[4]}</td>
-            <td style={{ ...H, border: BORDER2, fontSize: "6pt" }}>Prepared</td>
-            <td style={{ ...H, fontSize: "6pt" }}>Checked</td>
-            <td style={{ ...H, fontSize: "6pt" }}>Approved</td>
-            <td style={{ ...H, fontSize: "6pt" }}>No.</td>
-            <td style={{ ...H, fontSize: "6pt" }}>DD/MM/YY</td>
-            <td style={{ ...H, border: BORDER2, fontSize: "6pt" }}>Issuance / Revision details</td>
-          </tr>
-        </tbody>
-      </table>
-
-      {/* General Instructions Body - COMPACT */}
-      <table style={{ ...T, border: BORDER2, borderTop: "none", }}>
-        <tbody>
-          <tr>
-            <td style={{ padding: "1px 6px", fontWeight: 700, fontSize: "8pt", textAlign: "center", background: "#d9d9d9" }}> {/* Reduced padding and font */}
-              General Instructions
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      {/* General Instructions Body - COMPACT */}
-      <table style={{ ...T, border: BORDER2, borderTop: "none" }}>
-        <colgroup>
-          <col style={{ width: "10%" }} />
-          <col style={{ width: "8%" }} />
-          <col style={{ width: "9%" }} />
-          <col style={{ width: "8%" }} />
-          <col style={{ width: "17%" }} />
-          <col style={{ width: "8%" }} />
-          <col style={{ width: "8%" }} />
-          <col style={{ width: "13%" }} />
-          <col style={{ width: "12%" }} />
-        </colgroup>
-        <tbody>
-          <tr>
-            <td style={H}>FIFO System</td>
-            <td style={H}>Non Lubrication Rule</td>
-            <td style={{ ...H, fontSize: "5pt" }}>Always wear PPEs / Proper uniform</td> {/* Reduced from 5.5pt */}
-            <td style={{ ...H, fontSize: "5pt" }}>Wear PPEs as per<br />station requirements</td>
-            <td style={H}>Shift Timings</td>
-            <td style={H}>Environmental Issues</td>
-            <td style={H}>Safety Issues</td>
-            <td style={H}>5S Guidelines</td>
-            <td style={H}>Process Instructions</td>
-          </tr>
-          <tr>
-            <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
-              <div style={{ fontWeight: 800, marginBottom: 0, fontSize: "5.5pt" }}>FIFO System</div>
-              {DEF_FIFO.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "1.4", fontSize: "5.5pt" }}>{l}</div>)}
-            </td>
-            <td style={{ ...C, verticalAlign: "top", padding: 0 }}>
-              <div style={{ padding: "1px 2px", borderBottom: "0.5px solid #ccc", fontSize: "5pt", lineHeight: "1.4" }}>{DEF_NONLUB}</div>
-              <div style={{ display: "flex", borderBottom: "0.5px solid #ccc" }}>
-                <div style={{ flex: 1, borderRight: "0.5px solid #ccc", padding: "1px 2px", textAlign: "center", fontWeight: 700, fontSize: "4.5pt", background: "#d9d9d9", lineHeight: "1.4" }}>No mobile on shopfloor</div>
-                <div style={{ flex: 1, padding: "1px 2px", textAlign: "center", fontWeight: 700, fontSize: "4.5pt", background: "#d9d9d9", lineHeight: "1.4" }}>Do not run on shopfloor</div>
-              </div>
-              <div style={{ display: "flex" }}>
-                <div style={{ flex: 1, borderRight: "0.5px solid #ccc", padding: 1, textAlign: "center" }}>
-                  <img src={ASSETS.noMob} alt="No Mobile" style={{ width: 44, height: 55, objectFit: "contain" }} />
-                </div>
-                <div style={{ flex: 1, padding: 1, textAlign: "center" }}>
-                  <img src={ASSETS.noRun} alt="No Run" style={{ width: 44, height: 55, objectFit: "contain" }} />
-                </div>
-              </div>
-            </td>
-            <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 1 }}>
-              <img src={ASSETS.ppeG} alt="Full PPE Uniform" style={{ width: "100%", height: 95, objectFit: "contain" }} />
-            </td>
-            <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 1 }}>
-              <img src={ASSETS.ppeGl} alt="Station PPE" style={{ width: "100%", maxHeight: 95, objectFit: "contain" }} />
-            </td>
-            <td style={{ ...C, textAlign: "center", verticalAlign: "top", padding: 1 }}>
-              <img src={ASSETS.shift} alt="Shift Timings" style={{ width: "100%", height: 90, objectFit: "contain" }} />
-            </td>
-            <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
-              <div style={{ fontWeight: 700, color: "#166534", marginBottom: 1, fontSize: "5pt" }}>Environmental Issues</div>
-              {DEF_ENV.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, fontSize: "5pt", lineHeight: "1.4" }}>{l}</div>)}
-            </td>
-            <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
-              <div style={{ fontWeight: 700, color: "#991b1b", marginBottom: 1, fontSize: "5pt" }}>Safety Issues</div>
-              {DEF_SAFE.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "1.4", fontSize: "5pt" }}>{l}</div>)}
-            </td>
-            <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 1 }}>
-              <img src={ASSETS.fiveS} alt="5S Guidelines" style={{ width: "100%", height: 95, objectFit: "fill" }} />
-            </td>
-            <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
-              {DEF_PROC_INS.map((l, i) => (
-                <div key={i} style={{ marginBottom: 0, lineHeight: "1.4", fontSize: "5pt" }}>
-                  {l}
-                </div>
-              ))}
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      {/* PROCESS STEPS TABLE - WITH PAGINATION */}
-      <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
-        <colgroup>
-          <col style={{ width: "8%" }} />
-          <col style={{ width: "2.5%" }} />
-          {processStepColumns.map((col, i) => <col key={i} style={{ width: col.width }} />)}
-        </colgroup>
-        <thead>
-          <tr>
-            <th style={{ ...hdrCell, background: "#ffffffff", color: "#000" }}>
-              {illustrationQuestions[0]?.text || illustrationQuestions[0]?.label || "Illustrations & Process Details"}
-            </th>
-            <th style={hdrCell}>SN</th>
-            {processStepColumns.map((col) => (
-              <th key={col.questionId} style={{ ...hdrCell, whiteSpace: "pre-line", lineHeight: 1.2 }}>
-                {col.label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {isLoadingSameFormatResponses && (
-            <tr>
-              <td colSpan={2 + processStepColumns.length}
-                style={{ ...cellBase, textAlign: 'center', background: '#f0f9ff', color: '#3b82f6', fontStyle: 'italic', height: 50 }}>
-                ⏳ Loading responses…
-              </td>
-            </tr>
-          )}
-
-          {/* EACH RESPONSE GETS ITS OWN ROW - USING PAGINATED RESPONSES */}
-          {!isLoadingSameFormatResponses && paginatedResponses?.map((resp, respIdx) => {
-            const globalIdx = (currentPage - 1) * responsesPerPage + respIdx;
-            const illustrationImages = getResponseIllustrationImages(resp);
-
-            return (
-              <tr key={`resp-${globalIdx}`} style={{ minHeight: 50 }}>
-                {/* Illustration column */}
-                <td style={{ ...cellBase, background: "#ffffffff", textAlign: "center", verticalAlign: "middle", padding: 2, height: 50 }}>
-                  {illustrationImages.length > 0 ? (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', justifyContent: 'center' }}>
-                      {illustrationImages.map((url, idx) => (
-                        <img key={idx} src={url} alt={`Illustration ${idx + 1}`}
-                          style={{ width: 50, height: 40, objectFit: 'contain', cursor: 'pointer', border: '0.5px solid #ccc', borderRadius: 2 }}
-                          onClick={() => window.open(url, '_blank')} />
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ width: "100%", height: 40, display: "flex", alignItems: "center", justifyContent: "center", color: "#bbb", fontSize: 20 }}>📷</div>
-                  )}
-                </td>
-
-                {/* SN column - global response number */}
-                <td style={{ ...cellBase, textAlign: "center", fontWeight: 700, fontSize: "9pt", verticalAlign: "middle" }}>
-                  {globalIdx + 1}
-                </td>
-
-                {/* Process step answer cells */}
-                {processStepColumns.map((col, colIdx) => {
-                  const rawVal = resp?.answers?.[col.questionId];
-                  let cellVal = '';
-                  if (rawVal !== null && rawVal !== undefined && rawVal !== '') {
-                    if (typeof rawVal === 'object') {
-                      try { cellVal = JSON.stringify(rawVal); } catch { cellVal = String(rawVal); }
-                    } else {
-                      cellVal = String(rawVal);
-                    }
-                  }
-
-                  // IMPORTANT: Use globalIdx (not respIdx) for consistent key when pagination changes
-                  // Also use col.originalIndex to match the column's actual position in the original process questions
-                  const translationKey = `${globalIdx}:${col.originalIndex ?? colIdx}`;
-                  const translated = cellTranslations.get(translationKey);
-                  const shouldShowTranslation = selectedLang !== 'en' &&
-                    TRANSLATE_COL_INDICES.has(col.originalIndex ?? colIdx) &&
-                    translated &&
-                    translated !== cellVal;
-
-                  return (
-                    <td key={col.questionId} style={{
-                      ...cellBase,
-                      height: 50, minHeight: 50,
-                      padding: 0,
-                      verticalAlign: 'top',
-                      background: '#fff',
-                    }}>
-                      {cellVal ? (
-                        <>
-                          {/* English top */}
-                          <div style={{
-                            padding: '2px 3px',
-                            fontSize: '6pt',
-                            lineHeight: 1.3,
-                            borderBottom: shouldShowTranslation ? '1px dashed #bbb' : 'none',
-                            minHeight: shouldShowTranslation ? 28 : undefined,
-                          }}>
-                            {cellVal}
-                          </div>
-                          {/* Translated bottom */}
-                          {shouldShowTranslation && (
-                            <div style={{
-                              padding: '2px 3px',
-                              fontSize: '5.5pt',
-                              color: '#1a1a8c',
-                              lineHeight: 1.3,
-                              fontFamily: "'Noto Sans Devanagari', Arial, sans-serif",
-                            }}>
-                              {translated}
-                            </div>
-                          )}
-                        </>
-                      ) : '\u00A0'}
-                    </td>
-                  );
-                })}
-              </tr>
-            );
-          })}
-
-          {/* Blank filler rows - adjusted for pagination */}
-          {!isLoadingSameFormatResponses && paginatedResponses && paginatedResponses.length < responsesPerPage &&
-            Array.from({ length: responsesPerPage - paginatedResponses.length }).map((_, i) => (
-              <tr key={`blank-${i}`} style={{ minHeight: 50 }}>
-                <td style={{ ...cellBase, background: "#ffffffff", height: 50 }} />
-                <td style={{ ...cellBase, textAlign: 'center', fontWeight: 700, fontSize: '9pt', verticalAlign: 'middle', color: '#ccc' }}>
-                  {(currentPage - 1) * responsesPerPage + paginatedResponses.length + i + 1}
-                </td>
-                {processStepColumns.map(col => (
-                  <td key={col.questionId} style={{ ...cellBase, height: 50, background: "#fff" }}>&nbsp;</td>
-                ))}
-              </tr>
-            ))
-          }
-        </tbody>
-      </table>
-
-      {/* ABNORMALITY + PAST PROBLEMS */}
-      < table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
-        <tbody>
-          <tr>
-            <td rowSpan={2} style={{ ...cellBase, padding: 4, verticalAlign: "top", fontSize: "6.5pt", width: "12%" }}>
-              <div style={{ fontWeight: 700, marginBottom: 2 }}>
-                {label(pastProbsQuestions, 0, "Abnormality handling route")} :
-              </div>
-              <div>In case of any abnormality inform the Zone In-Charge</div>
-              <div style={{ marginTop: 2 }}>Flow of Communication :-</div>
-              <div>Operator ▶ Team Member ▶ Section Mgr ▶ As required</div>
-            </td>
-            <td style={{ ...lblCell, padding: "2px", textAlign: "center", fontSize: "7pt" }}>
-              {label(pastProbsQuestions, 1, "Past Problem Details")}
-            </td>
-          </tr>
-          <tr>
-            <td style={{
-              ...cellBase, padding: 4, verticalAlign: "top", minHeight: 60, height: 60, fontSize: "7pt", background: "#fff",
-              fontStyle: pastProblemMerged.isMerged ? "italic" : "normal",
-              color: pastProblemMerged.value ? (pastProblemMerged.isMerged ? "#b45309" : "#000") : "#bbb"
-            }}>
-              {pastProblemMerged.value || <span style={{ color: "#ccc", fontStyle: "italic" }}>No data recorded</span>}
-              {pastProblemMerged.isMerged && (
-                <div style={{ fontSize: "5.5pt", color: "#9a6700", marginTop: 2 }}>
-                  ({sameFormatResponses.length} responses merged)
-                </div>
-              )}
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      {/* ASSOCIATE NAME & SIGN */}
-      <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
-        <colgroup>
-          <col style={{ width: "5%" }} />
-          {Array.from({ length: 22 }).map((_, i) => <col key={i} style={{ width: `${(95 / 22).toFixed(2)}%` }} />)}
-        </colgroup>
-        <tbody>
-          <tr>
-            <td style={{ ...lblCell, textAlign: "center", fontSize: "5.5pt", border: boldBorder, verticalAlign: "middle" }}>
-              Associate Name &amp; Emp. Code
-            </td>
-            {Array.from({ length: 22 }).map((_, i) => <td key={i} style={{ border: "1px solid #999", height: 22 }} />)}
-          </tr>
-          <tr>
-            <td style={{ ...lblCell, textAlign: "center", fontSize: "5.5pt", border: boldBorder, verticalAlign: "middle" }}>
-              Sign &amp; Date
-            </td>
-            {Array.from({ length: 22 }).map((_, i) => <td key={i} style={{ border: "1px solid #999", height: 26 }} />)}
-          </tr>
-        </tbody>
-      </table>
-
-      {/* PAGE NUMBER */}
-      <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
-        <tbody>
-          <tr>
-            <td style={{ ...cellBase, padding: 2 }}>{form?.title || "Operation Standard"}</td>
-            <td style={{ ...hdrCell, padding: 3, fontSize: "8.5pt" }}>Page Number : XX / XX</td>
-          </tr>
-        </tbody>
-      </table>
-      {/* PAGINATION CONTROLS */}
-      {!isLoadingSameFormatResponses && sameFormatResponses.length > responsesPerPage && (
-        <div style={{
-          marginTop: "20px",
-          padding: "10px",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          gap: "8px",
-          borderTop: "2px solid #000",
-          borderLeft: "2px solid #000",
-          borderRight: "2px solid #000",
-          borderBottom: "2px solid #000",
-          backgroundColor: "#f5f5f5"
-        }}>
-          <button
-            onClick={() => handlePageChange(currentPage - 1)}
-            disabled={currentPage === 1}
-            style={{
-              padding: "6px 12px",
-              backgroundColor: currentPage === 1 ? "#ccc" : "#1d4ed8",
-              color: "white",
-              border: "none",
-              borderRadius: "4px",
-              cursor: currentPage === 1 ? "not-allowed" : "pointer",
-              fontSize: "10pt",
-              fontWeight: "bold"
-            }}
-          >
-            ← Previous
-          </button>
-
-          <div style={{ display: "flex", gap: "5px" }}>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
-              // Show limited page numbers for better UX
-              if (totalPages <= 10) {
-                return (
-                  <button
-                    key={page}
-                    onClick={() => handlePageChange(page)}
-                    style={{
-                      padding: "6px 12px",
-                      backgroundColor: currentPage === page ? "#1d4ed8" : "#e5e7eb",
-                      color: currentPage === page ? "white" : "#333",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                      fontSize: "10pt",
-                      fontWeight: currentPage === page ? "bold" : "normal"
-                    }}
-                  >
-                    {page}
-                  </button>
-                );
-              } else {
-                // Smart pagination for many pages
-                if (page === 1 || page === totalPages || (page >= currentPage - 2 && page <= currentPage + 2)) {
-                  return (
-                    <button
-                      key={page}
-                      onClick={() => handlePageChange(page)}
-                      style={{
-                        padding: "6px 12px",
-                        backgroundColor: currentPage === page ? "#1d4ed8" : "#e5e7eb",
-                        color: currentPage === page ? "white" : "#333",
-                        border: "none",
-                        borderRadius: "4px",
-                        cursor: "pointer",
-                        fontSize: "10pt"
-                      }}
-                    >
-                      {page}
-                    </button>
-                  );
-                }
-                if (page === currentPage - 3 || page === currentPage + 3) {
-                  return <span key={`ellipsis-${page}`} style={{ padding: "6px 8px" }}>...</span>;
-                }
-                return null;
-              }
-            })}
-          </div>
-
-          <button
-            onClick={() => handlePageChange(currentPage + 1)}
-            disabled={currentPage === totalPages}
-            style={{
-              padding: "6px 12px",
-              backgroundColor: currentPage === totalPages ? "#ccc" : "#1d4ed8",
-              color: "white",
-              border: "none",
-              borderRadius: "4px",
-              cursor: currentPage === totalPages ? "not-allowed" : "pointer",
-              fontSize: "10pt",
-              fontWeight: "bold"
-            }}
-          >
-            Next →
-          </button>
-
-          <span style={{ marginLeft: "15px", fontSize: "9pt", color: "#666" }}>
-            Page {currentPage} of {totalPages} |
-            Total {sameFormatResponses.length} response{sameFormatResponses.length !== 1 ? 's' : ''}
-          </span>
-        </div>
-      )}
-
-      {/* FULLSCREEN PREVIEW BUTTON - Add near the print button area */}
-      <div data-no-print="true" style={{ marginTop: "10px", marginBottom: "10px", textAlign: "center" }}>
         <button
-          onClick={() => setShowFullscreenPreview(true)}
+          onClick={startSlideshowFullscreen}
           style={{
-            padding: "8px 20px",
-            backgroundColor: "#6b21a5",
-            color: "white",
-            border: "none",
-            borderRadius: "6px",
-            cursor: "pointer",
-            fontSize: "11pt",
+            padding: "4px 12px",
+            fontSize: "10px",
             fontWeight: "bold",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "8px"
+            border: "1px solid #ccc",
+            borderRadius: "4px",
+            backgroundColor: "#16a34a",
+            color: "white",
+            cursor: "pointer",
+            marginLeft: "8px"
           }}
         >
-          <Eye size={16} />
-          Fullscreen Preview (Slideshow)
+          ⛶ Full Preview
         </button>
+
+
+      </div>
+      <div ref={opsContainerRef} style={{ background: "#fff" }}>
+
+        {isSlideshowMode ? (
+          // ========== SLIDESHOW MODE - SHOW SINGLE RESPONSE ==========
+          <div style={{ padding: '20px' }}>
+            {/* Current Slide Indicator */}
+
+            {(() => {
+              const currentResp = paginatedResponses[currentSlideIndex];
+              const globalIdx = (currentPage - 1) * responsesPerPage + currentSlideIndex;
+              const illustrationImages = getResponseIllustrationImages(currentResp);
+
+              // Get single response values for header
+              const dept = getAnswerByIndex(headerQuestions, 0, currentResp) || "—";
+              const lineZone = getAnswerByIndex(headerQuestions, 1, currentResp) || "—";
+              const model = getAnswerByIndex(headerQuestions, 2, currentResp) || "—";
+              const station = getAnswerByIndex(headerQuestions, 3, currentResp) || "—";
+              const formatNo = getAnswerByIndex(docControlQuestions, 0, currentResp) || "—";
+              const controlNo = getAnswerByIndex(docControlQuestions, 1, currentResp) || "—";
+              const pastProb = getAnswerByIndex(pastProbsQuestions, 0, currentResp) || "—";
+
+              return (
+                <>
+                  {/* RETENTION BAR */}
+                  <table style={{ width: "100%", borderCollapse: "collapse", border: "2px solid #000" }}>
+                    <tbody>
+                      <tr><td style={{ padding: "1px 6px", textAlign: "right", fontWeight: 700, fontSize: "6.5pt" }}>
+                        Retention Period : 20 years after Model is discontinued
+                      </td></tr></tbody>
+                  </table>
+
+                  {/* MAIN HEADER TABLE */}
+                  <table style={{ ...T, border: BORDER2, borderTop: "none", }}>
+                    <colgroup>
+                      <col style={{ width: "5.5%" }} />
+                      <col style={{ width: "3.5%" }} />
+                      <col style={{ width: "5%" }} />
+                      <col style={{ width: "3.5%" }} />
+                      <col style={{ width: "8%" }} />
+                      <col style={{ width: "7%" }} />
+                      <col style={{ width: "4%" }} />
+                      <col style={{ width: "11%" }} />
+                      <col style={{ width: "9%" }} />
+                      <col style={{ width: "6%" }} />
+                      <col style={{ width: "6%" }} />
+                      <col style={{ width: "6%" }} />
+                      <col style={{ width: "4%" }} />
+                      <col style={{ width: "4%" }} />
+                      <col style={{ width: "8%" }} />
+                      <col style={{ width: "9%" }} />
+                    </colgroup>
+                    <tbody>
+                      <tr style={{ height: 4 }}> {/* Reduced from 14 */}
+                        <td rowSpan={8} style={{ border: BORDER2, padding: 0, background: "#ffffffff" }}> {/* Reduced padding */}
+                          <img src={ASSETS.logo} alt="Logo" style={{ width: "35.93mm", height: "16.5mm", verticalAlign: "top" }} /> {/* Reduced from 80 */}
+                        </td>
+                        <td style={{ ...L, marginBottom: 0, lineHeight: "1.5", width: "2%" }}>{label(headerQuestions, 0, "Dept. / Section")} :</td>
+                        <td style={{ ...V, fontWeight: 700, color: live(deptCombined), marginBottom: 0, lineHeight: "1.2", width: "10%" }}>
+                          {deptCombined || "—"}
+                        </td>
+                        <td style={{ ...L, marginBottom: 0, lineHeight: "1.5", width: "2.5%" }}>{label(headerQuestions, 1, "Line / Zones")} :</td>
+                        <td style={{ ...V, fontWeight: 700, color: live(lineCombined), marginBottom: 0, lineHeight: "1.2", width: "12%" }}>
+                          {lineCombined || "—"}
+                        </td>
+                        <td colSpan={4} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 2 }}> {/* Reduced padding */}
+                          <div style={{ fontSize: "9pt", fontWeight: 700, letterSpacing: 1 }}>Operation Standard</div> {/* Reduced from 14pt */}
+                        </td>
+                        {/* Prepared, Checked, Approved — plain empty cells (no ruled lines) */}
+                        {Array.from({ length: 3 }).map((_, idx) => (
+                          <td key={`empty-${idx}`} rowSpan={7} style={{ border: BORDER2, verticalAlign: "top", padding: 0 }} />
+                        ))}
+                        {/* SUBMISSION HISTORY - Paginated */}
+                        {Array.from({ length: 3 }).map((_, idx) => {
+                          const colIdx = idx + 4; // 4 = No., 5 = DD/MM/YY, 6 = Issuance/Revision details
+
+                          return (
+                            <td key={idx} rowSpan={7} style={{ border: BORDER2, verticalAlign: "top", padding: 0, background: "#fff" }}>
+                              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                {/* Always show 5 rows */}
+                                {Array.from({ length: 5 }).map((_, rowIndex) => {
+                                  // Get entry for this row - index 0 = newest, index 4 = oldest among 5
+                                  const entry = rowIndex < paginatedSubmissionHistory.length
+                                    ? paginatedSubmissionHistory[rowIndex]
+                                    : null;
+
+                                  let display: string = "\u00A0";
+
+                                  if (entry) {
+                                    if (colIdx === 4) {
+                                      display = String(entry.no);
+                                    } else if (colIdx === 5) {
+                                      try {
+                                        display = new Date(entry.date).toLocaleDateString("en-GB", {
+                                          day: "2-digit",
+                                          month: "2-digit",
+                                          year: "2-digit",
+                                        });
+                                      } catch {
+                                        display = entry.date || "\u00A0";
+                                      }
+                                    } else if (colIdx === 6) {
+                                      display = entry.issuanceDetails || "\u00A0";
+                                    }
+                                  }
+
+                                  return (
+                                    <tr key={rowIndex}>
+                                      <td
+                                        style={{
+                                          borderBottom: rowIndex < 4 ? "1px solid #ccc" : "none",
+                                          height: 33,
+                                          minHeight: 33,
+                                          padding: "0 2px",
+                                          fontSize: "5pt",
+                                          textAlign: "center",
+                                          color: entry ? "#15803d" : "transparent",
+                                          fontWeight: entry ? 700 : 400,
+                                          whiteSpace: "nowrap",
+                                          overflow: "hidden",
+                                          textOverflow: "ellipsis",
+                                        }}
+                                      >
+                                        {display}
+                                        {entry?.responseIndex !== undefined && sameFormatResponses.length > 1 && (
+                                          <span style={{ fontSize: "4pt", marginLeft: 1, color: "#b45309" }}>
+                                            R{entry.responseIndex + 1}
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </table>
+                            </td>
+                          );
+                        })}
+                        <td rowSpan={8} style={{ border: BORDER2, verticalAlign: "top", padding: "2px 3px", fontSize: "5.5pt" }}>
+                          {/* Format No. - Use actual question text from form */}
+
+                          <div style={{ fontWeight: 700, color: "#c00", lineHeight: "1", marginBottom: 2, }}>
+                            {label(docControlQuestions, 4, "Format No. AP")} :
+                          </div>
+                          <div style={{ fontWeight: 700, fontSize: "7pt", lineHeight: "1.2", marginBottom: 1, color: live(formatNoCombined) }}>
+                            {formatNoCombined || "—"}
+                          </div>
+
+
+                          <div style={{ borderTop: "0.5px solid #999", margin: "2px 0" }} />
+
+                          {/* Control No. - Use actual question text from form */}
+                          <div style={{ fontWeight: 700, color: "#c00", lineHeight: "1", marginBottom: 1, }}>
+                            {label(docControlQuestions, 5, "Control No. AP")} :
+                          </div>
+                          <div style={{ fontWeight: 700, fontSize: "7pt", marginBottom: 1, lineHeight: "1.2", color: live(controlNoCombined) }}>
+                            {controlNoCombined || "—"}
+                          </div>
+
+                          <div style={{ borderTop: "0.5px solid #999", margin: "2px 0" }} />
+
+                          {/* QR Code - This might be a static label or from form */}
+                          <div style={{ fontWeight: 700, marginBottom: 1 }}>QR Code :</div>
+                          <img src={ASSETS.qr} alt="QR" style={{ width: 55, height: 30, objectFit: "contain" }} />
+                        </td>
+                      </tr>
+
+                      <tr style={{ height: 4 }}> {/* Reduced from 13 */}
+                        <td style={{ ...L, lineHeight: "1.5" }}>{label(headerQuestions, 2, "Model AP")}</td>
+                        <td style={{ ...V, fontWeight: 700, color: live(modelCombined) }}>
+                          {modelCombined || "—"}
+                        </td>
+                        <td style={{ ...L, lineHeight: "1.5" }}>{label(headerQuestions, 3, "Process / Station AP")} :</td>
+                        <td style={{ ...V, fontWeight: 700, color: live(stationCombined), lineHeight: "1.2" }}>
+                          {stationCombined || "—"}
+                        </td>
+                        <td colSpan={4} style={{ ...H, border: BORDER2, fontSize: "5.5pt" }}> {/* Reduced from 6.5pt */}
+                          Your Work When Trouble Stopped The Production Line
+                        </td>
+                      </tr>
+
+                      <tr style={{ height: 4 }}> {/* Reduced from 13 */}
+                        <td rowSpan={6} colSpan={2} style={{ border: BORDER2, verticalAlign: "top", fontSize: "5pt", padding: "2px 3px" }}> {/* Reduced padding */}
+                          <div style={{ fontWeight: 900, marginBottom: 5, fontSize: 8 }}>REJECTION HANDLING :-</div>
+                          <div style={{ marginBottom: 2, fontSize: 7 }}>Clearly Identify Rejected / NG parts.</div>
+                          <div style={{ lineHeight: "1.5", fontSize: 7 }}>Keep them properly with proper identification at defined Location.</div>
+                        </td>
+                        <td rowSpan={6} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", fontWeight: 700, fontSize: "6pt", padding: 1, lineHeight: 1.5 }}> {/* Reduced padding */}
+                          Measuring<br />Instruments<br />or Gauges
+                        </td>
+                        <td rowSpan={6} style={{ border: BORDER2, verticalAlign: "top", fontSize: "5pt", padding: 0 }}>
+                          {[
+                            "Always use Calibrated Measuring Instruments / Gauges.",
+                            "Ensure Zero setting before use.",
+                            "Do Not Use Unidentified Measuring Tool / Gauges.",
+                            "In case of any abnormality, inform Line leader and Quality Engineer.",
+                          ].map((txt, i, arr) => (
+                            <div key={i} style={{ padding: "2px 1px", borderBottom: i < arr.length - 1 ? "0.5px solid #ccc" : "none", lineHeight: "1.5" }}>{txt}</div> // Reduced padding
+                          ))}
+                        </td>
+                        <td rowSpan={6} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 2 }}> {/* Reduced padding */}
+                          <img src={ASSETS.stop} alt="Stop Call Wait" style={{ width: "100%", height: "100%", objectFit: "contain" }} /> {/* Reduced from 180 */}
+                        </td>
+                        <td style={{ ...H, }}>S. No.</td>
+                        <td style={H}>Trouble</td>
+                        <td style={H}>Your task</td>
+                      </tr>
+
+                      <tr style={{ height: 4 }}> {/* Reduced from 12 */}
+                        <td style={{ ...C, textAlign: "center" }}>1</td>
+                        <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[0]}</td> {/* Reduced from 6pt */}
+                        <td rowSpan={5} style={{ fontSize: "5.5pt", textAlign: "center", verticalAlign: "middle", lineHeight: "2" }}> {/* Reduced from 5.5pt */}
+                          Stop The Line<br />Inform the Zone Leader<br />Write on card if mentioned in OPS
+                        </td>
+                      </tr>
+                      <tr style={{ height: 7 }}>
+                        <td style={{ ...C, textAlign: "center" }}>2</td>
+                        <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[1]}</td>
+                      </tr>
+                      <tr style={{ height: 7 }}>
+                        <td style={{ ...C, textAlign: "center" }}>3</td>
+                        <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[2]}</td>
+                      </tr>
+                      <tr style={{ height: 7 }}>
+                        <td style={{ ...C, textAlign: "center" }}>4</td>
+                        <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[3]}</td>
+                      </tr>
+                      <tr style={{ height: 7 }}>
+                        <td style={{ ...C, textAlign: "center" }}>5</td>
+                        <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[4]}</td>
+                        <td style={{ ...H, border: BORDER2, fontSize: "6pt" }}>Prepared</td>
+                        <td style={{ ...H, fontSize: "6pt" }}>Checked</td>
+                        <td style={{ ...H, fontSize: "6pt" }}>Approved</td>
+                        <td style={{ ...H, fontSize: "6pt" }}>No.</td>
+                        <td style={{ ...H, fontSize: "6pt" }}>DD/MM/YY</td>
+                        <td style={{ ...H, border: BORDER2, fontSize: "6pt" }}>Issuance / Revision details</td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  {/* GENERAL INSTRUCTIONS */}
+                  <table style={{ ...T, border: BORDER2, borderTop: "none" }}>
+                    <tbody><tr><td style={{ padding: "1px 6px", fontWeight: 700, fontSize: "8pt", textAlign: "center", background: "#d9d9d9" }}>General Instructions</td></tr></tbody>
+                  </table>
+                  <table style={{ ...T, border: BORDER2, borderTop: "none" }}>
+                    <colgroup>
+                      <col style={{ width: "10%" }} /><col style={{ width: "8%" }} /><col style={{ width: "9%" }} /><col style={{ width: "8%" }} />
+                      <col style={{ width: "17%" }} /><col style={{ width: "8%" }} /><col style={{ width: "8%" }} /><col style={{ width: "13%" }} /><col style={{ width: "12%" }} />
+                    </colgroup>
+                    <tbody>
+                      <tr>
+                        <td style={H}>FIFO System</td><td style={H}>Non Lubrication Rule</td>
+                        <td style={{ ...H, fontSize: "5pt" }}>Always wear PPEs / Proper uniform</td>
+                        <td style={{ ...H, fontSize: "5pt" }}>Wear PPEs as per<br />station requirements</td>
+                        <td style={H}>Shift Timings</td><td style={H}>Environmental Issues</td>
+                        <td style={H}>Safety Issues</td><td style={H}>5S Guidelines</td><td style={H}>Process Instructions</td>
+                      </tr>
+                      <tr>
+                        <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
+                          <div style={{ fontWeight: 800, marginBottom: 0, fontSize: "5.5pt" }}>FIFO System</div>
+                          {DEF_FIFO.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "1.4", fontSize: "5.5pt" }}>{l}</div>)}
+                        </td>
+                        <td style={{ ...C, verticalAlign: "top", padding: 0 }}>
+                          <div style={{ padding: "1px 2px", borderBottom: "0.5px solid #ccc", fontSize: "5pt", lineHeight: "1.4" }}>{DEF_NONLUB}</div>
+                          <div style={{ display: "flex", borderBottom: "0.5px solid #ccc" }}>
+                            <div style={{ flex: 1, borderRight: "0.5px solid #ccc", padding: "1px 2px", textAlign: "center", fontWeight: 700, fontSize: "4.5pt", background: "#d9d9d9" }}>No mobile on shopfloor</div>
+                            <div style={{ flex: 1, padding: "1px 2px", textAlign: "center", fontWeight: 700, fontSize: "4.5pt", background: "#d9d9d9" }}>Do not run on shopfloor</div>
+                          </div>
+                          <div style={{ display: "flex" }}>
+                            <div style={{ flex: 1, borderRight: "0.5px solid #ccc", padding: 1, textAlign: "center" }}><img src={ASSETS.noMob} alt="No Mobile" style={{ width: 44, height: 55, objectFit: "contain" }} /></div>
+                            <div style={{ flex: 1, padding: 1, textAlign: "center" }}><img src={ASSETS.noRun} alt="No Run" style={{ width: 44, height: 55, objectFit: "contain" }} /></div>
+                          </div>
+                        </td>
+                        <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 1 }}><img src={ASSETS.ppeG} alt="Full PPE Uniform" style={{ width: "100%", height: 95, objectFit: "contain" }} /></td>
+                        <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 1 }}><img src={ASSETS.ppeGl} alt="Station PPE" style={{ width: "100%", maxHeight: 95, objectFit: "contain" }} /></td>
+                        <td style={{ ...C, textAlign: "center", verticalAlign: "top", padding: 1 }}><img src={ASSETS.shift} alt="Shift Timings" style={{ width: "100%", height: 90, objectFit: "contain" }} /></td>
+                        <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
+                          <div style={{ fontWeight: 700, color: "#166534", marginBottom: 1, fontSize: "5pt" }}>Environmental Issues</div>
+                          {DEF_ENV.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, fontSize: "5pt", lineHeight: "1.4" }}>{l}</div>)}
+                        </td>
+                        <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
+                          <div style={{ fontWeight: 700, color: "#991b1b", marginBottom: 1, fontSize: "5pt" }}>Safety Issues</div>
+                          {DEF_SAFE.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "1.4", fontSize: "5pt" }}>{l}</div>)}
+                        </td>
+                        <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 1 }}><img src={ASSETS.fiveS} alt="5S Guidelines" style={{ width: "100%", height: 95, objectFit: "fill" }} /></td>
+                        <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
+                          {DEF_PROC_INS.map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "1.4", fontSize: "5pt" }}>{l}</div>)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  {/* PROCESS STEPS TABLE - Single Row */}
+                  <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
+                    <colgroup>
+                      <col style={{ width: "25%" }} />
+                      <col style={{ width: "2.5%" }} />
+                      {processStepColumns.map((col, i) => <col key={i} style={{ width: col.width }} />)}
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th style={{ ...hdrCell, background: "#ffffffff", color: "#000", padding: "6px 2px" }}>
+                          {illustrationQuestions[0]?.text || illustrationQuestions[0]?.label || "Illustrations & Process Details"}
+                        </th>
+                        <th style={{ ...hdrCell, padding: "6px 2px" }}>SN</th>
+                        {processStepColumns.map((col) => (
+                          <th key={col.questionId} style={{ ...hdrCell, whiteSpace: "pre-line", lineHeight: 1.3, padding: "6px 2px" }}>
+                            {col.label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Show ALL responses on current page - same as normal mode */}
+                      {paginatedResponses.map((resp, respIdx) => {
+                        const globalIdx = (currentPage - 1) * responsesPerPage + respIdx;
+                        const illustrationImages = getResponseIllustrationImages(resp);
+
+                        return (
+                          <tr key={`resp-${globalIdx}`} style={{ minHeight: 100 }}>
+                            {/* Illustration column */}
+                            <td style={{ ...cellBase, background: "#ffffffff", padding: 6, height: 90 }}>
+                              {illustrationImages.length > 0 ? (
+                                <div style={{
+                                  display: 'flex',
+                                  flexDirection: 'row',      /* ← Horizontal layout (left to right) */
+                                  flexWrap: 'wrap',          /* ← Wrap to next line if needed */
+                                  gap: '8px',
+                                  justifyContent: 'flex-start',
+                                  alignItems: 'center'
+                                }}>
+                                  {illustrationImages.map((url, idx) => (
+                                    <img key={idx} src={url} alt={`Illustration ${idx + 1}`}
+                                      style={{ width: '48%', height: 60, objectFit: 'contain', cursor: 'pointer', border: '0.5px solid #ccc', borderRadius: 2 }}
+                                      onClick={() => window.open(url, '_blank')} />
+                                  ))}
+                                </div>
+                              ) : (
+                                <div style={{ width: "100%", height: 60, display: "flex", alignItems: "center", justifyContent: "center", color: "#bbb", fontSize: 32 }}></div>
+                              )}
+                            </td>
+
+                            {/* SN column */}
+                            <td style={{ ...cellBase, textAlign: "center", fontWeight: 700, fontSize: "11pt", verticalAlign: "middle", height: 90, padding: "6px" }}>
+                              {globalIdx + 1}
+                            </td>
+
+                            {/* Process step answer cells */}
+                            {processStepColumns.map((col, colIdx) => {
+                              const rawVal = resp?.answers?.[col.questionId];
+                              let cellVal = '';
+                              if (rawVal !== null && rawVal !== undefined && rawVal !== '') {
+                                if (typeof rawVal === 'object') {
+                                  try { cellVal = JSON.stringify(rawVal); } catch { cellVal = String(rawVal); }
+                                } else {
+                                  cellVal = String(rawVal);
+                                }
+                              }
+                              const translationKey = `${globalIdx}:${col.originalIndex ?? colIdx}`;
+                              const translated = cellTranslations.get(translationKey);
+                              const shouldShowTranslation = selectedLang !== 'en' &&
+                                TRANSLATE_COL_INDICES.has(col.originalIndex ?? colIdx) &&
+                                translated &&
+                                translated !== cellVal;
+                              return (
+                                <td key={col.questionId} style={{
+                                  ...cellBase,
+                                  height: 90,
+                                  minHeight: 90,
+                                  padding: '6px 8px',
+                                  verticalAlign: 'top',
+                                  background: '#fff',
+                                  fontSize: '7pt'
+                                }}>
+                                  {cellVal ? (
+                                    <>
+                                      {/* English top */}
+                                      <div style={{
+                                        padding: '2px 3px',
+                                        fontSize: '7pt',
+                                        lineHeight: 1.3,
+                                        borderBottom: shouldShowTranslation ? '1px dashed #bbb' : 'none',
+                                        minHeight: shouldShowTranslation ? 28 : undefined,
+                                      }}>
+                                        {cellVal}
+                                      </div>
+                                      {/* Translated bottom */}
+                                      {shouldShowTranslation && (
+                                        <div style={{
+                                          padding: '2px 3px',
+                                          fontSize: '6pt',
+                                          color: '#1a1a8c',
+                                          lineHeight: 1.3,
+                                          fontFamily: "'Noto Sans Devanagari', Arial, sans-serif",
+                                        }}>
+                                          {translated}
+                                        </div>
+                                      )}
+                                    </>
+                                  ) : '\u00A0'}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+
+                      {/* Blank filler rows */}
+                      {paginatedResponses.length < responsesPerPage &&
+                        Array.from({ length: responsesPerPage - paginatedResponses.length }).map((_, i) => (
+                          <tr key={`blank-${i}`} style={{ minHeight: 90 }}>
+                            <td style={{ ...cellBase, background: "#ffffffff", height: 90, padding: "6px" }} />
+                            <td style={{ ...cellBase, textAlign: 'center', fontWeight: 700, fontSize: '10pt', verticalAlign: 'middle', color: '#ccc', height: 90, padding: "6px" }}>
+                              {(currentPage - 1) * responsesPerPage + paginatedResponses.length + i + 1}
+                            </td>
+                            {processStepColumns.map(col => (
+                              <td key={col.questionId} style={{ ...cellBase, height: 90, background: "#fff", padding: "6px" }}>&nbsp;</td>
+                            ))}
+                          </tr>
+                        ))
+                      }
+                    </tbody>
+                  </table>
+
+                  {/* PAST PROBLEMS */}
+                  <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
+                    <tbody>
+                      <tr>
+                        <td rowSpan={2} style={{ ...cellBase, padding: 4, verticalAlign: "top", fontSize: "6.5pt", width: "12%" }}>
+                          <div style={{ fontWeight: 700, marginBottom: 2 }}>{label(pastProbsQuestions, 0, "Abnormality handling route")} :</div>
+                          <div>In case of any abnormality inform the Zone In-Charge</div>
+                          <div style={{ marginTop: 2 }}>Flow of Communication :-</div>
+                          <div>Operator ▶ Team Member ▶ Section Mgr ▶ As required</div>
+                        </td>
+                        <td style={{ ...lblCell, padding: "2px", textAlign: "center", fontSize: "7pt" }}>{label(pastProbsQuestions, 1, "Past Problem Details")}</td>
+                      </tr>
+                      <tr>
+                        <td style={{ ...cellBase, padding: 4, verticalAlign: "top", minHeight: 60, height: 60, fontSize: "7pt", background: "#fff" }}>
+                          {pastProb !== "—" ? pastProb : <span style={{ color: "#ccc", fontStyle: "italic" }}>No data recorded</span>}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  {/* ASSOCIATE NAME & SIGN */}
+                  <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
+                    <colgroup>
+                      <col style={{ width: "5%" }} />
+                      {Array.from({ length: 22 }).map((_, i) => <col key={i} style={{ width: `${(95 / 22).toFixed(2)}%` }} />)}
+                    </colgroup>
+                    <tbody>
+                      <tr>
+                        <td style={{ ...lblCell, textAlign: "center", fontSize: "5.5pt", border: boldBorder, verticalAlign: "middle" }}>Associate Name &amp; Emp. Code</td>
+                        {Array.from({ length: 22 }).map((_, i) => <td key={i} style={{ border: "1px solid #999", height: 22 }} />)}
+                      </tr>
+                      <tr>
+                        <td style={{ ...lblCell, textAlign: "center", fontSize: "5.5pt", border: boldBorder, verticalAlign: "middle" }}>Sign &amp; Date</td>
+                        {Array.from({ length: 22 }).map((_, i) => <td key={i} style={{ border: "1px solid #999", height: 26 }} />)}
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  {/* PAGE NUMBER */}
+                  <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
+                    <tbody>
+                      <tr>
+                        <td style={{ ...cellBase, padding: 2 }}>{form?.title || "Operation Standard"}</td>
+                        <td style={{ ...hdrCell, padding: 3, fontSize: "8.5pt" }}>Page Number : {currentSlideIndex + 1} / {paginatedResponses.length}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </>
+              );
+            })()}
+          </div>
+        ) : (
+          <>
+
+            {/* RETENTION BAR */}
+            <table style={{ width: "100%", borderCollapse: "collapse", border: "2px solid #000" }}>
+              <tbody>
+                <tr>
+                  <td style={{ padding: "1px 6px", textAlign: "right", fontWeight: 700, fontSize: "6.5pt" }}>
+                    Retention Period : 20 years after Model is discontinued
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <table style={{ ...T, border: BORDER2, borderTop: "none", }}>
+              <colgroup>
+                <col style={{ width: "5.5%" }} />
+                <col style={{ width: "3.5%" }} />
+                <col style={{ width: "5%" }} />
+                <col style={{ width: "3.5%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "7%" }} />
+                <col style={{ width: "4%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "4%" }} />
+                <col style={{ width: "4%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "9%" }} />
+              </colgroup>
+              <tbody>
+                <tr style={{ height: 4 }}> {/* Reduced from 14 */}
+                  <td rowSpan={8} style={{ border: BORDER2, padding: 0, background: "#ffffffff" }}> {/* Reduced padding */}
+                    <img src={ASSETS.logo} alt="Logo" style={{ width: "35.93mm", height: "16.5mm", verticalAlign: "top" }} /> {/* Reduced from 80 */}
+                  </td>
+                  <td style={{ ...L, marginBottom: 0, lineHeight: "1.5", width: "2%" }}>{label(headerQuestions, 0, "Dept. / Section")} :</td>
+                  <td style={{ ...V, fontWeight: 700, color: live(deptCombined), marginBottom: 0, lineHeight: "1.2", width: "10%" }}>
+                    {deptCombined || "—"}
+                  </td>
+                  <td style={{ ...L, marginBottom: 0, lineHeight: "1.5", width: "2.5%" }}>{label(headerQuestions, 1, "Line / Zones")} :</td>
+                  <td style={{ ...V, fontWeight: 700, color: live(lineCombined), marginBottom: 0, lineHeight: "1.2", width: "12%" }}>
+                    {lineCombined || "—"}
+                  </td>
+                  <td colSpan={4} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 2 }}> {/* Reduced padding */}
+                    <div style={{ fontSize: "9pt", fontWeight: 700, letterSpacing: 1 }}>Operation Standard</div> {/* Reduced from 14pt */}
+                  </td>
+                  {/* Prepared, Checked, Approved — plain empty cells (no ruled lines) */}
+                  {Array.from({ length: 3 }).map((_, idx) => (
+                    <td key={`empty-${idx}`} rowSpan={7} style={{ border: BORDER2, verticalAlign: "top", padding: 0 }} />
+                  ))}
+                  {/* SUBMISSION HISTORY - Paginated */}
+                  {Array.from({ length: 3 }).map((_, idx) => {
+                    const colIdx = idx + 4; // 4 = No., 5 = DD/MM/YY, 6 = Issuance/Revision details
+
+                    return (
+                      <td key={idx} rowSpan={7} style={{ border: BORDER2, verticalAlign: "top", padding: 0, background: "#fff" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                          {/* Always show 5 rows */}
+                          {Array.from({ length: 5 }).map((_, rowIndex) => {
+                            // Get entry for this row - index 0 = newest, index 4 = oldest among 5
+                            const entry = rowIndex < paginatedSubmissionHistory.length
+                              ? paginatedSubmissionHistory[rowIndex]
+                              : null;
+
+                            let display: string = "\u00A0";
+
+                            if (entry) {
+                              if (colIdx === 4) {
+                                display = String(entry.no);
+                              } else if (colIdx === 5) {
+                                try {
+                                  display = new Date(entry.date).toLocaleDateString("en-GB", {
+                                    day: "2-digit",
+                                    month: "2-digit",
+                                    year: "2-digit",
+                                  });
+                                } catch {
+                                  display = entry.date || "\u00A0";
+                                }
+                              } else if (colIdx === 6) {
+                                display = entry.issuanceDetails || "\u00A0";
+                              }
+                            }
+
+                            return (
+                              <tr key={rowIndex}>
+                                <td
+                                  style={{
+                                    borderBottom: rowIndex < 4 ? "1px solid #ccc" : "none",
+                                    height: 32.5,
+                                    minHeight: 32.5,
+                                    padding: "0 2px",
+                                    fontSize: "5pt",
+                                    textAlign: "center",
+                                    color: entry ? "#15803d" : "transparent",
+                                    fontWeight: entry ? 700 : 400,
+                                    whiteSpace: "nowrap",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                  }}
+                                >
+                                  {display}
+                                  {entry?.responseIndex !== undefined && sameFormatResponses.length > 1 && (
+                                    <span style={{ fontSize: "4pt", marginLeft: 1, color: "#b45309" }}>
+                                      R{entry.responseIndex + 1}
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </table>
+                      </td>
+                    );
+                  })}
+                  <td rowSpan={8} style={{ border: BORDER2, verticalAlign: "top", padding: "2px 3px", fontSize: "5.5pt" }}>
+                    {/* Format No. - Use actual question text from form */}
+
+                    <div style={{ fontWeight: 700, color: "#c00", lineHeight: "1", marginBottom: 2, }}>
+                      {label(docControlQuestions, 4, "Format No. AP")} :
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: "7pt", lineHeight: "1.2", marginBottom: 1, color: live(formatNoCombined) }}>
+                      {formatNoCombined || "—"}
+                    </div>
+
+
+                    <div style={{ borderTop: "0.5px solid #999", margin: "2px 0" }} />
+
+                    {/* Control No. - Use actual question text from form */}
+                    <div style={{ fontWeight: 700, color: "#c00", lineHeight: "1", marginBottom: 1, }}>
+                      {label(docControlQuestions, 5, "Control No. AP")} :
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: "7pt", marginBottom: 1, lineHeight: "1.2", color: live(controlNoCombined) }}>
+                      {controlNoCombined || "—"}
+                    </div>
+
+                    <div style={{ borderTop: "0.5px solid #999", margin: "2px 0" }} />
+
+                    {/* QR Code - This might be a static label or from form */}
+                    <div style={{ fontWeight: 700, marginBottom: 1 }}>QR Code :</div>
+                    <img src={ASSETS.qr} alt="QR" style={{ width: 55, height: 30, objectFit: "contain" }} />
+                  </td>
+                </tr>
+
+                <tr style={{ height: 4 }}> {/* Reduced from 13 */}
+                  <td style={{ ...L, lineHeight: "1.5" }}>{label(headerQuestions, 2, "Model AP")}</td>
+                  <td style={{ ...V, fontWeight: 700, color: live(modelCombined) }}>
+                    {modelCombined || "—"}
+                  </td>
+                  <td style={{ ...L, lineHeight: "1.5" }}>{label(headerQuestions, 3, "Process / Station AP")} :</td>
+                  <td style={{ ...V, fontWeight: 700, color: live(stationCombined), lineHeight: "1.2" }}>
+                    {stationCombined || "—"}
+                  </td>
+                  <td colSpan={4} style={{ ...H, border: BORDER2, fontSize: "5.5pt" }}> {/* Reduced from 6.5pt */}
+                    Your Work When Trouble Stopped The Production Line
+                  </td>
+                </tr>
+
+                <tr style={{ height: 4 }}> {/* Reduced from 13 */}
+                  <td rowSpan={6} colSpan={2} style={{ border: BORDER2, verticalAlign: "top", fontSize: "5pt", padding: "2px 3px" }}> {/* Reduced padding */}
+                    <div style={{ fontWeight: 900, marginBottom: 5, fontSize: 8 }}>REJECTION HANDLING :-</div>
+                    <div style={{ marginBottom: 2, fontSize: 7 }}>Clearly Identify Rejected / NG parts.</div>
+                    <div style={{ lineHeight: "1.5", fontSize: 7 }}>Keep them properly with proper identification at defined Location.</div>
+                  </td>
+                  <td rowSpan={6} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", fontWeight: 700, fontSize: "6pt", padding: 1, lineHeight: 1.5 }}> {/* Reduced padding */}
+                    Measuring<br />Instruments<br />or Gauges
+                  </td>
+                  <td rowSpan={6} style={{ border: BORDER2, verticalAlign: "top", fontSize: "5pt", padding: 0 }}>
+                    {[
+                      "Always use Calibrated Measuring Instruments / Gauges.",
+                      "Ensure Zero setting before use.",
+                      "Do Not Use Unidentified Measuring Tool / Gauges.",
+                      "In case of any abnormality, inform Line leader and Quality Engineer.",
+                    ].map((txt, i, arr) => (
+                      <div key={i} style={{ padding: "2px 1px", borderBottom: i < arr.length - 1 ? "0.5px solid #ccc" : "none", lineHeight: "1.5" }}>{txt}</div> // Reduced padding
+                    ))}
+                  </td>
+                  <td rowSpan={6} style={{ border: BORDER2, textAlign: "center", verticalAlign: "middle", padding: 2 }}> {/* Reduced padding */}
+                    <img src={ASSETS.stop} alt="Stop Call Wait" style={{ width: "100%", height: "100%", objectFit: "contain" }} /> {/* Reduced from 180 */}
+                  </td>
+                  <td style={{ ...H, }}>S. No.</td>
+                  <td style={H}>Trouble</td>
+                  <td style={H}>Your task</td>
+                </tr>
+
+                <tr style={{ height: 4 }}> {/* Reduced from 12 */}
+                  <td style={{ ...C, textAlign: "center" }}>1</td>
+                  <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[0]}</td> {/* Reduced from 6pt */}
+                  <td rowSpan={5} style={{ fontSize: "5.5pt", textAlign: "center", verticalAlign: "middle", lineHeight: "2" }}> {/* Reduced from 5.5pt */}
+                    Stop The Line<br />Inform the Zone Leader<br />Write on card if mentioned in OPS
+                  </td>
+                </tr>
+                <tr style={{ height: 7 }}>
+                  <td style={{ ...C, textAlign: "center" }}>2</td>
+                  <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[1]}</td>
+                </tr>
+                <tr style={{ height: 7 }}>
+                  <td style={{ ...C, textAlign: "center" }}>3</td>
+                  <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[2]}</td>
+                </tr>
+                <tr style={{ height: 7 }}>
+                  <td style={{ ...C, textAlign: "center" }}>4</td>
+                  <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[3]}</td>
+                </tr>
+                <tr style={{ height: 7 }}>
+                  <td style={{ ...C, textAlign: "center" }}>5</td>
+                  <td style={{ ...C, fontSize: "5.5pt" }}>{TROUBLE_ROWS[4]}</td>
+                  <td style={{ ...H, border: BORDER2, fontSize: "6pt" }}>Prepared</td>
+                  <td style={{ ...H, fontSize: "6pt" }}>Checked</td>
+                  <td style={{ ...H, fontSize: "6pt" }}>Approved</td>
+                  <td style={{ ...H, fontSize: "6pt" }}>No.</td>
+                  <td style={{ ...H, fontSize: "6pt" }}>DD/MM/YY</td>
+                  <td style={{ ...H, border: BORDER2, fontSize: "6pt" }}>Issuance / Revision details</td>
+                </tr>
+              </tbody>
+            </table>
+
+            {/* General Instructions Body - COMPACT */}
+            <table style={{ ...T, border: BORDER2, borderTop: "none", }}>
+              <tbody>
+                <tr>
+                  <td style={{ padding: "1px 6px", fontWeight: 700, fontSize: "8pt", textAlign: "center", background: "#d9d9d9" }}> {/* Reduced padding and font */}
+                    General Instructions
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            {/* General Instructions Body - COMPACT */}
+            <table style={{ ...T, border: BORDER2, borderTop: "none" }}>
+              <colgroup>
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "17%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "13%" }} />
+                <col style={{ width: "12%" }} />
+              </colgroup>
+              <tbody>
+                <tr>
+                  <td style={H}>FIFO System</td>
+                  <td style={H}>Non Lubrication Rule</td>
+                  <td style={{ ...H, fontSize: "5pt" }}>Always wear PPEs / Proper uniform</td> {/* Reduced from 5.5pt */}
+                  <td style={{ ...H, fontSize: "5pt" }}>Wear PPEs as per<br />station requirements</td>
+                  <td style={H}>Shift Timings</td>
+                  <td style={H}>Environmental Issues</td>
+                  <td style={H}>Safety Issues</td>
+                  <td style={H}>5S Guidelines</td>
+                  <td style={H}>Process Instructions</td>
+                </tr>
+                <tr>
+                  <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
+                    <div style={{ fontWeight: 800, marginBottom: 0, fontSize: "5.5pt" }}>FIFO System</div>
+                    {DEF_FIFO.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "1.4", fontSize: "5.5pt" }}>{l}</div>)}
+                  </td>
+                  <td style={{ ...C, verticalAlign: "top", padding: 0 }}>
+                    <div style={{ padding: "1px 2px", borderBottom: "0.5px solid #ccc", fontSize: "5pt", lineHeight: "1.4" }}>{DEF_NONLUB}</div>
+                    <div style={{ display: "flex", borderBottom: "0.5px solid #ccc" }}>
+                      <div style={{ flex: 1, borderRight: "0.5px solid #ccc", padding: "1px 2px", textAlign: "center", fontWeight: 700, fontSize: "4.5pt", background: "#d9d9d9", lineHeight: "1.4" }}>No mobile on shopfloor</div>
+                      <div style={{ flex: 1, padding: "1px 2px", textAlign: "center", fontWeight: 700, fontSize: "4.5pt", background: "#d9d9d9", lineHeight: "1.4" }}>Do not run on shopfloor</div>
+                    </div>
+                    <div style={{ display: "flex" }}>
+                      <div style={{ flex: 1, borderRight: "0.5px solid #ccc", padding: 1, textAlign: "center" }}>
+                        <img src={ASSETS.noMob} alt="No Mobile" style={{ width: 44, height: 55, objectFit: "contain" }} />
+                      </div>
+                      <div style={{ flex: 1, padding: 1, textAlign: "center" }}>
+                        <img src={ASSETS.noRun} alt="No Run" style={{ width: 44, height: 55, objectFit: "contain" }} />
+                      </div>
+                    </div>
+                  </td>
+                  <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 1 }}>
+                    <img src={ASSETS.ppeG} alt="Full PPE Uniform" style={{ width: "100%", height: 95, objectFit: "contain" }} />
+                  </td>
+                  <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 1 }}>
+                    <img src={ASSETS.ppeGl} alt="Station PPE" style={{ width: "100%", maxHeight: 95, objectFit: "contain" }} />
+                  </td>
+                  <td style={{ ...C, textAlign: "center", verticalAlign: "top", padding: 1 }}>
+                    <img src={ASSETS.shift} alt="Shift Timings" style={{ width: "100%", height: 90, objectFit: "contain" }} />
+                  </td>
+                  <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
+                    <div style={{ fontWeight: 700, color: "#166534", marginBottom: 1, fontSize: "5pt" }}>Environmental Issues</div>
+                    {DEF_ENV.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, fontSize: "5pt", lineHeight: "1.4" }}>{l}</div>)}
+                  </td>
+                  <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
+                    <div style={{ fontWeight: 700, color: "#991b1b", marginBottom: 1, fontSize: "5pt" }}>Safety Issues</div>
+                    {DEF_SAFE.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "1.4", fontSize: "5pt" }}>{l}</div>)}
+                  </td>
+                  <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 1 }}>
+                    <img src={ASSETS.fiveS} alt="5S Guidelines" style={{ width: "100%", height: 95, objectFit: "fill" }} />
+                  </td>
+                  <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}>
+                    {DEF_PROC_INS.map((l, i) => (
+                      <div key={i} style={{ marginBottom: 0, lineHeight: "1.4", fontSize: "5pt" }}>
+                        {l}
+                      </div>
+                    ))}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            {/* PROCESS STEPS TABLE - WITH PAGINATION */}
+            <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
+              <colgroup>
+                <col style={{ width: "15%" }} />
+                <col style={{ width: "2.5%" }} />
+                {processStepColumns.map((col, i) => <col key={i} style={{ width: col.width }} />)}
+              </colgroup>
+              <thead>
+                <tr>
+                  <th style={{ ...hdrCell, background: "#ffffffff", color: "#000", padding: "6px 2px" }}>
+                    {illustrationQuestions[0]?.text || illustrationQuestions[0]?.label || "Illustrations & Process Details"}
+                  </th>
+                  <th style={{ ...hdrCell, padding: "6px 2px" }}>SN</th>
+                  {processStepColumns.map((col) => (
+                    <th key={col.questionId} style={{ ...hdrCell, whiteSpace: "pre-line", lineHeight: 1.3, padding: "6px 2px" }}>
+                      {col.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {/* Show ALL responses on current page - same as normal mode */}
+                {paginatedResponses.map((resp, respIdx) => {
+                  const globalIdx = (currentPage - 1) * responsesPerPage + respIdx;
+                  const illustrationImages = getResponseIllustrationImages(resp);
+
+                  return (
+                    <tr key={`resp-${globalIdx}`} style={{ minHeight: 100 }}>
+                      {/* Illustration column */}
+                      <td style={{ ...cellBase, background: "#ffffffff", padding: 6, height: 90 }}>
+                        {illustrationImages.length > 0 ? (
+                          <div style={{
+                            display: 'flex',
+                            flexDirection: 'row',      /* ← Horizontal layout (left to right) */
+                            flexWrap: 'wrap',          /* ← Wrap to next line if needed */
+                            gap: '8px',
+                            justifyContent: 'flex-start',
+                            alignItems: 'center'
+                          }}>
+                            {illustrationImages.map((url, idx) => (
+                              <img key={idx} src={url} alt={`Illustration ${idx + 1}`}
+                                style={{ width: '48%', height: 60, objectFit: 'contain', cursor: 'pointer', border: '0.5px solid #ccc', borderRadius: 2 }}
+                                onClick={() => window.open(url, '_blank')} />
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{ width: "100%", height: 60, display: "flex", alignItems: "center", justifyContent: "center", color: "#bbb", fontSize: 32 }}> </div>
+                        )}
+                      </td>
+
+                      {/* SN column */}
+                      <td style={{ ...cellBase, textAlign: "center", fontWeight: 700, fontSize: "11pt", verticalAlign: "middle", height: 90, padding: "6px" }}>
+                        {globalIdx + 1}
+                      </td>
+
+                      {/* Process step answer cells */}
+                      {processStepColumns.map((col, colIdx) => {
+                        const rawVal = resp?.answers?.[col.questionId];
+                        let cellVal = '';
+                        if (rawVal !== null && rawVal !== undefined && rawVal !== '') {
+                          if (typeof rawVal === 'object') {
+                            try { cellVal = JSON.stringify(rawVal); } catch { cellVal = String(rawVal); }
+                          } else {
+                            cellVal = String(rawVal);
+                          }
+                        }
+                        const translationKey = `${globalIdx}:${col.originalIndex ?? colIdx}`;
+                        const translated = cellTranslations.get(translationKey);
+                        const shouldShowTranslation = selectedLang !== 'en' &&
+                          TRANSLATE_COL_INDICES.has(col.originalIndex ?? colIdx) &&
+                          translated &&
+                          translated !== cellVal;
+                        return (
+                          <td key={col.questionId} style={{
+                            ...cellBase,
+                            height: 90,
+                            minHeight: 90,
+                            padding: '6px 8px',
+                            verticalAlign: 'top',
+                            background: '#fff',
+                            fontSize: '7pt'
+                          }}>
+                            {cellVal ? (
+                              <>
+                                {/* English top */}
+                                <div style={{
+                                  padding: '2px 3px',
+                                  fontSize: '7pt',
+                                  lineHeight: 1.3,
+                                  borderBottom: shouldShowTranslation ? '1px dashed #bbb' : 'none',
+                                  minHeight: shouldShowTranslation ? 28 : undefined,
+                                }}>
+                                  {cellVal}
+                                </div>
+                                {/* Translated bottom */}
+                                {shouldShowTranslation && (
+                                  <div style={{
+                                    padding: '2px 3px',
+                                    fontSize: '6pt',
+                                    color: '#1a1a8c',
+                                    lineHeight: 1.3,
+                                    fontFamily: "'Noto Sans Devanagari', Arial, sans-serif",
+                                  }}>
+                                    {translated}
+                                  </div>
+                                )}
+                              </>
+                            ) : '\u00A0'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+
+                {/* Blank filler rows */}
+                {paginatedResponses.length < responsesPerPage &&
+                  Array.from({ length: responsesPerPage - paginatedResponses.length }).map((_, i) => (
+                    <tr key={`blank-${i}`} style={{ minHeight: 90 }}>
+                      <td style={{ ...cellBase, background: "#ffffffff", height: 90, padding: "6px" }} />
+                      <td style={{ ...cellBase, textAlign: 'center', fontWeight: 700, fontSize: '10pt', verticalAlign: 'middle', color: '#ccc', height: 90, padding: "6px" }}>
+                        {(currentPage - 1) * responsesPerPage + paginatedResponses.length + i + 1}
+                      </td>
+                      {processStepColumns.map(col => (
+                        <td key={col.questionId} style={{ ...cellBase, height: 90, background: "#fff", padding: "6px" }}>&nbsp;</td>
+                      ))}
+                    </tr>
+                  ))
+                }
+              </tbody>
+            </table>
+
+            {/* ABNORMALITY + PAST PROBLEMS */}
+            < table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
+              <tbody>
+                <tr>
+                  <td rowSpan={2} style={{ ...cellBase, padding: 4, verticalAlign: "top", fontSize: "6.5pt", width: "12%" }}>
+                    <div style={{ fontWeight: 700, marginBottom: 2 }}>
+                      {label(pastProbsQuestions, 0, "Abnormality handling route")} :
+                    </div>
+                    <div>In case of any abnormality inform the Zone In-Charge</div>
+                    <div style={{ marginTop: 2 }}>Flow of Communication :-</div>
+                    <div>Operator ▶ Team Member ▶ Section Mgr ▶ As required</div>
+                  </td>
+                  <td style={{ ...lblCell, padding: "2px", textAlign: "center", fontSize: "7pt" }}>
+                    {label(pastProbsQuestions, 1, "Past Problem Details")}
+                  </td>
+                </tr>
+                <tr>
+                  <td style={{
+                    ...cellBase, padding: 4, verticalAlign: "top", minHeight: 60, height: 60, fontSize: "7pt", background: "#fff",
+                    fontStyle: pastProblemMerged.isMerged ? "italic" : "normal",
+                    color: pastProblemMerged.value ? (pastProblemMerged.isMerged ? "#b45309" : "#000") : "#bbb"
+                  }}>
+                    {pastProblemMerged.value || <span style={{ color: "#ccc", fontStyle: "italic" }}>No data recorded</span>}
+                    {pastProblemMerged.isMerged && (
+                      <div style={{ fontSize: "5.5pt", color: "#9a6700", marginTop: 2 }}>
+                        ({sameFormatResponses.length} responses merged)
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            {/* ASSOCIATE NAME & SIGN */}
+            <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
+              <colgroup>
+                <col style={{ width: "5%" }} />
+                {Array.from({ length: 22 }).map((_, i) => <col key={i} style={{ width: `${(95 / 22).toFixed(2)}%` }} />)}
+              </colgroup>
+              <tbody>
+                <tr>
+                  <td style={{ ...lblCell, textAlign: "center", fontSize: "5.5pt", border: boldBorder, verticalAlign: "middle" }}>
+                    Associate Name &amp; Emp. Code
+                  </td>
+                  {Array.from({ length: 22 }).map((_, i) => <td key={i} style={{ border: "1px solid #999", height: 22 }} />)}
+                </tr>
+                <tr>
+                  <td style={{ ...lblCell, textAlign: "center", fontSize: "5.5pt", border: boldBorder, verticalAlign: "middle" }}>
+                    Sign &amp; Date
+                  </td>
+                  {Array.from({ length: 22 }).map((_, i) => <td key={i} style={{ border: "1px solid #999", height: 26 }} />)}
+                </tr>
+              </tbody>
+            </table>
+
+
+
+            {/* PAGE NUMBER */}
+            <table style={{ width: "100%", borderCollapse: "collapse", borderLeft: "2px solid #000", borderRight: "2px solid #000", borderBottom: "2px solid #000", tableLayout: "fixed" }}>
+              <tbody>
+                <tr>
+                  <td style={{ ...cellBase, padding: 2 }}>{form?.title || "Operation Standard"}</td>
+                  <td style={{ ...hdrCell, padding: 3, fontSize: "8.5pt" }}>Page Number : XX / XX</td>
+                </tr>
+              </tbody>
+            </table>
+
+            {/* PAGINATION CONTROLS */}
+            {!isLoadingSameFormatResponses && sameFormatResponses.length > responsesPerPage && (
+              <div style={{
+                marginTop: "20px",
+                padding: "10px",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                gap: "8px",
+                borderTop: "2px solid #000",
+                borderLeft: "2px solid #000",
+                borderRight: "2px solid #000",
+                borderBottom: "2px solid #000",
+                backgroundColor: "#f5f5f5"
+              }}>
+                <button
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  style={{
+                    padding: "6px 12px",
+                    backgroundColor: currentPage === 1 ? "#ccc" : "#1d4ed8",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                    fontSize: "10pt",
+                    fontWeight: "bold"
+                  }}
+                >
+                  ← Previous
+                </button>
+
+                <div style={{ display: "flex", gap: "5px" }}>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
+                    // Show limited page numbers for better UX
+                    if (totalPages <= 10) {
+                      return (
+                        <button
+                          key={page}
+                          onClick={() => handlePageChange(page)}
+                          style={{
+                            padding: "6px 12px",
+                            backgroundColor: currentPage === page ? "#1d4ed8" : "#e5e7eb",
+                            color: currentPage === page ? "white" : "#333",
+                            border: "none",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            fontSize: "10pt",
+                            fontWeight: currentPage === page ? "bold" : "normal"
+                          }}
+                        >
+                          {page}
+                        </button>
+                      );
+                    } else {
+                      // Smart pagination for many pages
+                      if (page === 1 || page === totalPages || (page >= currentPage - 2 && page <= currentPage + 2)) {
+                        return (
+                          <button
+                            key={page}
+                            onClick={() => handlePageChange(page)}
+                            style={{
+                              padding: "6px 12px",
+                              backgroundColor: currentPage === page ? "#1d4ed8" : "#e5e7eb",
+                              color: currentPage === page ? "white" : "#333",
+                              border: "none",
+                              borderRadius: "4px",
+                              cursor: "pointer",
+                              fontSize: "10pt"
+                            }}
+                          >
+                            {page}
+                          </button>
+                        );
+                      }
+                      if (page === currentPage - 3 || page === currentPage + 3) {
+                        return <span key={`ellipsis-${page}`} style={{ padding: "6px 8px" }}>...</span>;
+                      }
+                      return null;
+                    }
+                  })}
+                </div>
+
+                <button
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  style={{
+                    padding: "6px 12px",
+                    backgroundColor: currentPage === totalPages ? "#ccc" : "#1d4ed8",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: currentPage === totalPages ? "not-allowed" : "pointer",
+                    fontSize: "10pt",
+                    fontWeight: "bold"
+                  }}
+                >
+                  Next →
+                </button>
+
+                <span style={{ marginLeft: "15px", fontSize: "9pt", color: "#666" }}>
+                  Page {currentPage} of {totalPages} |
+                  Total {sameFormatResponses.length} response{sameFormatResponses.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
 
-      {/* Render fullscreen preview modal */}
-      {showFullscreenPreview && <FullscreenPreview />}
+
+
     </div>
+
   );
 }
 

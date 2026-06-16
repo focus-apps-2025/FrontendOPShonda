@@ -552,65 +552,62 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint, highlightedFie
         </colgroup>
         <tbody>
           <tr>
-            <td style={H}>FIFO System</td>
-            <td style={H}>Non Lubrication Rule</td>
-            <td style={{ ...H, fontSize: "5pt" }}>Always wear PPEs / Proper uniform</td> {/* Reduced from 5.5pt */}
-            <td style={{ ...H, fontSize: "5pt" }}>Wear PPEs as per<br />station requirements</td>
-            <td style={H}>Shift Timings</td>
-            <td style={H}>Environmental Issues</td>
-            <td style={H}>Safety Issues</td>
-            <td style={H}>5S Guidelines</td>
-            <td style={H}>Process Instructions</td>
+            <td style={{ ...H, padding: "1px", fontSize: "5pt" }}>FIFO System</td>
+            <td style={{ ...H, padding: "1px", fontSize: "5pt" }}>Non Lubrication Rule</td>
+            <td style={{ ...H, padding: "1px", fontSize: "4.5pt" }}>Always wear PPEs / Proper uniform</td>
+            <td style={{ ...H, padding: "1px", fontSize: "4.5pt" }}>Wear PPEs as per<br />station requirements</td>
+            <td style={{ ...H, padding: "1px", fontSize: "5pt" }}>Shift Timings</td>
+            <td style={{ ...H, padding: "1px", fontSize: "5pt" }}>Environmental Issues</td>
+            <td style={{ ...H, padding: "1px", fontSize: "5pt" }}>Safety Issues</td>
+            <td style={{ ...H, padding: "1px", fontSize: "5pt" }}>5S Guidelines</td>
+            <td style={{ ...H, padding: "1px", fontSize: "4.5pt" }}>Process Instructions</td>
           </tr>
           <tr>
-            <td style={{ ...C, verticalAlign: "top", fontSize: "5pt" }}> {/* Reduced font */}
-              <div style={{ fontWeight: 800, marginBottom: 1, fontSize: "6pt" }}>FIFO System</div> {/* Reduced margin */}
-              {fifo.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "2", fontSize: "6pt" }}>{l}</div>)} {/* Reduced margin */}
+            <td style={{ ...C, verticalAlign: "top", fontSize: "4.5pt", padding: "1px" }}>
+              <div style={{ fontWeight: 800, marginBottom: 0, fontSize: "5pt", lineHeight: "1.2" }}>FIFO System</div>
+              {fifo.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "1.3", fontSize: "5pt" }}>{l}</div>)}
             </td>
-            <td style={{ ...C, verticalAlign: "top", padding: 0 }}>
-              <div style={{ padding: "2px 3px", borderBottom: "0.5px solid #ccc", fontSize: "6pt", lineHeight: "2" }}>{nonLub}</div> {/* Reduced padding */}
+            <td style={{ ...C, verticalAlign: "top", padding: "1px" }}>
+              <div style={{ padding: "1px 2px", borderBottom: "0.5px solid #ccc", fontSize: "5pt", lineHeight: "1.3" }}>{nonLub}</div>
               <div style={{ display: "flex", borderBottom: "0.5px solid #ccc" }}>
-                <div style={{ flex: 1, borderRight: "0.5px solid #ccc", padding: "1px 2px", textAlign: "center", fontWeight: 700, fontSize: "5pt", background: "#d9d9d9", lineHeight: "2" }}>No mobile on shopfloor</div>
-                <div style={{ flex: 1, padding: "1px 2px", textAlign: "center", fontWeight: 700, fontSize: "5pt", background: "#d9d9d9", lineHeight: "2" }}>Do not run on shopfloor</div>
+                <div style={{ flex: 1, borderRight: "0.5px solid #ccc", padding: "1px", textAlign: "center", fontWeight: 700, fontSize: "4pt", background: "#d9d9d9", lineHeight: "1.2" }}>No mobile</div>
+                <div style={{ flex: 1, padding: "1px", textAlign: "center", fontWeight: 700, fontSize: "4pt", background: "#d9d9d9", lineHeight: "1.2" }}>No running</div>
               </div>
               <div style={{ display: "flex" }}>
-                <div style={{ flex: 1, borderRight: "0.5px solid #ccc", padding: 2, textAlign: "center" }}> {/* Reduced padding */}
-                  <img src={NO_MOB} alt="No Mobile" style={{ width: 60, height: 90, objectFit: "contain" }} /> {/* Reduced from 72x72 */}
+                <div style={{ flex: 1, borderRight: "0.5px solid #ccc", padding: "1px", textAlign: "center" }}>
+                  <img src={NO_MOB} alt="No Mobile" style={{ width: "100%", height: 60, objectFit: "contain" }} />
                 </div>
-                <div style={{ flex: 1, padding: 2, textAlign: "center" }}>
-                  <img src={NO_RUN} alt="No Run" style={{ width: 60, height: 90, objectFit: "contain" }} />
+                <div style={{ flex: 1, padding: "1px", textAlign: "center" }}>
+                  <img src={NO_RUN} alt="No Run" style={{ width: "100%", height: 60, objectFit: "contain" }} />
                 </div>
               </div>
             </td>
-            <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 2 }}> {/* Reduced padding */}
-              <img src={PPE_UNI} alt="Full PPE Uniform" style={{ width: "100%", height: 140, objectFit: "contain" }} /> {/* Reduced from 190 */}
+            <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: "1px" }}>
+              <img src={PPE_UNI} alt="Full PPE Uniform" style={{ width: "100%", height: 90, objectFit: "contain" }} />
             </td>
-            <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 2 }}>
-              <img src={PPE_STA} alt="Station PPE" style={{ width: "100%", maxHeight: 140, objectFit: "contain" }} /> {/* Reduced from 190 */}
+            <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: "1px" }}>
+              <img src={PPE_STA} alt="Station PPE" style={{ width: "100%", maxHeight: 90, objectFit: "contain" }} />
             </td>
-            <td style={{ ...C, textAlign: "center", verticalAlign: "top", padding: 2, marginTop: 6 }}> {/* Reduced padding */}
-              <img src={SHIFT} alt="Shift Timings" style={{ width: "100%", maxHeight: 160, objectFit: "contain" }} /> {/* Reduced from 190 */}
+            <td style={{ ...C, textAlign: "center", verticalAlign: "top", padding: "1px" }}>
+              <img src={SHIFT} alt="Shift Timings" style={{ width: "100%", maxHeight: 100, objectFit: "contain" }} />
             </td>
-            <td style={{ ...C, verticalAlign: "top", fontSize: "5.5pt" }}>
-              <div style={{ fontWeight: 700, color: "#166534", marginBottom: 2 }}>Environmental Issues</div> {/* Reduced margin */}
-              {envTxt.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 1, fontSize: "6pt", lineHeight: "2" }}>{l}</div>)} {/* Reduced margin */}
+            <td style={{ ...C, verticalAlign: "top", fontSize: "4.5pt", padding: "1px" }}>
+              <div style={{ fontWeight: 700, color: "#166534", marginBottom: 1, fontSize: "5pt" }}>Environmental</div>
+              {envTxt.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, fontSize: "5pt", lineHeight: "1.3" }}>{l}</div>)}
             </td>
-            <td style={{ ...C, verticalAlign: "top", fontSize: "5.5pt" }}>
-              <div style={{ fontWeight: 700, color: "#991b1b", marginBottom: 2 }}>Safety Issues</div>
-              {safeTxt.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "2", fontSize: "6pt" }}>{l}</div>)}
+            <td style={{ ...C, verticalAlign: "top", fontSize: "4.5pt", padding: "1px" }}>
+              <div style={{ fontWeight: 700, color: "#991b1b", marginBottom: 1, fontSize: "5pt" }}>Safety</div>
+              {safeTxt.split("\n").map((l, i) => <div key={i} style={{ marginBottom: 0, lineHeight: "1.3", fontSize: "5pt" }}>{l}</div>)}
             </td>
-            <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: 2 }}>
-              <img src={FIVE_S} alt="5S Guidelines" style={{ width: "100%", maxHeight: 100, objectFit: "fill" }} /> {/* Reduced from 140 */}
+            <td style={{ ...C, textAlign: "center", verticalAlign: "middle", padding: "1px" }}>
+              <img src={FIVE_S} alt="5S Guidelines" style={{ width: "100%", maxHeight: 90, objectFit: "fill" }} />
             </td>
-            <td style={{ ...C, verticalAlign: "top", fontSize: "6pt" }}>
-              {procInstructions.map((l, i) => (
-                <div key={i} style={{
-                  marginBottom: "0px",
-                  lineHeight: "2"  // THIS is the fix for wrapped line spacing
-                }}>
+            <td style={{ ...C, verticalAlign: "top", fontSize: "5pt", padding: "1px" }}>
+              {procInstructions.slice(0, 9).map((l, i) => (
+                <div key={i} style={{ marginBottom: "0px", lineHeight: "1.6", fontSize: "4.5pt" }}>
                   {l}
                 </div>
-              ))} {/* Reduced margin */}
+              ))}
             </td>
           </tr>
         </tbody>
@@ -651,14 +648,11 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint, highlightedFie
             const histAnswers: Record<string, any> = histResp.answers || histResp;
             return (
               <tr key={`hist-${histIdx}`}>
-                {/* Illustration cell – blank for historical */}
-                <td style={{ ...C, background: '#f3f4f6', height: 50, minHeight: 50 }} />
-                {/* SN */}
-                <td style={{ ...C, background: '#f3f4f6', textAlign: 'center', fontWeight: 700, fontSize: '9pt', verticalAlign: 'middle', fontStyle: 'italic', color: '#6b7280' }}>
+                <td style={{ ...C, background: '#f3f4f6', height: 70, minHeight: 70, padding: "4px" }} />
+                <td style={{ ...C, background: '#f3f4f6', textAlign: 'center', fontWeight: 700, fontSize: '9pt', verticalAlign: 'middle', fontStyle: 'italic', color: '#6b7280', height: 70, minHeight: 70 }}>
                   {histIdx + 1}
                 </td>
                 {columnFields.map((col) => {
-                  // Extract this column's answer from the historical response
                   const fieldQuestion = findQuestionByField(col.field);
                   const qId = fieldQuestion?.id || fieldQuestion?._id;
                   const val = qId ? histAnswers[qId] : '';
@@ -671,9 +665,10 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint, highlightedFie
                         background: '#f3f4f6',
                         fontStyle: 'italic',
                         color: displayVal ? '#374151' : '#d1d5db',
-                        height: 50,
-                        minHeight: 50,
+                        height: 70,
+                        minHeight: 70,
                         fontSize: '6.5pt',
+                        padding: "4px 2px",
                       }}
                     >
                       {displayVal || '\u00A0'}
@@ -686,13 +681,13 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint, highlightedFie
 
           {/* ── Current / new response row ── */}
           <tr>
-            <td style={{ ...C, background: "#ffffffff", textAlign: "center", verticalAlign: "middle", padding: 2, minHeight: 50, height: 50 }}>
+            <td style={{ ...C, background: "#ffffffff", textAlign: "center", verticalAlign: "middle", padding: 4, minHeight: 80, height: 80 }}>
               {hasImg && (
                 <div
                   style={{
                     display: 'flex',
                     flexWrap: 'wrap',
-                    gap: '4px',
+                    gap: '6px',
                     ...getCellHighlightStyle(imgQ?.id || imgQ?._id)
                   }}
                 >
@@ -701,15 +696,14 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint, highlightedFie
                       key={idx}
                       src={url}
                       alt={`Illustration ${idx + 1}`}
-                      style={{ width: '48%', height: 40, objectFit: 'contain', cursor: 'pointer' }}
+                      style={{ width: '48%', height: 60, objectFit: 'contain', cursor: 'pointer' }}
                       onClick={() => window.open(url, '_blank')}
                     />
                   ))}
                 </div>
               )}
             </td>
-            {/* SN = after all historical rows */}
-            <td style={{ ...C, textAlign: "center", fontWeight: 700, fontSize: "9pt", verticalAlign: "middle" }}>
+            <td style={{ ...C, textAlign: "center", fontWeight: 700, fontSize: "9pt", verticalAlign: "middle", height: 70, minHeight: 70 }}>
               {historicalAnswers.length + 1}
             </td>
             {columnFields.map((col, colIdx) => {
@@ -724,8 +718,9 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint, highlightedFie
                     ...C,
                     fontWeight: 700,
                     color: shouldShowValue ? '#000' : 'transparent',
-                    height: 50,
-                    minHeight: 50,
+                    height: 70,  // ← INCREASED from 50 to 70
+                    minHeight: 70,  // ← INCREASED from 50 to 70
+                    padding: "4px 2px",  // ← Added more padding
                     ...getCellHighlightStyle(questionId, col.field, 0)
                   }}
                 >
@@ -735,15 +730,15 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint, highlightedFie
             })}
           </tr>
 
-          {/* ── Extra blank rows to maintain minimum height ── */}
+          {/* ── Extra blank rows with increased height ── */}
           {Array.from({ length: Math.max(0, PROC_ROWS - historicalAnswers.length - 1) }).map((_, i) => (
             <tr key={`blank-${i}`}>
-              <td style={{ ...C, background: "#ffffffff", height: 50, minHeight: 50 }} />
-              <td style={{ ...C, textAlign: 'center', fontWeight: 700, fontSize: '9pt', verticalAlign: 'middle', color: '#ccc' }}>
+              <td style={{ ...C, background: "#ffffffff", height: 70, minHeight: 70 }} />
+              <td style={{ ...C, textAlign: 'center', fontWeight: 700, fontSize: '9pt', verticalAlign: 'middle', color: '#ccc', height: 70, minHeight: 70 }}>
                 {historicalAnswers.length + 2 + i}
               </td>
               {columnFields.map(col => (
-                <td key={col.field} style={{ ...C, height: 50, minHeight: 50 }}>&nbsp;</td>
+                <td key={col.field} style={{ ...C, height: 70, minHeight: 70, padding: "4px 2px" }}>&nbsp;</td>
               ))}
             </tr>
           ))}
