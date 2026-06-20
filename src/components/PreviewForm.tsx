@@ -1366,6 +1366,7 @@ export default function PreviewForm({
     try {
       const results = await apiClient.getResponsesByModel(formId, tenantSlug, headerQuestionsIds.modelId, modelNumber.trim());
       setHistoricalAnswers(Array.isArray(results) ? results : []);
+      console.log("FOOUND HISTORY:", results)
     } catch {
       setHistoricalAnswers([]);
     } finally {
