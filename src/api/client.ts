@@ -797,14 +797,41 @@ class ApiClient {
     modelQuestionId: string,
     modelNumber: string,
   ): Promise<any[]> {
-    const params = new URLSearchParams({ modelNumber, modelQuestionId });
-    const endpoint = tenantSlug
-      ? `/responses/${tenantSlug}/forms/${formId}/responses/by-model?${params}`
-      : `/responses/form/${formId}/responses/by-model?${params}`;
     try {
-      const data = await this.request<any[]>(endpoint);
-      return Array.isArray(data) ? data : [];
-    } catch {
+      // Try the dedicated endpoint first (local)
+      let allResponses = [];
+      let endpoint = tenantSlug
+        ? `/responses/${tenantSlug}/forms/${formId}/responses/by-model`
+        : `/responses/form/${formId}/responses/by-model`;
+
+      try {
+        console.log('📡 Trying dedicated endpoint:', endpoint);
+        const data = await this.request<any>(`${endpoint}?modelNumber=${modelNumber}&modelQuestionId=${modelQuestionId}`);
+        allResponses = data?.data || data || [];
+        console.log('✅ Dedicated endpoint worked!');
+      } catch (error: any) {
+        // If 404, fallback to byForm endpoint
+        if (error?.response?.status === 404) {
+          console.log('🔄 Dedicated endpoint not found, falling back to byForm');
+          const fallbackEndpoint = `/responses/form/${formId}${tenantSlug ? `?tenant=${tenantSlug}` : ''}`;
+          const data = await this.request<any>(fallbackEndpoint);
+          const allFormResponses = data?.data || data || [];
+
+          // Filter by model number
+          allResponses = allFormResponses.filter((response: any) => {
+            const modelAnswer = response.answers?.[modelQuestionId] || response[modelQuestionId];
+            return String(modelAnswer).toLowerCase() === String(modelNumber).toLowerCase().trim();
+          });
+        } else {
+          throw error;
+        }
+      }
+
+      console.log(`📊 Found ${allResponses.length} historical responses`);
+      return allResponses;
+
+    } catch (error) {
+      console.error('❌ Error fetching responses by model:', error);
       return [];
     }
   }

@@ -185,7 +185,7 @@ type SectionStat = {
 interface OPSTemplateProps {
   form: any;
   response: any;
-  submissionHistory?: Array<{ no: number; date: string; issuanceDetails: string }>;
+  submissionHistory?: Array<{ no: number; date: string; issuanceDetails: string; isUpdated?: boolean }>;
   sameFormatResponses?: any[];  // Add this - all responses with same Format No
   isLoadingSameFormatResponses?: boolean;  // Add this - loading state
   formatQuestionId?: string;  // Add this - ID of the Format No question
@@ -387,7 +387,7 @@ function OPSTemplate({
 
   // Paginate submission history
   const paginatedSubmissionHistory = useMemo(() => {
-    const allHistoryEntries: Array<{ no: number; date: string; issuanceDetails: string; responseIndex: number }> = [];
+    const allHistoryEntries: Array<{ no: number; date: string; issuanceDetails: string; responseIndex: number; isUpdated?: boolean }> = [];
 
     paginatedResponses.forEach((resp, respIdx) => {
       const history = resp.answers?.__submissionHistory || [];
@@ -397,6 +397,7 @@ function OPSTemplate({
           date: entry.date,
           issuanceDetails: entry.issuanceDetails,
           responseIndex: respIdx,  // This is the response number (0-based)
+          isUpdated: entry.isUpdated,
         });
       });
     });
@@ -1275,11 +1276,16 @@ function OPSTemplate({
                                       display = String(entry.no);
                                     } else if (colIdx === 5) {
                                       try {
-                                        display = new Date(entry.date).toLocaleDateString("en-GB", {
-                                          day: "2-digit",
-                                          month: "2-digit",
-                                          year: "2-digit",
-                                        });
+                                        const parsedDate = new Date(entry.date);
+                                        if (!isNaN(parsedDate.getTime())) {
+                                          display = parsedDate.toLocaleDateString("en-GB", {
+                                            day: "2-digit",
+                                            month: "2-digit",
+                                            year: "2-digit",
+                                          });
+                                        } else {
+                                          display = entry.date || "\u00A0";
+                                        }
                                       } catch {
                                         display = entry.date || "\u00A0";
                                       }
@@ -1303,6 +1309,7 @@ function OPSTemplate({
                                           whiteSpace: "nowrap",
                                           overflow: "hidden",
                                           textOverflow: "ellipsis",
+                                          backgroundColor: entry?.isUpdated ? "rgba(239, 68, 68, 0.3)" : "transparent",
                                         }}
                                       >
                                         {display}
@@ -1730,11 +1737,16 @@ function OPSTemplate({
                                 display = String(entry.no);
                               } else if (colIdx === 5) {
                                 try {
-                                  display = new Date(entry.date).toLocaleDateString("en-GB", {
-                                    day: "2-digit",
-                                    month: "2-digit",
-                                    year: "2-digit",
-                                  });
+                                  const parsedDate = new Date(entry.date);
+                                  if (!isNaN(parsedDate.getTime())) {
+                                    display = parsedDate.toLocaleDateString("en-GB", {
+                                      day: "2-digit",
+                                      month: "2-digit",
+                                      year: "2-digit",
+                                    });
+                                  } else {
+                                    display = entry.date || "\u00A0";
+                                  }
                                 } catch {
                                   display = entry.date || "\u00A0";
                                 }
@@ -1758,6 +1770,7 @@ function OPSTemplate({
                                     whiteSpace: "nowrap",
                                     overflow: "hidden",
                                     textOverflow: "ellipsis",
+                                    backgroundColor: entry?.isUpdated ? "rgba(253, 224, 71, 0.4)" : "transparent",
                                   }}
                                 >
                                   {display}
@@ -2767,39 +2780,33 @@ export default function ResponseDetailsPage() {
   const handleSaveEditedResponse = async (updated: any) => {
     if (savingEdit || !response) return;
 
-    setPendingUpdate(updated);
-    setPopupDate(new Date().toLocaleDateString("en-GB"));
-    setPopupIssuanceDetails(`Update of response`);
-    setShowUpdatePopup(true);
-  };
-
-  const handleConfirmUpdate = async () => {
-    if (!pendingUpdate || !response) return;
-
     setSavingEdit(true);
     try {
-      // Get the ID from different possible sources
-      const responseId = response._id || response.id;
-      console.log("=== UPDATE DEBUG ===");
-      console.log("response._id:", response._id);
-      console.log("response.id:", response.id);
-      console.log("URL param id (from useParams):", id);
-      console.log("Using responseId:", responseId);
-
-      // Try using the URL param directly instead
       const urlId = id; // This comes from useParams
-      console.log("Would URL param work?:", urlId);
 
-      const newHistoryEntry = {
-        date: popupDate,
-        issuanceDetails: popupIssuanceDetails
-      };
+      // PreviewForm just appended a new history entry. 
+      // We want to UPDATE the existing last entry instead of adding a new one.
+      const appendedHistory = updated.answers?.__submissionHistory || [];
+      const newEntryFromPreview = appendedHistory.length > 0 ? appendedHistory[appendedHistory.length - 1] : null;
 
       const existingHistory = response.answers?.__submissionHistory || submissionHistory || [];
-      const newHistory = [...existingHistory, newHistoryEntry];
+
+      let newHistory;
+      if (existingHistory.length > 0 && newEntryFromPreview) {
+        newHistory = [...existingHistory];
+        // Overwrite the last entry with the newly provided date and issuance details
+        newHistory[newHistory.length - 1] = {
+          ...newHistory[newHistory.length - 1],
+          date: newEntryFromPreview.date,
+          issuanceDetails: newEntryFromPreview.issuanceDetails,
+          isUpdated: true
+        };
+      } else {
+        newHistory = existingHistory;
+      }
 
       const updatedAnswers = {
-        ...pendingUpdate.answers,
+        ...updated.answers,
         __submissionHistory: newHistory
       };
 
@@ -2807,12 +2814,10 @@ export default function ResponseDetailsPage() {
         answers: updatedAnswers
       };
 
-      // Try with URL param ID instead
-      console.log("Attempting update with URL param ID:", urlId);
       await apiClient.updateResponse(urlId!, updateData);
 
       setResponse({
-        ...pendingUpdate,
+        ...updated,
         answers: updatedAnswers,
         submissionHistory: newHistory
       });
@@ -2820,7 +2825,6 @@ export default function ResponseDetailsPage() {
 
       handleCloseEdit();
       showSuccess("Response updated successfully.");
-      setShowUpdatePopup(false);
     } catch (err) {
       console.error("Failed to save response:", err);
       showError("Failed to save response. Please try again.");
@@ -4518,7 +4522,12 @@ ${clone.outerHTML}
             </button>
 
             <button
-              onClick={handleEditResponse}
+              onClick={() => {
+                const formIdentifier = response?.questionId || response?.formId;
+                if (formIdentifier) {
+                  navigate(`/forms/${formIdentifier}/analytics?view=responses`);
+                }
+              }}
               className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-white rounded-lg transition-all duration-200 hover:opacity-90"
               style={{ backgroundColor: "#2563eb" }}
               title="Edit Response"
@@ -5924,7 +5933,10 @@ ${clone.outerHTML}
             <OPSTemplate
               form={form}
               response={response}
-              submissionHistory={submissionHistory}
+              submissionHistory={submissionHistory.map((entry, index) => ({
+                ...entry,
+                isUpdated: entry.isUpdated || false,
+              }))}
               sameFormatResponses={sameFormatResponses}
               isLoadingSameFormatResponses={isLoadingSameFormatResponses}
               formatQuestionId={instructionsQuestions?.[0]?.id}

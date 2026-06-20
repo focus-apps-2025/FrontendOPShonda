@@ -164,7 +164,7 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint, highlightedFie
   const model = getAnswerOrFallback(headerQuestions, 2, "—");
   const station = getAnswerOrFallback(headerQuestions, 3, "—");
 
-  const formatNo = getAnswerOrFallback(headerQuestions, 2, "—");
+  const formatNo = getAnswerOrFallback(headerQuestions, 4, "—");
   const controlNo = getAnswerOrFallback(headerQuestions, 5, "—");
 
 
@@ -394,9 +394,14 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint, highlightedFie
                       if (i === 3) displayValue = entry.no;
                       else if (i === 4) {
                         try {
-                          displayValue = new Date(entry.date).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "2-digit" });
+                          const parsedDate = new Date(entry.date);
+                          if (!isNaN(parsedDate.getTime())) {
+                            displayValue = parsedDate.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "2-digit" });
+                          } else {
+                            displayValue = entry.date || "";
+                          }
                         } catch (e) {
-                          displayValue = entry.date;
+                          displayValue = entry.date || "";
                         }
                       }
                       else if (i === 5) displayValue = entry.issuanceDetails;
@@ -414,6 +419,7 @@ function OPSTemplate({ form, answers, opsSectionMapping, onPrint, highlightedFie
                           whiteSpace: "nowrap",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
+                          backgroundColor: (entry as any)?.isUpdated ? "rgba(239, 68, 68, 0.3)" : "transparent",
                         }}>
                           {displayValue || "\u00A0"}
                         </td>
@@ -1240,22 +1246,47 @@ export default function PreviewForm({
     setShowSubmitPopup(true);
   };
 
+  //  handleConfirmSubmit function:
   const handleConfirmSubmit = async () => {
     if (!popupDate || !popupIssuanceDetails) {
       showNotifyError("Please fill in both Date and Issuance/Revision Details.");
       return;
     }
-    const newEntry = {
-      no: submissionHistory.length + 1,
-      date: popupDate,
-      issuanceDetails: popupIssuanceDetails
-    };
-    const updatedHistory = [...submissionHistory, newEntry];
+
+    // Check if we're editing an existing response (has formSessionId)
+    // OR if we're creating a new one with existing history
+    const isEditing = formSessionId !== null && formSessionId !== undefined;
+
+    let updatedHistory;
+
+    if (isEditing && submissionHistory.length > 0) {
+      // EDITING: Update the LAST entry
+      updatedHistory = [...submissionHistory];
+      const lastIndex = updatedHistory.length - 1;
+      updatedHistory[lastIndex] = {
+        ...updatedHistory[lastIndex],
+        date: popupDate,
+        issuanceDetails: popupIssuanceDetails,
+        isUpdated: true
+      };
+      console.log('🔄 Updating existing history entry (PreviewForm):', updatedHistory[lastIndex]);
+    } else {
+      // NEW SUBMISSION: Add a new entry
+      const newEntry = {
+        no: submissionHistory.length + 1,
+        date: popupDate,
+        issuanceDetails: popupIssuanceDetails,
+        isUpdated: false
+      };
+      updatedHistory = [...submissionHistory, newEntry];
+      console.log('➕ Adding new history entry (PreviewForm):', newEntry);
+    }
+
     setSubmissionHistory(updatedHistory);
     await performSubmission(updatedHistory);
   };
 
-  const performSubmission = async (updatedHistory: Array<{ no: number; date: string; issuanceDetails: string }>) => {
+  const performSubmission = async (updatedHistory: Array<{ no: number; date: string; issuanceDetails: string; isUpdated?: boolean }>) => {
     if (formSessionId && chassisNumbers.length > 0 && !answers["chassis_number"]) {
       showNotifyError("Please select a Chassis Number");
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1266,10 +1297,13 @@ export default function PreviewForm({
       let submittedBy: string | undefined;
       if (user) submittedBy = user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.username || user.email;
 
+      // ✅ IMPORTANT: Remove any existing __submissionHistory from answers
+      const { __submissionHistory: _, ...cleanAnswers } = answers;
+
       // Store submission history inside answers
       const answersWithHistory = {
-        ...answers,
-        __submissionHistory: updatedHistory
+        ...cleanAnswers,        // ← Clean answers without history
+        __submissionHistory: updatedHistory  // ← Add the updated history
       };
 
       const data: any = {
@@ -1280,11 +1314,28 @@ export default function PreviewForm({
         submissionMetadata: { date: popupDate, issuanceDetails: popupIssuanceDetails }
       };
 
-      if (location) data.location = { latitude: location.latitude, longitude: location.longitude, accuracy: location.accuracy, source: "browser", capturedAt: new Date().toISOString() };
-      if (formSessionId) { data.sessionId = formSessionId; data.startedAt = sectionStartTime; data.completedAt = new Date(); }
+      if (location) data.location = {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        accuracy: location.accuracy,
+        source: "browser",
+        capturedAt: new Date().toISOString()
+      };
+
+      if (formSessionId) {
+        data.sessionId = formSessionId;
+        data.startedAt = sectionStartTime;
+        data.completedAt = new Date();
+      }
 
       if (propOnSubmit) {
-        await propOnSubmit({ id: "preview-response", formId: formId || "preview", answers: answersWithHistory, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } as any);
+        await propOnSubmit({
+          id: "preview-response",
+          formId: formId || "preview",
+          answers: answersWithHistory,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        } as any);
         showSuccess("Preview submission successful!");
         setShowSubmitPopup(false);
         setPopupDate("");
@@ -1292,6 +1343,7 @@ export default function PreviewForm({
         setSubmitted(true);
         return;
       }
+
       if (!formId) return;
       await apiClient.submitResponse(formId, tenantSlug, data);
       showSuccess("Form submitted successfully!");
@@ -1356,33 +1408,67 @@ export default function PreviewForm({
     };
   }, [form, effectiveOpsMapping]);
 
-  // ── Fetch historical responses by model number ──
+  // Add this ref near other useRef declarations
+  const historicalAnswersRef = useRef<any[]>([]);
+
+  // Update the fetchHistoricalResponses to also set the ref
   const fetchHistoricalResponses = useCallback(async (modelNumber: string) => {
     if (!formId || !headerQuestionsIds?.modelId || !modelNumber.trim()) {
       setHistoricalAnswers([]);
+      historicalAnswersRef.current = [];
       return;
     }
     setIsLoadingHistory(true);
     try {
       const results = await apiClient.getResponsesByModel(formId, tenantSlug, headerQuestionsIds.modelId, modelNumber.trim());
-      setHistoricalAnswers(Array.isArray(results) ? results : []);
-      console.log("FOOUND HISTORY:", results)
+      const historyData = Array.isArray(results) ? results : [];
+      setHistoricalAnswers(historyData);
+      historicalAnswersRef.current = historyData;
+
+      // AUTO-FILL FORMAT NO. FROM HISTORY
+      if (historyData.length > 0 && headerQuestionsIds.formatNoId) {
+        const mostRecent = historyData[0]; // Most recent response
+        const formatNoId = headerQuestionsIds.formatNoId;
+
+        // Try multiple possible paths to get Format No.
+        const historicalFormatNo =
+          mostRecent?.answers?.[formatNoId] ||
+          mostRecent?.[formatNoId] ||
+          mostRecent?.formatNo ||
+          mostRecent?.format_number ||
+          null;
+
+        if (historicalFormatNo) {
+          // Only auto-fill if Format No. is currently empty
+          setAnswers(prev => {
+            if (!prev[formatNoId] || prev[formatNoId] === '') {
+              console.log(`Auto-filling Format No. from history: ${historicalFormatNo}`);
+              return { ...prev, [formatNoId]: historicalFormatNo };
+            }
+            return prev;
+          });
+        }
+      }
+
+      console.log("Found historical responses:", historyData);
     } catch {
       setHistoricalAnswers([]);
+      historicalAnswersRef.current = [];
     } finally {
       setIsLoadingHistory(false);
     }
   }, [formId, tenantSlug, headerQuestionsIds]);
 
-  // ── Answer change — this updates `answers` state which OPSTemplate reads directly ──
+  // In the handleResponseChange function, replace the auto-sync logic:
   const handleResponseChange = useCallback((questionId: string, value: any, additionalInfo?: { columnName?: string; rowIndex?: number }) => {
     // Update the current question
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
 
-    // Auto-sync: If Model field is updated, also update Format No. + fetch history
+    // NEW LOGIC: When Model field changes, fetch history 
+    // (fetchHistoricalResponses will handle auto-filling Format No.)
     if (headerQuestionsIds && questionId === headerQuestionsIds.modelId) {
       if (value) {
-        setAnswers((prev) => ({ ...prev, [headerQuestionsIds.formatNoId]: value }));
+        // Just fetch history - the function will auto-fill Format No. if exists
         fetchHistoricalResponses(String(value));
       } else {
         setHistoricalAnswers([]);
@@ -1414,7 +1500,6 @@ export default function PreviewForm({
       if (q) onQuestionChange(questionId, q.text || "Unknown", q.type || "unknown", cur.id, cur.title || "Untitled Section", value);
     }
   }, [answers, currentSectionIndex, onQuestionChange, getMainSections, highlightTimeout, headerQuestionsIds, fetchHistoricalResponses]);
-
   const handleLoadSampleData = () => {
     if (!form) return;
     const sample: Record<string, any> = { ...answers };

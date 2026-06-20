@@ -191,6 +191,7 @@ export default function AllResponses() {
   const [showFormFilter, setShowFormFilter] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [deletingResponseId, setDeletingResponseId] = useState<string | null>(null);
+  const [deletingGroupModelNo, setDeletingGroupModelNo] = useState<string | null>(null);
   const [editingResponse, setEditingResponse] = useState<(Response & { formTitle: string }) | null>(null);
   const [editingForm, setEditingForm] = useState<Form | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -540,6 +541,32 @@ export default function AllResponses() {
     );
   };
 
+  const handleDeleteGroup = (group: GroupedResponse) => {
+    const count = group.responses.length;
+    showConfirm(
+      `Delete all ${count} response${count !== 1 ? 's' : ''} for Model No: "${group.modelNo}"? This cannot be undone.`,
+      async () => {
+        setDeletingGroupModelNo(group.modelNo);
+        try {
+          // Delete all responses in the group in parallel
+          await Promise.all(
+            group.responses.map((r) => apiClient.deleteResponse(r._id || r.id))
+          );
+          fetchData();
+          showSuccess(`All ${count} response${count !== 1 ? 's' : ''} for "${group.modelNo}" deleted successfully.`);
+        } catch (err) {
+          console.error("Failed to delete group responses:", err);
+          showError("Failed to delete some responses. Please try again.");
+        } finally {
+          setDeletingGroupModelNo(null);
+        }
+      },
+      "Delete All Responses",
+      "Delete All",
+      "Cancel"
+    );
+  };
+
   const hasAnswerValue = (value: any) => {
     if (value === null || value === undefined) return false;
     if (typeof value === "string") return value.trim() !== "";
@@ -734,12 +761,27 @@ export default function AllResponses() {
                   </span>
                 </div>
               </div>
-              <button
-                onClick={() => handleViewDetails(groupItem)}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-all shadow-md hover:shadow-lg"
-              >
-                View All ({groupItem.responses.length})
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleViewDetails(groupItem)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-all shadow-md hover:shadow-lg"
+                >
+                  View All ({groupItem.responses.length})
+                </button>
+                <button
+                  onClick={() => handleDeleteGroup(groupItem)}
+                  disabled={deletingGroupModelNo === groupItem.modelNo}
+                  title="Delete all responses for this model"
+                  className="flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-all shadow-md hover:shadow-lg"
+                >
+                  {deletingGroupModelNo === groupItem.modelNo ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                  <span>{deletingGroupModelNo === groupItem.modelNo ? "Deleting..." : "Delete"}</span>
+                </button>
+              </div>
             </div>
 
             {/* Merged Answers - Single Card for the entire group 

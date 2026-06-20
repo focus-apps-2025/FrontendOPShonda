@@ -2260,6 +2260,113 @@ const OPSMasterListTable = ({
 
 export default function FormAnalyticsDashboard() {
   const [selectedForm, setSelectedForm] = useState<Form | null>(null);
+  // Add this with other state declarations
+  const [uploadingFileId, setUploadingFileId] = useState<string | null>(null);
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  // Add this function near other handlers (around handleEditStart)
+  const handleFileUpload = async (questionId: string, file: File) => {
+    try {
+      setUploadingFileId(questionId);
+      const result = await apiClient.uploadFile(file, 'form');
+      const url = apiClient.resolveUploadedFileUrl(result);
+      if (url) {
+        // Get current value for this question
+        const currentVal = editFormData[questionId];
+        let urls: string[] = [];
+
+        if (currentVal) {
+          if (Array.isArray(currentVal)) {
+            urls = currentVal.map(item => typeof item === 'string' ? item : item?.url).filter(Boolean);
+          } else if (typeof currentVal === 'string') {
+            try {
+              const parsed = JSON.parse(currentVal);
+              if (Array.isArray(parsed)) {
+                urls = parsed.map(item => typeof item === 'string' ? item : item?.url).filter(Boolean);
+              } else if (parsed?.url) {
+                urls = [parsed.url];
+              }
+            } catch {
+              urls = [currentVal];
+            }
+          } else if (typeof currentVal === 'object' && currentVal?.url) {
+            urls = [currentVal.url];
+          }
+        }
+
+        // Add new URL
+        urls.push(url);
+
+        setEditFormData({
+          ...editFormData,
+          [questionId]: urls
+        });
+
+        if (fileInputRefs.current[questionId]) {
+          fileInputRefs.current[questionId]!.value = '';
+        }
+      }
+    } catch (err) {
+      console.error('Upload failed:', err);
+      alert('Upload failed. Please try again.');
+    } finally {
+      setUploadingFileId(null);
+    }
+  };
+
+  const handleRemoveImage = (questionId: string, index: number) => {
+    const currentVal = editFormData[questionId];
+    let urls: string[] = [];
+
+    if (currentVal) {
+      if (Array.isArray(currentVal)) {
+        urls = currentVal.map(item => typeof item === 'string' ? item : item?.url).filter(Boolean);
+      } else if (typeof currentVal === 'string') {
+        try {
+          const parsed = JSON.parse(currentVal);
+          if (Array.isArray(parsed)) {
+            urls = parsed.map(item => typeof item === 'string' ? item : item?.url).filter(Boolean);
+          } else if (parsed?.url) {
+            urls = [parsed.url];
+          }
+        } catch {
+          urls = [currentVal];
+        }
+      } else if (typeof currentVal === 'object' && currentVal?.url) {
+        urls = [currentVal.url];
+      }
+    }
+
+    const newUrls = urls.filter((_, i) => i !== index);
+    setEditFormData({
+      ...editFormData,
+      [questionId]: newUrls.length > 0 ? newUrls : undefined
+    });
+  };
+
+  const getFileUrls = (questionId: string): string[] => {
+    const val = editFormData[questionId];
+    if (!val) return [];
+    if (Array.isArray(val)) {
+      return val.map(item => typeof item === 'string' ? item : item?.url).filter(Boolean);
+    }
+    if (typeof val === 'string') {
+      try {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) {
+          return parsed.map(item => typeof item === 'string' ? item : item?.url).filter(Boolean);
+        }
+        if (parsed?.url) return [parsed.url];
+      } catch {
+        // Not JSON
+      }
+      return [val];
+    }
+    if (typeof val === 'object' && val?.url) {
+      return [val.url];
+    }
+    return [];
+  };
 
   const generateTableBarChart = (
     yesPercent: number,
@@ -2619,6 +2726,22 @@ export default function FormAnalyticsDashboard() {
     };
   });
   const [searchParams] = useSearchParams();
+  const viewParam = searchParams.get("view");
+
+  useEffect(() => {
+    if (
+      viewParam === "dashboard" ||
+      viewParam === "question" ||
+      viewParam === "section" ||
+      viewParam === "responses" ||
+      viewParam === "comparison" ||
+      viewParam === "opsTable" ||
+      viewParam === "table"
+    ) {
+      setAnalyticsView(viewParam);
+    }
+  }, [viewParam]);
+
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [isSendingMessage, setIsSendingMessage] = useState(false);
@@ -3591,24 +3714,41 @@ export default function FormAnalyticsDashboard() {
     try {
       setIsSaving(true);
 
-      // Get existing submission history
       const existingResponse = responses.find(r => r.id === editingResponseId);
       const existingHistory = existingResponse?.answers?.__submissionHistory || [];
 
-      // Create new history entry
-      const newHistoryEntry = {
-        date: popupDate,
-        issuanceDetails: popupIssuanceDetails
-      };
-      const newHistory = [...existingHistory, newHistoryEntry];
+      let newHistory;
 
-      // Update answers with new history
+      if (existingHistory.length > 0) {
+        // ✅ EDITING: Update the LAST entry
+        newHistory = [...existingHistory];
+        const lastIndex = newHistory.length - 1;
+        newHistory[lastIndex] = {
+          ...newHistory[lastIndex],
+          date: popupDate || newHistory[lastIndex].date,
+          issuanceDetails: popupIssuanceDetails || newHistory[lastIndex].issuanceDetails,
+          isUpdated: true
+        };
+        console.log('✅ Updated history entry with isUpdated=true:', newHistory[lastIndex]);
+      } else {
+        // New entry (first time)
+        const newEntry = {
+          no: 1,
+          date: popupDate,
+          issuanceDetails: popupIssuanceDetails,
+          isUpdated: false
+        };
+        newHistory = [newEntry];
+      }
+
+      // ✅ IMPORTANT: Remove __submissionHistory from pendingEditAnswers
+      const { __submissionHistory, ...cleanAnswers } = pendingEditAnswers;
+
       const updatedAnswers = {
-        ...pendingEditAnswers,
-        __submissionHistory: newHistory
+        ...cleanAnswers,        // ← Clean answers without history
+        __submissionHistory: newHistory  // ← Add the updated history
       };
 
-      // Save to API
       await apiClient.updateResponse(editingResponseId, {
         answers: updatedAnswers,
         status: editFormStatus,
@@ -3643,7 +3783,6 @@ export default function FormAnalyticsDashboard() {
       setIsSaving(false);
     }
   };
-
   const filteredResponses = useMemo(() => {
     let result = baseFilteredResponses;
 
@@ -8885,50 +9024,138 @@ export default function FormAnalyticsDashboard() {
                                               }`}
                                           >
                                             {isEditing ? (
-                                              <input
-                                                type="text"
-                                                value={typeof editFormData[q.id] === 'object' && 'status' in editFormData[q.id] ? editFormData[q.id].status : (editFormData[q.id] ? (typeof editFormData[q.id] === 'string' ? editFormData[q.id] : JSON.stringify(editFormData[q.id], null, 2)) : "")}
-                                                onChange={(e) => {
-                                                  const val = e.target.value;
-                                                  if (editFormData[q.id] && typeof editFormData[q.id] === 'object' && 'status' in editFormData[q.id]) {
-                                                    setEditFormData({
-                                                      ...editFormData,
-                                                      [q.id]: { ...editFormData[q.id], status: val },
-                                                    });
-                                                  } else {
-                                                    let parsed;
-                                                    try {
-                                                      parsed = JSON.parse(val);
-                                                    } catch {
-                                                      parsed = val;
+                                              // Check if this is a file/image question
+                                              (q.type === "file" || q.type === "image" ||
+                                                (q.text && (q.text.toLowerCase().includes("image") || q.text.toLowerCase().includes("photo") || q.text.toLowerCase().includes("upload")))) ? (
+                                                // File/Image upload inline component - WITHOUT hooks
+                                                (() => {
+                                                  const urls = getFileUrls(q.id);
+                                                  const isUploading = uploadingFileId === q.id;
+
+                                                  return (
+                                                    <div className="space-y-2">
+                                                      {/* Display existing images */}
+                                                      {urls.length > 0 && (
+                                                        <div className="flex flex-wrap gap-2">
+                                                          {urls.map((url, index) => (
+                                                            <div key={index} className="relative group">
+                                                              <img
+                                                                src={url}
+                                                                alt={`Upload ${index + 1}`}
+                                                                className="w-16 h-16 object-cover rounded-lg border border-gray-300 dark:border-gray-600 cursor-pointer"
+                                                                onClick={() => window.open(url, '_blank')}
+                                                              />
+                                                              <button
+                                                                onClick={() => handleRemoveImage(q.id, index)}
+                                                                className="absolute -top-1 -right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                                              >
+                                                                <X className="w-3 h-3" />
+                                                              </button>
+                                                            </div>
+                                                          ))}
+                                                        </div>
+                                                      )}
+
+                                                      {/* Upload button */}
+                                                      <label className="cursor-pointer inline-block">
+                                                        <input
+                                                          ref={(el) => { fileInputRefs.current[q.id] = el; }}
+                                                          type="file"
+                                                          className="hidden"
+                                                          accept="image/*"
+                                                          onChange={async (e) => {
+                                                            const file = e.target.files?.[0];
+                                                            if (file) await handleFileUpload(q.id, file);
+                                                          }}
+                                                        />
+                                                        <div className={`flex items-center gap-1 px-3 py-1.5 rounded-lg border-2 border-dashed ${darkMode ? 'border-gray-600 hover:border-blue-400' : 'border-gray-300 hover:border-blue-500'} transition-colors cursor-pointer text-xs font-medium`}>
+                                                          {isUploading ? (
+                                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                                          ) : (
+                                                            <Upload className="w-4 h-4" />
+                                                          )}
+                                                          {isUploading ? 'Uploading...' : 'Upload Image'}
+                                                        </div>
+                                                      </label>
+                                                    </div>
+                                                  );
+                                                })()
+                                              ) : q.type === "chassis-with-zone" || q.type === "chassis-without-zone" ||
+                                                q.type === "zone-in" || q.type === "zone-out" || q.type === "chassis" ? (
+                                                // For chassis/zone types, show status dropdown and remark
+                                                <div className="space-y-1">
+                                                  <select
+                                                    value={editFormData[q.id]?.status || ''}
+                                                    onChange={(e) => {
+                                                      const currentVal = editFormData[q.id] || {};
+                                                      setEditFormData({
+                                                        ...editFormData,
+                                                        [q.id]: { ...currentVal, status: e.target.value }
+                                                      });
+                                                    }}
+                                                    className="w-full px-2 py-1 text-xs border border-blue-400 dark:border-blue-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                  >
+                                                    <option value="">Select Status</option>
+                                                    <option value="Accepted">Accepted</option>
+                                                    <option value="Rejected">Rejected</option>
+                                                    <option value="Rework">Rework</option>
+                                                    <option value="Rework Completed">Rework Completed</option>
+                                                    <option value="Verified">Verified</option>
+                                                  </select>
+                                                  <input
+                                                    type="text"
+                                                    value={editFormData[q.id]?.remark || ''}
+                                                    onChange={(e) => {
+                                                      const currentVal = editFormData[q.id] || {};
+                                                      setEditFormData({
+                                                        ...editFormData,
+                                                        [q.id]: { ...currentVal, remark: e.target.value }
+                                                      });
+                                                    }}
+                                                    placeholder="Remark"
+                                                    className="w-full px-2 py-1 text-xs border border-blue-400 dark:border-blue-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                  />
+                                                </div>
+                                              ) : (
+                                                // Text input for other types
+                                                <input
+                                                  type="text"
+                                                  value={typeof editFormData[q.id] === 'object' && 'status' in editFormData[q.id]
+                                                    ? editFormData[q.id].status
+                                                    : (editFormData[q.id] ? (typeof editFormData[q.id] === 'string' ? editFormData[q.id] : JSON.stringify(editFormData[q.id], null, 2)) : "")}
+                                                  onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    if (editFormData[q.id] && typeof editFormData[q.id] === 'object' && 'status' in editFormData[q.id]) {
+                                                      setEditFormData({
+                                                        ...editFormData,
+                                                        [q.id]: { ...editFormData[q.id], status: val },
+                                                      });
+                                                    } else {
+                                                      let parsed;
+                                                      try {
+                                                        parsed = JSON.parse(val);
+                                                      } catch {
+                                                        parsed = val;
+                                                      }
+                                                      setEditFormData({
+                                                        ...editFormData,
+                                                        [q.id]: parsed,
+                                                      });
                                                     }
-                                                    setEditFormData({
-                                                      ...editFormData,
-                                                      [q.id]: parsed,
-                                                    });
-                                                  }
-                                                }}
-                                                className="w-full px-2 py-1 border border-blue-400 dark:border-blue-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                placeholder="Enter answer"
-                                              />
+                                                  }}
+                                                  className="w-full px-2 py-1 text-xs border border-blue-400 dark:border-blue-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                  placeholder="Enter answer"
+                                                />
+                                              )
                                             ) : (
+                                              // Display answer (existing code)
                                               <div className="flex flex-col gap-1 max-w-[250px] overflow-auto max-h-[250px]">
                                                 {renderAnswerDisplay(answer, q)}
-                                                {q.trackResponseRank &&
-                                                  response.responseRanks?.[
-                                                  q.id
-                                                  ] && (
-                                                    <span
-                                                      className={`text-[10px] font-bold min-w-[24px] h-6 px-1.5 rounded-full flex items-center justify-center border shadow-sm w-fit mt-1 ${getRankStyle(answer, darkMode)}`}
-                                                    >
-                                                      #
-                                                      {
-                                                        response.responseRanks[
-                                                        q.id
-                                                        ]
-                                                      }
-                                                    </span>
-                                                  )}
+                                                {q.trackResponseRank && response.responseRanks?.[q.id] && (
+                                                  <span className={`text-[10px] font-bold min-w-[24px] h-6 px-1.5 rounded-full flex items-center justify-center border shadow-sm w-fit mt-1 ${getRankStyle(answer, darkMode)}`}>
+                                                    #{response.responseRanks[q.id]}
+                                                  </span>
+                                                )}
                                               </div>
                                             )}
                                           </td>
